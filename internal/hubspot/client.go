@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -19,6 +20,7 @@ import (
 // Credentials remain encapsulated by Transport and are never exposed as data.
 type ClientSet struct {
 	PropertyGroups *PropertyGroupClient
+	Properties     *PropertyDefinitionClient
 }
 
 func NewClientSet(config TransportConfig) (*ClientSet, error) {
@@ -26,7 +28,136 @@ func NewClientSet(config TransportConfig) (*ClientSet, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ClientSet{PropertyGroups: &PropertyGroupClient{transport: transport}}, nil
+	return &ClientSet{PropertyGroups: &PropertyGroupClient{transport: transport}, Properties: &PropertyDefinitionClient{transport: transport}}, nil
+}
+
+type PropertyDefinitionClient struct{ transport *Transport }
+
+type PropertyOption struct {
+	Value        string  `json:"value"`
+	Label        string  `json:"label"`
+	Description  *string `json:"description"`
+	DisplayOrder *int64  `json:"displayOrder"`
+	Hidden       *bool   `json:"hidden"`
+}
+
+type ModificationMetadata struct {
+	Archivable         *bool `json:"archivable"`
+	ReadOnlyDefinition *bool `json:"readOnlyDefinition"`
+	ReadOnlyValue      *bool `json:"readOnlyValue"`
+	ReadOnlyOptions    *bool `json:"readOnlyOptions"`
+}
+
+type PropertyDefinition struct {
+	Name                 string                `json:"name"`
+	Label                string                `json:"label"`
+	GroupName            string                `json:"groupName"`
+	Type                 string                `json:"type"`
+	FieldType            string                `json:"fieldType"`
+	Description          *string               `json:"description"`
+	DisplayOrder         *int64                `json:"displayOrder"`
+	FormField            *bool                 `json:"formField"`
+	Hidden               *bool                 `json:"hidden"`
+	HasUniqueValue       *bool                 `json:"hasUniqueValue"`
+	ExternalOptions      *bool                 `json:"externalOptions"`
+	ReferencedObjectType *string               `json:"referencedObjectType"`
+	ShowCurrencySymbol   *bool                 `json:"showCurrencySymbol"`
+	CalculationFormula   *string               `json:"calculationFormula"`
+	CurrencyPropertyName *string               `json:"currencyPropertyName"`
+	NumberDisplayHint    *string               `json:"numberDisplayHint"`
+	TextDisplayHint      *string               `json:"textDisplayHint"`
+	DateDisplayHint      *string               `json:"dateDisplayHint"`
+	DataSensitivity      *string               `json:"dataSensitivity"`
+	SensitivityCategory  *string               `json:"sensitivityCategory"`
+	Calculated           *bool                 `json:"calculated"`
+	HubSpotDefined       *bool                 `json:"hubspotDefined"`
+	Archived             *bool                 `json:"archived"`
+	ArchivedAt           *string               `json:"archivedAt"`
+	CreatedAt            *string               `json:"createdAt"`
+	UpdatedAt            *string               `json:"updatedAt"`
+	CreatedUserID        *string               `json:"createdUserId"`
+	UpdatedUserID        *string               `json:"updatedUserId"`
+	Options              []PropertyOption      `json:"options"`
+	ModificationMetadata *ModificationMetadata `json:"modificationMetadata"`
+}
+
+type propertyDefinitionCollection struct {
+	Results []PropertyDefinition `json:"results"`
+	Paging  *struct {
+		Next *struct {
+			After string `json:"after"`
+		} `json:"next"`
+	} `json:"paging"`
+}
+
+func (c *PropertyDefinitionClient) List(ctx context.Context, objectType string, archived bool, sensitivity, locale string) ([]PropertyDefinition, error) {
+	if err := validateObjectType(objectType); err != nil {
+		return nil, err
+	}
+	if err := validateSensitivity(sensitivity); err != nil {
+		return nil, err
+	}
+	results := make([]PropertyDefinition, 0)
+	after := ""
+	for page := 0; page < 100; page++ {
+		query := "?archived=" + strconv.FormatBool(archived) + "&dataSensitivity=" + url.QueryEscape(sensitivity)
+		if locale != "" {
+			query += "&locale=" + url.QueryEscape(locale)
+		}
+		if after != "" {
+			query += "&after=" + url.QueryEscape(after)
+		}
+		var response propertyDefinitionCollection
+		if err := c.transport.Do(ctx, Operation{Name: "property-definition-list", Method: http.MethodGet, Path: propertyDefinitionPath(objectType) + query, Replay: ReplaySafe}, nil, &response); err != nil {
+			return nil, err
+		}
+		results = append(results, response.Results...)
+		if len(results) > 10000 {
+			return nil, errors.New("property definition response exceeds result limit")
+		}
+		if response.Paging == nil || response.Paging.Next == nil || response.Paging.Next.After == "" {
+			return results, nil
+		}
+		after = response.Paging.Next.After
+	}
+	return nil, errors.New("property definition pagination exceeded limit")
+}
+
+func (c *PropertyDefinitionClient) Get(ctx context.Context, objectType, name string, archived bool, sensitivity, locale string) (PropertyDefinition, error) {
+	if err := validateObjectType(objectType); err != nil {
+		return PropertyDefinition{}, err
+	}
+	if err := validateGroupName(name); err != nil {
+		return PropertyDefinition{}, errors.New("invalid property name")
+	}
+	if err := validateSensitivity(sensitivity); err != nil {
+		return PropertyDefinition{}, err
+	}
+	query := "?archived=" + strconv.FormatBool(archived) + "&dataSensitivity=" + url.QueryEscape(sensitivity)
+	if locale != "" {
+		query += "&locale=" + url.QueryEscape(locale)
+	}
+	var response PropertyDefinition
+	if err := c.transport.Do(ctx, Operation{Name: "property-definition-read", Method: http.MethodGet, Path: propertyDefinitionPath(objectType) + "/" + url.PathEscape(name) + query, Replay: ReplaySafe}, nil, &response); err != nil {
+		return PropertyDefinition{}, err
+	}
+	if response.Name == "" {
+		return PropertyDefinition{}, errors.New("HubSpot property response omitted name")
+	}
+	return response, nil
+}
+
+func validateSensitivity(value string) error {
+	switch value {
+	case "non_sensitive", "sensitive", "highly_sensitive":
+		return nil
+	default:
+		return errors.New("invalid property data sensitivity")
+	}
+}
+
+func propertyDefinitionPath(objectType string) string {
+	return "/crm/properties/2026-03/" + url.PathEscape(objectType)
 }
 
 type PropertyGroupClient struct {

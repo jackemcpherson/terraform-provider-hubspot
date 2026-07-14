@@ -234,12 +234,19 @@ func (t *Transport) Do(ctx context.Context, operation Operation, requestBody io.
 
 func (t *Transport) newRequest(ctx context.Context, operation Operation, body []byte) (*http.Request, error) {
 	requestURL := cloneURL(t.baseURL)
-	routePath, err := url.PathUnescape(operation.Path)
+	route, err := url.Parse(operation.Path)
+	if err != nil {
+		return nil, fmt.Errorf("invalid operation route: %w", err)
+	}
+	if route.Path == "" || !strings.HasPrefix(route.Path, "/") || route.Fragment != "" {
+		return nil, errors.New("invalid operation route")
+	}
+	routePath, err := url.PathUnescape(route.Path)
 	if err != nil {
 		return nil, fmt.Errorf("invalid operation route: %w", err)
 	}
 	requestURL.Path = strings.TrimSuffix(requestURL.Path, "/") + routePath
-	requestURL.RawQuery = ""
+	requestURL.RawQuery = route.RawQuery
 	requestURL.Fragment = ""
 	request, err := http.NewRequestWithContext(ctx, operation.Method, requestURL.String(), bytes.NewReader(body))
 	if err != nil {

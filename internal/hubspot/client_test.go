@@ -71,3 +71,27 @@ func TestPropertyGroupClientRejectsPathLikeIdentity(t *testing.T) {
 		t.Fatal("expected group name validation error")
 	}
 }
+
+func TestPropertyDefinitionClientSelectorsAndPagination(t *testing.T) {
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		calls++
+		if request.URL.Path != "/crm/properties/2026-03/contacts" || request.URL.Query().Get("archived") != "true" || request.URL.Query().Get("dataSensitivity") != "sensitive" || request.URL.Query().Get("locale") != "fr-fr" {
+			t.Fatalf("unexpected request: %s", request.URL.String())
+		}
+		if request.URL.Query().Get("after") == "" {
+			io.WriteString(writer, `{"results":[{"name":"first","label":"First","options":[{"value":"a","label":"A"}]}],"paging":{"next":{"after":"2"}}}`)
+			return
+		}
+		io.WriteString(writer, `{"results":[{"name":"second","label":"Second"}]}`)
+	}))
+	defer server.Close()
+	client := &PropertyDefinitionClient{transport: newTestTransport(t, server.URL)}
+	definitions, err := client.List(context.Background(), "contacts", true, "sensitive", "fr-fr")
+	if err != nil || len(definitions) != 2 || calls != 2 {
+		t.Fatalf("definitions=%#v calls=%d err=%v", definitions, calls, err)
+	}
+	if len(definitions[0].Options) != 1 || definitions[0].Options[0].Value != "a" {
+		t.Fatalf("options = %#v", definitions[0].Options)
+	}
+}
