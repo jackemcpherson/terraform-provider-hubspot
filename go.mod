@@ -4,7 +4,10 @@ go 1.25.0
 
 toolchain go1.26.5
 
-require github.com/hashicorp/terraform-plugin-framework v1.19.0
+require (
+	github.com/hashicorp/terraform-plugin-framework v1.19.0
+	golang.org/x/time v0.15.0
+)
 
 require (
 	github.com/fatih/color v1.18.0 // indirect

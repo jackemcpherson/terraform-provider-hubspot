@@ -5,14 +5,17 @@ package provider
 
 import (
 	"context"
+	"net/url"
 	"os"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/jackemcpherson/terraform-provider-hubspot/internal/hubspot"
 )
 
 const (
@@ -20,8 +23,8 @@ const (
 	tokenEnvironment  = "HUBSPOT_ACCESS_TOKEN"
 )
 
-// Provider is the protocol-6 provider skeleton. Remote clients are intentionally
-// introduced by the first resource tracer, not by provider configuration.
+// Provider is the protocol-6 provider. Configure creates an alias-local typed
+// client set so resources never need to handle credentials directly.
 type Provider struct {
 	version string
 }
@@ -29,10 +32,6 @@ type Provider struct {
 type providerData struct {
 	AccessToken types.String `tfsdk:"access_token"`
 	APIBaseURL  types.String `tfsdk:"api_base_url"`
-}
-
-type providerRuntimeData struct {
-	APIBaseURL types.String `tfsdk:"api_base_url"`
 }
 
 // New returns a fresh provider instance for each configured alias.
@@ -83,17 +82,26 @@ func (p *Provider) Configure(ctx context.Context, request provider.ConfigureRequ
 		data.APIBaseURL = types.StringValue(defaultAPIBaseURL)
 	}
 
-	// Configuration is deliberately local and side-effect free. The first remote
-	// tracer will validate these values when a client is actually required.
-	// Do not return the resolved token through provider data. The first remote
-	// tracer will pass credentials directly from this boundary into its transport.
-	runtimeData := providerRuntimeData{APIBaseURL: data.APIBaseURL}
-	response.DataSourceData = runtimeData
-	response.ResourceData = runtimeData
+	baseURL, err := url.Parse(data.APIBaseURL.ValueString())
+	if err != nil {
+		response.Diagnostics.AddAttributeError(path.Root("api_base_url"), "Invalid API base URL", "The configured API base URL could not be parsed.")
+		return
+	}
+	clients, err := hubspot.NewClientSet(hubspot.TransportConfig{
+		BaseURL:     baseURL,
+		AccessToken: data.AccessToken.ValueString(),
+		UserAgent:   "terraform-provider-hubspot/" + p.version + " protocol/6",
+	})
+	if err != nil {
+		response.Diagnostics.AddAttributeError(path.Root("api_base_url"), "Invalid API base URL", err.Error())
+		return
+	}
+	response.DataSourceData = clients
+	response.ResourceData = clients
 }
 
 func (p *Provider) Resources(context.Context) []func() resource.Resource {
-	return nil
+	return []func() resource.Resource{NewPropertyGroupResource}
 }
 
 func (p *Provider) DataSources(context.Context) []func() datasource.DataSource {
