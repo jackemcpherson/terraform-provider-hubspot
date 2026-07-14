@@ -1,0 +1,2 @@
+registry.opentofu.org/jackemcpherson/hubspot
+registry.terraform.io/jackemcpherson/hubspot

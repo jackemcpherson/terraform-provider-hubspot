@@ -1,0 +1,5 @@
+* @jackemcpherson
+.github/ @jackemcpherson
+go.mod @jackemcpherson
+go.sum @jackemcpherson
+terraform-registry-manifest.json @jackemcpherson

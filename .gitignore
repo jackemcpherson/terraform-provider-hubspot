@@ -1,0 +1,8 @@
+.DS_Store
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+dist/
+bin/
+coverage.out
