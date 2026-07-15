@@ -43,3 +43,13 @@ func TestPropertyDefinitionDataSourceSchemas(t *testing.T) {
 		}
 	}
 }
+
+func TestPropertyResourceSchema(t *testing.T) {
+	var response resource.SchemaResponse
+	NewPropertyResource().Schema(context.Background(), resource.SchemaRequest{}, &response)
+	for _, name := range []string{"id", "object_type", "name", "label", "group_name", "type", "field_type", "options"} {
+		if _, ok := response.Schema.Attributes[name]; !ok {
+			t.Fatalf("missing property attribute %q", name)
+		}
+	}
+}

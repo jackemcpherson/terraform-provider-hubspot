@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -33,12 +34,37 @@ func NewClientSet(config TransportConfig) (*ClientSet, error) {
 
 type PropertyDefinitionClient struct{ transport *Transport }
 
+type PropertyWrite struct {
+	Name               string
+	Label              string
+	GroupName          string
+	Type               string
+	FieldType          string
+	Description        *string
+	DisplayOrder       *int64
+	FormField          *bool
+	Hidden             *bool
+	HasUniqueValue     *bool
+	DataSensitivity    *string
+	ExternalOptions    *bool
+	ShowCurrencySymbol *bool
+	Options            []PropertyOption
+}
+
 type PropertyOption struct {
 	Value        string  `json:"value"`
 	Label        string  `json:"label"`
 	Description  *string `json:"description"`
 	DisplayOrder *int64  `json:"displayOrder"`
 	Hidden       *bool   `json:"hidden"`
+}
+
+type propertyOptionPayload struct {
+	Value        string  `json:"value"`
+	Label        string  `json:"label"`
+	Description  *string `json:"description,omitempty"`
+	DisplayOrder *int64  `json:"displayOrder,omitempty"`
+	Hidden       *bool   `json:"hidden,omitempty"`
 }
 
 type ModificationMetadata struct {
@@ -158,6 +184,116 @@ func validateSensitivity(value string) error {
 
 func propertyDefinitionPath(objectType string) string {
 	return "/crm/properties/2026-03/" + url.PathEscape(objectType)
+}
+
+func (c *PropertyDefinitionClient) Create(ctx context.Context, objectType string, input PropertyWrite) (PropertyDefinition, error) {
+	if err := validateObjectType(objectType); err != nil {
+		return PropertyDefinition{}, err
+	}
+	if err := validateGroupName(input.Name); err != nil {
+		return PropertyDefinition{}, errors.New("invalid property name")
+	}
+	if err := validatePropertyShape(input.Type, input.FieldType, input.ExternalOptions, input.Options); err != nil {
+		return PropertyDefinition{}, err
+	}
+	body, err := json.Marshal(propertyWritePayload(input, true))
+	if err != nil {
+		return PropertyDefinition{}, err
+	}
+	var response PropertyDefinition
+	if err := c.transport.Do(ctx, Operation{Name: "property-create", Method: http.MethodPost, Path: propertyDefinitionPath(objectType), Replay: ReplayNever}, bytes.NewReader(body), &response); err != nil {
+		return PropertyDefinition{}, err
+	}
+	if response.Name == "" {
+		return PropertyDefinition{}, errors.New("HubSpot property response omitted name")
+	}
+	return response, nil
+}
+
+func (c *PropertyDefinitionClient) Update(ctx context.Context, objectType, name string, input PropertyWrite) (PropertyDefinition, error) {
+	if err := validateObjectType(objectType); err != nil {
+		return PropertyDefinition{}, err
+	}
+	if err := validateGroupName(name); err != nil {
+		return PropertyDefinition{}, errors.New("invalid property name")
+	}
+	if err := validatePropertyShape(input.Type, input.FieldType, input.ExternalOptions, input.Options); err != nil {
+		return PropertyDefinition{}, err
+	}
+	body, err := json.Marshal(propertyWritePayload(input, false))
+	if err != nil {
+		return PropertyDefinition{}, err
+	}
+	var response PropertyDefinition
+	if err := c.transport.Do(ctx, Operation{Name: "property-update", Method: http.MethodPatch, Path: propertyDefinitionPath(objectType) + "/" + url.PathEscape(name), Replay: ReplayExplicit}, bytes.NewReader(body), &response); err != nil {
+		return PropertyDefinition{}, err
+	}
+	if response.Name == "" {
+		return PropertyDefinition{}, errors.New("HubSpot property response omitted name")
+	}
+	return response, nil
+}
+
+func (c *PropertyDefinitionClient) Archive(ctx context.Context, objectType, name string) error {
+	if err := validateObjectType(objectType); err != nil {
+		return err
+	}
+	if err := validateGroupName(name); err != nil {
+		return errors.New("invalid property name")
+	}
+	return c.transport.Do(ctx, Operation{Name: "property-archive", Method: http.MethodDelete, Path: propertyDefinitionPath(objectType) + "/" + url.PathEscape(name), Replay: ReplayExplicit}, nil, nil)
+}
+
+func propertyWritePayload(input PropertyWrite, create bool) map[string]any {
+	payload := map[string]any{"label": input.Label, "groupName": input.GroupName, "type": input.Type, "fieldType": input.FieldType}
+	for key, value := range map[string]any{"description": input.Description, "displayOrder": input.DisplayOrder, "formField": input.FormField, "hidden": input.Hidden, "showCurrencySymbol": input.ShowCurrencySymbol} {
+		if value != nil {
+			payload[key] = value
+		}
+	}
+	if create {
+		payload["name"] = input.Name
+		if input.HasUniqueValue != nil {
+			payload["hasUniqueValue"] = input.HasUniqueValue
+		}
+		if input.DataSensitivity != nil {
+			payload["dataSensitivity"] = input.DataSensitivity
+		}
+		if input.ExternalOptions != nil {
+			payload["externalOptions"] = input.ExternalOptions
+		}
+	}
+	if input.Options != nil {
+		options := append([]PropertyOption(nil), input.Options...)
+		sort.Slice(options, func(i, j int) bool { return options[i].Value < options[j].Value })
+		encoded := make([]propertyOptionPayload, 0, len(options))
+		for _, option := range options {
+			encoded = append(encoded, propertyOptionPayload{Value: option.Value, Label: option.Label, Description: option.Description, DisplayOrder: option.DisplayOrder, Hidden: option.Hidden})
+		}
+		payload["options"] = encoded
+	}
+	return payload
+}
+
+func validatePropertyShape(kind, field string, external *bool, options []PropertyOption) error {
+	valid := map[string]map[string]bool{"bool": {"booleancheckbox": true, "calculation_equation": true}, "enumeration": {"booleancheckbox": true, "checkbox": true, "radio": true, "select": true, "calculation_equation": true}, "date": {"date": true}, "datetime": {"date": true}, "string": {"file": true, "text": true, "textarea": true, "calculation_equation": true, "html": true, "phonenumber": true}, "number": {"number": true, "calculation_equation": true}}
+	if !valid[kind][field] {
+		return errors.New("invalid property type and field type combination")
+	}
+	if kind == "enumeration" && (external == nil || !*external) && len(options) == 0 {
+		return errors.New("enumeration properties require options")
+	}
+	if kind != "enumeration" || (external != nil && *external) {
+		if len(options) != 0 {
+			return errors.New("options are only valid for non-external enumeration properties")
+		}
+	}
+	for _, option := range options {
+		if option.Value == "" || option.Label == "" {
+			return errors.New("property options require value and label")
+		}
+	}
+	return nil
 }
 
 type PropertyGroupClient struct {
