@@ -1,3 +1,5 @@
+# Development-only: hubspot_custom_object_schema is not registered in
+# v0.1.0-alpha.1.
 resource "hubspot_custom_object_schema" "widget" {
   name                         = "widget"
   labels                       = { singular = "Widget", plural = "Widgets" }

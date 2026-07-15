@@ -8,18 +8,16 @@ emits a warning.
 
 The accepted `type` values are `bool`, `enumeration`, `date`, `datetime`,
 `string`, and `number`; `field_type` must be nonempty. HubSpot still validates
-whether a particular pair and its advanced fields are compatible. When
-`external_options = true`, leave `options` unset because HubSpot owns that set.
+whether a particular pair is compatible.
 
 Changing `type` or `field_type` updates the existing definition, emits a warning,
 and can change how HubSpot interprets record values. Review the plan and the
 affected data before applying. The provider does not inspect those values.
-Unique-value, external option ownership, sensitivity, referenced object type,
-object type, and internal name changes replace the resource.
+Object type and internal name changes replace the resource.
 
-Planning `sensitive` or `highly_sensitive` emits a separate warning covering the
-Enterprise gate, object-specific write scope, immutable classification, and
-HubSpot's permanent deletion after 90 days in archive.
+The Free alpha rejects `sensitive`, `highly_sensitive`, calculated, currency,
+external-option, unique-value, and referenced-object configurations at plan.
+Those fields remain reserved for a later paid-account-qualified release.
 
 Destroy archives a property and removes it from state after a confirming read.
 The provider has no restore operation. HubSpot-defined and read-only definitions

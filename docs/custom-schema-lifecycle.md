@@ -1,5 +1,8 @@
 # Custom schema ownership and teardown
 
+> Development roadmap: `hubspot_custom_object_schema` is not registered in
+> `v0.1.0-alpha.1`; its live gates require an eligible paid HubSpot account.
+
 `hubspot_custom_object_schema` owns its bootstrap `properties` map for the full
 schema lifetime. Every primary, required, searchable, and secondary display role
 must refer to a name in that map. Moving a bootstrap property to a standalone

@@ -45,10 +45,10 @@ jobs:
       - name: Verify exact commit
         run: |
           test "${#CANDIDATE_COMMIT}" -eq 40
-          test "$WORKFLOW_REF" = refs/heads/main
+          test "$WORKFLOW_REF" = refs/heads/release/free-alpha
           test "$(git rev-parse HEAD)" = "$CANDIDATE_COMMIT"
-          git fetch --no-tags "https://github.com/$REPOSITORY.git" main:refs/remotes/origin/main
-          git merge-base --is-ancestor "$CANDIDATE_COMMIT" refs/remotes/origin/main
+          git fetch --no-tags "https://github.com/$REPOSITORY.git" release/free-alpha:refs/remotes/origin/release/free-alpha
+          git merge-base --is-ancestor "$CANDIDATE_COMMIT" refs/remotes/origin/release/free-alpha
       - name: Qualify deterministic surface
         run: make tools && make check
 
@@ -186,7 +186,8 @@ jobs:
             --arg security "$SECURITY_RESULT" \
             --arg capability "$CAPABILITY_RESULT" \
             --arg build "$BUILD_RESULT" \
-            '{commit:$commit,gates:[$deterministic,$engine,$security,$capability,$build]}' >candidate-report.json
+            --arg surface "free-alpha" \
+            '{commit:$commit,surface:$surface,gates:[$deterministic,$engine,$security,$capability,$build]}' >candidate-report.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: candidate-${{ inputs.commit }}

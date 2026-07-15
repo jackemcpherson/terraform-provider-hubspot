@@ -5,6 +5,11 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"slices"
+	"sort"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -12,6 +17,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 )
 
 func TestProviderMetadata(t *testing.T) {
@@ -50,6 +56,53 @@ func TestProviderServesProtocol6(t *testing.T) {
 	if _, err := providerserver.NewProtocol6WithError(New("test")())(); err != nil {
 		t.Fatalf("protocol 6 server construction failed: %v", err)
 	}
+}
+
+func TestProviderProtocolSchemaMatchesFreeAlphaSurface(t *testing.T) {
+	type releaseSurface struct {
+		Channel     string   `json:"channel"`
+		Resources   []string `json:"resources"`
+		DataSources []string `json:"data_sources"`
+	}
+	raw, err := os.ReadFile(filepath.Join("..", "..", "release", "surface.json"))
+	if err != nil {
+		t.Fatalf("read release surface: %v", err)
+	}
+	var surface releaseSurface
+	if err := json.Unmarshal(raw, &surface); err != nil {
+		t.Fatalf("decode release surface: %v", err)
+	}
+	wantResources := []string{"hubspot_property", "hubspot_property_group"}
+	wantDataSources := []string{"hubspot_property_definition", "hubspot_property_definitions"}
+	if surface.Channel != "free-alpha" || !slices.Equal(surface.Resources, wantResources) || !slices.Equal(surface.DataSources, wantDataSources) {
+		t.Fatalf("release surface does not match the accepted Free alpha inventory: %#v", surface)
+	}
+
+	server, err := providerserver.NewProtocol6WithError(New("test")())()
+	if err != nil {
+		t.Fatalf("construct protocol 6 provider: %v", err)
+	}
+	response, err := server.GetProviderSchema(context.Background(), &tfprotov6.GetProviderSchemaRequest{})
+	if err != nil {
+		t.Fatalf("read protocol provider schema: %v", err)
+	}
+	if len(response.Diagnostics) != 0 {
+		t.Fatalf("protocol schema diagnostics: %#v", response.Diagnostics)
+	}
+	gotResources := sortedSchemaNames(response.ResourceSchemas)
+	gotDataSources := sortedSchemaNames(response.DataSourceSchemas)
+	if !slices.Equal(gotResources, wantResources) || !slices.Equal(gotDataSources, wantDataSources) {
+		t.Fatalf("public provider inventory = resources %v, data sources %v", gotResources, gotDataSources)
+	}
+}
+
+func sortedSchemaNames(schemas map[string]*tfprotov6.Schema) []string {
+	names := make([]string, 0, len(schemas))
+	for name := range schemas {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func TestAPIBaseURLValidator(t *testing.T) {

@@ -1,5 +1,8 @@
 # Pipeline lifecycle
 
+> Development roadmap: `hubspot_pipeline` is not registered in
+> `v0.1.0-alpha.1`; its live gates require an eligible paid HubSpot account.
+
 `hubspot_pipeline` owns a complete pipeline and its writable stages. Stage
 map keys are Terraform-local for newly created pipelines; imported or observed
 out-of-band stages use their HubSpot stage IDs permanently. Keys are not labels

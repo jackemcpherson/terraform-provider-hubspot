@@ -41,5 +41,27 @@ if grep -q -- '--snapshot' .github/workflows/release.yml; then
 fi
 grep -q 'smoke-release-archive.sh' .github/workflows/release.yml
 grep -q -- '--draft=false' .github/workflows/release.yml
+grep -q -- '--draft=false --prerelease --latest=false' .github/workflows/release.yml
 grep -q 'verify-released-provider.sh' .github/workflows/verify-release.yml
 grep -q 'verify-state-migration.sh' .github/workflows/verify-release.yml
+
+grep -q '"channel": "free-alpha"' release/surface.json
+grep -q 'shard: \[free_properties\]' .github/workflows/acceptance.yml
+if grep -Eq 'deal_pipelines|ticket_pipelines|custom_schemas|sensitive_properties|custom_pipelines' .github/workflows/acceptance.yml; then
+  echo "Free alpha acceptance workflow includes an unreleased paid shard" >&2
+  exit 1
+fi
+test "$(grep -c 'case_id: free_properties_' .github/workflows/verify-release.yml)" -eq 2 || {
+  echo "Free alpha released verification must cover Free properties on both engines" >&2
+  exit 1
+}
+if grep -Eq 'deal_pipelines|ticket_pipelines|custom_schemas|sensitive_properties|custom_pipelines' .github/workflows/verify-release.yml; then
+  echo "Free alpha released verification includes an unreleased paid shard" >&2
+  exit 1
+fi
+grep -q 'surface:"free-alpha"' .github/workflows/verify-release.yml
+test "$(grep -c 'ref: refs/tags/\${{ inputs.version }}' .github/workflows/verify-release.yml)" -eq 4
+grep -q 'refs/heads/release/free-alpha' .github/workflows/release-candidate.yml
+grep -q -- '--arg surface "free-alpha"' .github/workflows/release-candidate.yml
+grep -q '.surface == "free-alpha"' scripts/verify-candidate-report.sh
+grep -q 'test "$version" = v0.1.0-alpha.1' scripts/release-preflight.sh

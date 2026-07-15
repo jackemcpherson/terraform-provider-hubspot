@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Published v-prefixed SemVer
+        description: Published Free-alpha v-prefixed SemVer
         required: true
         type: string
 
@@ -26,8 +26,10 @@ jobs:
       GPG_PUBLIC_KEY: ${{ vars.GPG_PUBLIC_KEY }}
       VERSION: ${{ inputs.version }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Check out the immutable release tag
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: refs/tags/${{ inputs.version }}
           persist-credentials: false
       - name: Download and verify immutable assets
         run: |
@@ -57,8 +59,10 @@ jobs:
       PROVIDER_ADDRESS: ${{ matrix.address }}
       VERSION: ${{ inputs.version }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Check out the immutable release tag
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: refs/tags/${{ inputs.version }}
           persist-credentials: false
       - if: matrix.engine == 'tofu'
         uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
@@ -90,26 +94,6 @@ jobs:
             shard: free_properties
             engine: terraform
             address: registry.terraform.io/jackemcpherson/hubspot
-          - case_id: deal_pipelines_terraform
-            shard: deal_pipelines
-            engine: terraform
-            address: registry.terraform.io/jackemcpherson/hubspot
-          - case_id: ticket_pipelines_tofu
-            shard: ticket_pipelines
-            engine: tofu
-            address: registry.opentofu.org/jackemcpherson/hubspot
-          - case_id: custom_schemas_terraform
-            shard: custom_schemas
-            engine: terraform
-            address: registry.terraform.io/jackemcpherson/hubspot
-          - case_id: sensitive_properties_tofu
-            shard: sensitive_properties
-            engine: tofu
-            address: registry.opentofu.org/jackemcpherson/hubspot
-          - case_id: custom_pipelines_terraform
-            shard: custom_pipelines
-            engine: terraform
-            address: registry.terraform.io/jackemcpherson/hubspot
     environment: ${{ matrix.shard }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -127,8 +111,10 @@ jobs:
       SHARD: ${{ matrix.shard }}
       VERSION: ${{ inputs.version }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Check out the immutable release tag
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: refs/tags/${{ inputs.version }}
           persist-credentials: false
       - if: matrix.engine == 'tofu'
         uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
@@ -158,8 +144,10 @@ jobs:
       HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
       VERSION: ${{ inputs.version }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Check out the immutable release tag
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: refs/tags/${{ inputs.version }}
           persist-credentials: false
       - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with:
@@ -193,6 +181,7 @@ jobs:
             --arg migration "$MIGRATION_RESULT" \
             '{
               version:$version,
+              surface:"free-alpha",
               assets:$assets,
               engines:[
                 {engine:"terraform-1.15.8",address:"registry.terraform.io/jackemcpherson/hubspot",status:$install},
@@ -200,12 +189,7 @@ jobs:
               ],
               capabilities:[
                 {shard:"free_properties",engine:"terraform-1.15.8",status:$live},
-                {shard:"free_properties",engine:"tofu-1.12.3",status:$live},
-                {shard:"deal_pipelines",engine:"terraform-1.15.8",status:$live},
-                {shard:"ticket_pipelines",engine:"tofu-1.12.3",status:$live},
-                {shard:"custom_schemas",engine:"terraform-1.15.8",status:$live},
-                {shard:"sensitive_properties",engine:"tofu-1.12.3",status:$live},
-                {shard:"custom_pipelines",engine:"terraform-1.15.8",status:$live}
+                {shard:"free_properties",engine:"tofu-1.12.3",status:$live}
               ],
               state_migrations:[
                 {from:"registry.terraform.io",to:"registry.opentofu.org",status:$migration},

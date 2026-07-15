@@ -26,7 +26,8 @@ const (
 // Provider is the protocol-6 provider. Configure creates an alias-local typed
 // client set so resources never need to handle credentials directly.
 type Provider struct {
-	version string
+	version            string
+	developmentSurface bool
 }
 
 type providerData struct {
@@ -41,6 +42,15 @@ func New(version string) func() provider.Provider {
 	}
 }
 
+// NewDevelopment returns the full in-progress provider used by offline tests.
+// Release binaries always use New so unqualified resources cannot enter their
+// public protocol schema.
+func NewDevelopment(version string) func() provider.Provider {
+	return func() provider.Provider {
+		return &Provider{version: version, developmentSurface: true}
+	}
+}
+
 func (p *Provider) Metadata(_ context.Context, _ provider.MetadataRequest, response *provider.MetadataResponse) {
 	response.TypeName = "hubspot"
 	response.Version = p.version
@@ -48,7 +58,7 @@ func (p *Provider) Metadata(_ context.Context, _ provider.MetadataRequest, respo
 
 func (p *Provider) Schema(_ context.Context, _ provider.SchemaRequest, response *provider.SchemaResponse) {
 	response.Schema = schema.Schema{
-		Description: "OpenTofu-first provider for declarative HubSpot CRM configuration.",
+		Description: "Free alpha of an OpenTofu-first provider for HubSpot CRM property configuration.",
 		Attributes: map[string]schema.Attribute{
 			"access_token": schema.StringAttribute{
 				Optional:            true,
@@ -101,7 +111,10 @@ func (p *Provider) Configure(ctx context.Context, request provider.ConfigureRequ
 }
 
 func (p *Provider) Resources(context.Context) []func() resource.Resource {
-	return []func() resource.Resource{NewPropertyGroupResource, NewPropertyResource, NewPipelineResource, NewCustomSchemaResource}
+	if p.developmentSurface {
+		return []func() resource.Resource{newDevelopmentPropertyResource, NewPropertyGroupResource, NewPipelineResource, NewCustomSchemaResource}
+	}
+	return []func() resource.Resource{NewPropertyResource, NewPropertyGroupResource}
 }
 
 func (p *Provider) DataSources(context.Context) []func() datasource.DataSource {

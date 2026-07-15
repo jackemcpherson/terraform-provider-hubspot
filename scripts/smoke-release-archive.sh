@@ -3,6 +3,7 @@ set -eu
 
 assets=${1:?release assets directory is required}
 version=${2:?release version is required}
+command -v jq >/dev/null 2>&1 || { echo "jq is required" >&2; exit 1; }
 case "$version" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "version must be v-prefixed SemVer" >&2; exit 1 ;; esac
 
 release_version=${version#v}
@@ -51,7 +52,12 @@ terraform {
 provider "hubspot" { access_token = "smoke-only" }
 EOF
   TF_CLI_CONFIG_FILE="$tmp/cli.tfrc" "$engine" -chdir="$work" init -backend=false -input=false >/dev/null
-  TF_CLI_CONFIG_FILE="$tmp/cli.tfrc" "$engine" -chdir="$work" providers schema -json | grep -q 'hubspot_property_group'
+  schema_json=$(TF_CLI_CONFIG_FILE="$tmp/cli.tfrc" "$engine" -chdir="$work" providers schema -json)
+  printf '%s' "$schema_json" | jq -e '
+    (.provider_schemas | length) == 1 and
+    ((.provider_schemas | to_entries[0].value.resource_schemas | keys) == ["hubspot_property", "hubspot_property_group"]) and
+    ((.provider_schemas | to_entries[0].value.data_source_schemas | keys) == ["hubspot_property_definition", "hubspot_property_definitions"])
+  ' >/dev/null || { echo "archive provider schema does not match the Free alpha surface" >&2; exit 1; }
 }
 
 smoke terraform registry.terraform.io/jackemcpherson/hubspot

@@ -232,7 +232,7 @@ jobs:
           git push "https://x-access-token:$GH_TOKEN@github.com/$REPOSITORY.git" "refs/tags/$VERSION"
       - name: Create, re-download, and verify draft
         run: |
-          gh release create "$VERSION" bundle/assets/* --repo "$REPOSITORY" --draft --verify-tag --title "$VERSION" --notes-file bundle/metadata/release-notes.md
+          gh release create "$VERSION" bundle/assets/* --repo "$REPOSITORY" --draft --prerelease --latest=false --verify-tag --title "$VERSION" --notes-file bundle/metadata/release-notes.md
           mkdir draft-assets
           gh release download "$VERSION" --repo "$REPOSITORY" --dir draft-assets
           ./scripts/compare-asset-sets.sh bundle/assets draft-assets
@@ -241,4 +241,4 @@ jobs:
             gh attestation verify "$archive" --repo "$REPOSITORY"
           done
       - name: Publish immutable release
-        run: gh release edit "$VERSION" --repo "$REPOSITORY" --draft=false --latest
+        run: gh release edit "$VERSION" --repo "$REPOSITORY" --draft=false --prerelease --latest=false

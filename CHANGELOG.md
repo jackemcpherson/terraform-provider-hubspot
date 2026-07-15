@@ -28,3 +28,19 @@ All notable changes to this project are documented here.
   reference failures, with paid capability and released-artifact acceptance gates.
 - Add offline ticket/custom pipeline metadata qualification plus fail-closed
   Service Hub ticket live, janitor, engine-parity, and released-artifact scaffolds.
+
+## [0.1.0-alpha.1] - 2026-07-16
+
+### Added
+
+- Free-tier management of ordinary non-sensitive scalar and enumeration property
+  definitions and their property groups.
+- Read-only singular and collection property-definition discovery.
+- OpenTofu and Terraform lifecycle, import, drift, cleanup, state-portability,
+  signed-release, and released-artifact verification for the exact Free surface.
+
+### Limitations
+
+- Pipelines, custom object schemas, and advanced or sensitive property fields are
+  not registered as supported in this alpha. Their implementation remains under
+  offline development until eligible paid-account acceptance is available.

@@ -123,7 +123,11 @@ func Run(t testing.TB, options Options, scenario func(*Session)) {
 			t.Fatalf("install exact acceptance provider binary: %v", err)
 		}
 	} else {
-		build := exec.Command("go", "build", "-trimpath", "-o", providerBinary, root)
+		buildTarget := root
+		if options.Shard != FreeProperties {
+			buildTarget = filepath.Join(root, "internal", "acceptance", "testprovider")
+		}
+		build := exec.Command("go", "build", "-trimpath", "-o", providerBinary, buildTarget)
 		build.Dir = root
 		build.Env = append(os.Environ(), "CGO_ENABLED=0", "GOTOOLCHAIN=local")
 		if output, err := build.CombinedOutput(); err != nil {

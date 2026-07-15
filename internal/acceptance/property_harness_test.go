@@ -35,6 +35,20 @@ func TestRunExecutesPropertyLifecycleThroughOpenTofu(t *testing.T) {
 		ProbeBaseURL: server.URL,
 	}, func(session *acceptance.Session) {
 		initial := propertyConfig(server.URL, "Initial property", "")
+		advanced := strings.Replace(initial, `description = ""`, `description         = ""
+  calculation_formula = "1 + 1"`, 1)
+		session.RequirePlanFailure(advanced, "Free alpha property surface")
+		emptyAdvanced := strings.Replace(initial, `description = ""`, `description         = ""
+  calculation_formula = ""`, 1)
+		session.RequirePlanFailure(emptyAdvanced, "Free alpha property surface")
+		unknownAdvanced := strings.Replace(initial, `provider "hubspot" {`, `resource "terraform_data" "formula" {
+  input = "1 + 1"
+}
+
+provider "hubspot" {`, 1)
+		unknownAdvanced = strings.Replace(unknownAdvanced, `description = ""`, `description         = ""
+  calculation_formula = terraform_data.formula.output`, 1)
+		session.RequirePlanFailure(unknownAdvanced, "Free alpha property surface")
 		invalidDateHint := strings.Replace(initial, `description = ""`, `date_display_hint = "absolute"`, 1)
 		session.RequireValidationFailure(invalidDateHint, "Unsupported argument")
 		session.Apply(initial)

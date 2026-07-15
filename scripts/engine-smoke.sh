@@ -5,11 +5,24 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 
+for config in \
+  examples/provider/provider.tf \
+  examples/aliases/main.tf \
+  examples/property-definition/main.tf \
+  examples/property-group/main.tf \
+  examples/property/main.tf
+do
+  grep -F 'version = "= 0.1.0-alpha.1"' "$root/$config" >/dev/null || {
+    echo "$config must pin v0.1.0-alpha.1 exactly" >&2
+    exit 1
+  }
+done
+
 mkdir -p "$tmp/bin" "$tmp/examples"
-for example in provider property-definition property-group property pipeline custom-schema aliases; do
+for example in provider property-definition property-group property aliases; do
   cp -R "$root/examples/$example" "$tmp/examples/$example"
 done
-for example in hubspot_property_group hubspot_property hubspot_pipeline hubspot_custom_object_schema; do
+for example in hubspot_property_group hubspot_property; do
   mkdir -p "$tmp/examples/reference-$example"
   cp "$root/examples/resources/$example/resource.tf" "$tmp/examples/reference-$example/resource.tf"
   cp "$root/examples/provider/provider.tf" "$tmp/examples/reference-$example/provider.tf"
@@ -31,7 +44,7 @@ provider_installation {
 }
 EOF
 
-examples="provider property-definition property-group property pipeline custom-schema aliases reference-hubspot_property_group reference-hubspot_property reference-hubspot_pipeline reference-hubspot_custom_object_schema reference-hubspot_property_definition reference-hubspot_property_definitions"
+examples="provider property-definition property-group property aliases reference-hubspot_property_group reference-hubspot_property reference-hubspot_property_definition reference-hubspot_property_definitions"
 
 check_examples() {
   engine=$1
@@ -43,7 +56,7 @@ check_examples() {
     fi
     TF_CLI_CONFIG_FILE="$cli_config" "$engine" -chdir="$tmp/examples/$example" validate
     case "$example" in
-      property-group|property|pipeline|custom-schema|aliases|reference-hubspot_property_group|reference-hubspot_property|reference-hubspot_pipeline|reference-hubspot_custom_object_schema)
+      property-group|property|aliases|reference-hubspot_property_group|reference-hubspot_property)
         HUBSPOT_ACCESS_TOKEN=example TF_VAR_sandbox_hubspot_access_token=example TF_CLI_CONFIG_FILE="$cli_config" "$engine" -chdir="$tmp/examples/$example" plan -refresh=false -input=false -lock=false -out="$tmp/$engine-$example.plan" >/dev/null
         ;;
     esac

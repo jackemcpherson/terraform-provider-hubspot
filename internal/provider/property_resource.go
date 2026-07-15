@@ -22,8 +22,15 @@ import (
 )
 
 type PropertyResource struct {
-	client *hubspot.PropertyDefinitionClient
+	client    *hubspot.PropertyDefinitionClient
+	freeAlpha bool
 }
+
+const (
+	freeAlphaPropertySummary = "Free alpha property surface"
+	freeAlphaPropertyDetail  = "This alpha manages ordinary non-sensitive scalar and enumeration property definitions only. Advanced, sensitive, calculated, currency, external-option, unique-value, and referenced-object fields are not registered as supported until their paid live gates pass."
+)
+
 type propertyOptionModel struct {
 	Label        types.String `tfsdk:"label"`
 	Description  types.String `tfsdk:"description"`
@@ -54,12 +61,15 @@ type propertyResourceModel struct {
 	Options              types.Map    `tfsdk:"options"`
 }
 
-func NewPropertyResource() resource.Resource { return &PropertyResource{} }
+func NewPropertyResource() resource.Resource { return &PropertyResource{freeAlpha: true} }
+func newDevelopmentPropertyResource() resource.Resource {
+	return &PropertyResource{}
+}
 func (r *PropertyResource) Metadata(_ context.Context, _ resource.MetadataRequest, response *resource.MetadataResponse) {
 	response.TypeName = "hubspot_property"
 }
 func (r *PropertyResource) Schema(_ context.Context, _ resource.SchemaRequest, response *resource.SchemaResponse) {
-	response.Schema = schema.Schema{Version: 1, Description: "Manages one ordinary or enumeration HubSpot CRM property definition.", Attributes: map[string]schema.Attribute{
+	response.Schema = schema.Schema{Version: 1, Description: "Manages one ordinary non-sensitive scalar or enumeration HubSpot CRM property definition in the Free alpha.", Attributes: map[string]schema.Attribute{
 		"id":                     schema.StringAttribute{Computed: true, Description: "Canonical object_type/property_name identity.", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"object_type":            schema.StringAttribute{Required: true, Description: "Exact CRM object type; changes replace the definition.", Validators: []validator.String{identifierValidator{kind: "CRM object type"}}, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
 		"name":                   schema.StringAttribute{Required: true, Description: "Immutable property name; changes replace the definition.", Validators: []validator.String{identifierValidator{kind: "property name"}}, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
@@ -71,15 +81,15 @@ func (r *PropertyResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 		"display_order":          schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(-1), Description: "HubSpot display order; defaults to -1."},
 		"form_field":             schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: "Whether the property can appear in forms; defaults to false."},
 		"hidden":                 schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: "Whether HubSpot hides the property; defaults to false."},
-		"has_unique_value":       schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: "Whether values must be unique; defaults to false and changes replace the definition.", PlanModifiers: []planmodifier.Bool{boolRequiresReplace{}}},
-		"data_sensitivity":       schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("non_sensitive"), Description: "One of non_sensitive, sensitive, or highly_sensitive; defaults to non_sensitive and changes replace the definition.", Validators: []validator.String{sensitivityValidator{}}, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
-		"external_options":       schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: "Delegates option ownership to HubSpot; defaults to false and changes replace the definition.", PlanModifiers: []planmodifier.Bool{boolRequiresReplace{}}},
-		"show_currency_symbol":   schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: "Whether HubSpot shows a currency symbol; defaults to false."},
-		"calculation_formula":    schema.StringAttribute{Optional: true, Computed: true, Description: "HubSpot calculation formula; omitted when null.", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
-		"currency_property_name": schema.StringAttribute{Optional: true, Computed: true, Description: "Internal name of the currency source property; omitted when null.", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
-		"number_display_hint":    schema.StringAttribute{Optional: true, Computed: true, Description: "HubSpot number display hint; omitted when null.", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
-		"text_display_hint":      schema.StringAttribute{Optional: true, Computed: true, Description: "HubSpot text display hint; omitted when null.", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
-		"referenced_object_type": schema.StringAttribute{Optional: true, Computed: true, Description: "Referenced CRM object type; changes replace the definition.", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplace()}},
+		"has_unique_value":       schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: "Reserved for a later paid-account-qualified release; the Free alpha requires false.", PlanModifiers: []planmodifier.Bool{boolRequiresReplace{}}},
+		"data_sensitivity":       schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("non_sensitive"), Description: "Property sensitivity classification; the Free alpha accepts non_sensitive only.", Validators: []validator.String{sensitivityValidator{}}, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
+		"external_options":       schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: "Reserved for a later paid-account-qualified release; the Free alpha requires false.", PlanModifiers: []planmodifier.Bool{boolRequiresReplace{}}},
+		"show_currency_symbol":   schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: "Reserved for a later paid-account-qualified release; the Free alpha requires false."},
+		"calculation_formula":    schema.StringAttribute{Optional: true, Computed: true, Description: "Reserved for a later paid-account-qualified release; the Free alpha requires this field to be unset.", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"currency_property_name": schema.StringAttribute{Optional: true, Computed: true, Description: "Reserved for a later paid-account-qualified release; the Free alpha requires this field to be unset.", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"number_display_hint":    schema.StringAttribute{Optional: true, Computed: true, Description: "Reserved for a later paid-account-qualified release; the Free alpha requires this field to be unset.", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"text_display_hint":      schema.StringAttribute{Optional: true, Computed: true, Description: "Reserved for a later paid-account-qualified release; the Free alpha requires this field to be unset.", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+		"referenced_object_type": schema.StringAttribute{Optional: true, Computed: true, Description: "Reserved for a later paid-account-qualified release; the Free alpha requires this field to be unset.", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplace()}},
 		"options": schema.MapNestedAttribute{Optional: true, Computed: true, Description: "Complete option set keyed by immutable CRM record value.", PlanModifiers: []planmodifier.Map{mapplanmodifier.UseStateForUnknown()}, NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
 			"label":         schema.StringAttribute{Required: true, Description: "Option display label."},
 			"description":   schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString(""), Description: "Option description; defaults to an empty string."},
@@ -112,6 +122,17 @@ func (r *PropertyResource) ModifyPlan(ctx context.Context, request resource.Modi
 	if response.Diagnostics.HasError() {
 		return
 	}
+	if r.freeAlpha {
+		var config propertyResourceModel
+		response.Diagnostics.Append(request.Config.Get(ctx, &config)...)
+		if response.Diagnostics.HasError() {
+			return
+		}
+		if freeAlphaUnsupportedConfig(config) || freeAlphaUnsupportedPlan(plan) {
+			response.Diagnostics.AddError(freeAlphaPropertySummary, freeAlphaPropertyDetail)
+			return
+		}
+	}
 	if !plan.DataSensitivity.IsNull() && !plan.DataSensitivity.IsUnknown() && plan.DataSensitivity.ValueString() != "non_sensitive" {
 		response.Diagnostics.AddWarning("Sensitive property tier and retention risk", "Sensitive and highly_sensitive properties require Enterprise eligibility and object-specific sensitive write scopes. Classification is immutable, and archived sensitive properties are permanently deleted after 90 days; verify account tier, scopes, and cleanup before apply.")
 	}
@@ -130,7 +151,66 @@ func (r *PropertyResource) ModifyPlan(ctx context.Context, request resource.Modi
 		response.Diagnostics.AddWarning("Property option values changed", "HubSpot does not migrate existing CRM record values when option keys are removed or renamed.")
 	}
 }
+
+func freeAlphaUnsupportedConfig(config propertyResourceModel) bool {
+	for _, value := range []types.Bool{config.HasUniqueValue, config.ExternalOptions, config.ShowCurrencySymbol} {
+		if !value.IsNull() && (value.IsUnknown() || value.ValueBool()) {
+			return true
+		}
+	}
+	if !config.DataSensitivity.IsNull() && (config.DataSensitivity.IsUnknown() || config.DataSensitivity.ValueString() != "non_sensitive") {
+		return true
+	}
+	for _, value := range []types.String{
+		config.CalculationFormula,
+		config.CurrencyPropertyName,
+		config.NumberDisplayHint,
+		config.TextDisplayHint,
+		config.ReferencedObjectType,
+	} {
+		if !value.IsNull() {
+			return true
+		}
+	}
+	return false
+}
+
+func freeAlphaUnsupportedPlan(plan propertyResourceModel) bool {
+	if knownTrue(plan.HasUniqueValue) || knownTrue(plan.ExternalOptions) || knownTrue(plan.ShowCurrencySymbol) {
+		return true
+	}
+	if !plan.DataSensitivity.IsNull() && !plan.DataSensitivity.IsUnknown() && plan.DataSensitivity.ValueString() != "non_sensitive" {
+		return true
+	}
+	for _, value := range []types.String{
+		plan.CalculationFormula,
+		plan.CurrencyPropertyName,
+		plan.NumberDisplayHint,
+		plan.TextDisplayHint,
+		plan.ReferencedObjectType,
+	} {
+		if !value.IsNull() && !value.IsUnknown() && value.ValueString() != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func knownTrue(value types.Bool) bool {
+	return !value.IsNull() && !value.IsUnknown() && value.ValueBool()
+}
 func (r *PropertyResource) Create(ctx context.Context, request resource.CreateRequest, response *resource.CreateResponse) {
+	if r.freeAlpha {
+		var config propertyResourceModel
+		response.Diagnostics.Append(request.Config.Get(ctx, &config)...)
+		if response.Diagnostics.HasError() {
+			return
+		}
+		if freeAlphaUnsupportedConfig(config) {
+			response.Diagnostics.AddError(freeAlphaPropertySummary, freeAlphaPropertyDetail)
+			return
+		}
+	}
 	var plan propertyResourceModel
 	response.Diagnostics.Append(request.Plan.Get(ctx, &plan)...)
 	if response.Diagnostics.HasError() {
@@ -213,6 +293,17 @@ func (r *PropertyResource) Read(ctx context.Context, request resource.ReadReques
 	response.Diagnostics.Append(response.State.Set(ctx, model)...)
 }
 func (r *PropertyResource) Update(ctx context.Context, request resource.UpdateRequest, response *resource.UpdateResponse) {
+	if r.freeAlpha {
+		var config propertyResourceModel
+		response.Diagnostics.Append(request.Config.Get(ctx, &config)...)
+		if response.Diagnostics.HasError() {
+			return
+		}
+		if freeAlphaUnsupportedConfig(config) {
+			response.Diagnostics.AddError(freeAlphaPropertySummary, freeAlphaPropertyDetail)
+			return
+		}
+	}
 	var plan propertyResourceModel
 	response.Diagnostics.Append(request.Plan.Get(ctx, &plan)...)
 	if response.Diagnostics.HasError() {

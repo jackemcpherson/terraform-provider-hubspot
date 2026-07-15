@@ -1,0 +1,14 @@
+{
+  "channel": "free-alpha",
+  "resources": [
+    "hubspot_property",
+    "hubspot_property_group"
+  ],
+  "data_sources": [
+    "hubspot_property_definition",
+    "hubspot_property_definitions"
+  ],
+  "acceptance_shards": [
+    "free_properties"
+  ]
+}

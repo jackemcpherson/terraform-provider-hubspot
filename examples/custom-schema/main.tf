@@ -1,3 +1,5 @@
+# Development-only: hubspot_custom_object_schema is not registered in
+# v0.1.0-alpha.1. This example requires a later paid-account-qualified release.
 terraform {
   required_providers {
     hubspot = {

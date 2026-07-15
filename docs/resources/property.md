@@ -3,12 +3,12 @@
 page_title: "hubspot_property Resource - hubspot"
 subcategory: ""
 description: |-
-  Manages one ordinary or enumeration HubSpot CRM property definition.
+  Manages one ordinary non-sensitive scalar or enumeration HubSpot CRM property definition in the Free alpha.
 ---
 
 # hubspot_property (Resource)
 
-Manages one ordinary or enumeration HubSpot CRM property definition.
+Manages one ordinary non-sensitive scalar or enumeration HubSpot CRM property definition in the Free alpha.
 
 ## Example Usage
 
@@ -42,20 +42,20 @@ resource "hubspot_property" "customer_tier" {
 
 ### Optional
 
-- `calculation_formula` (String) HubSpot calculation formula; omitted when null.
-- `currency_property_name` (String) Internal name of the currency source property; omitted when null.
-- `data_sensitivity` (String) One of non_sensitive, sensitive, or highly_sensitive; defaults to non_sensitive and changes replace the definition.
+- `calculation_formula` (String) Reserved for a later paid-account-qualified release; the Free alpha requires this field to be unset.
+- `currency_property_name` (String) Reserved for a later paid-account-qualified release; the Free alpha requires this field to be unset.
+- `data_sensitivity` (String) Property sensitivity classification; the Free alpha accepts non_sensitive only.
 - `description` (String) Property description; defaults to an empty string.
 - `display_order` (Number) HubSpot display order; defaults to -1.
-- `external_options` (Boolean) Delegates option ownership to HubSpot; defaults to false and changes replace the definition.
+- `external_options` (Boolean) Reserved for a later paid-account-qualified release; the Free alpha requires false.
 - `form_field` (Boolean) Whether the property can appear in forms; defaults to false.
-- `has_unique_value` (Boolean) Whether values must be unique; defaults to false and changes replace the definition.
+- `has_unique_value` (Boolean) Reserved for a later paid-account-qualified release; the Free alpha requires false.
 - `hidden` (Boolean) Whether HubSpot hides the property; defaults to false.
-- `number_display_hint` (String) HubSpot number display hint; omitted when null.
+- `number_display_hint` (String) Reserved for a later paid-account-qualified release; the Free alpha requires this field to be unset.
 - `options` (Attributes Map) Complete option set keyed by immutable CRM record value. (see [below for nested schema](#nestedatt--options))
-- `referenced_object_type` (String) Referenced CRM object type; changes replace the definition.
-- `show_currency_symbol` (Boolean) Whether HubSpot shows a currency symbol; defaults to false.
-- `text_display_hint` (String) HubSpot text display hint; omitted when null.
+- `referenced_object_type` (String) Reserved for a later paid-account-qualified release; the Free alpha requires this field to be unset.
+- `show_currency_symbol` (Boolean) Reserved for a later paid-account-qualified release; the Free alpha requires false.
+- `text_display_hint` (String) Reserved for a later paid-account-qualified release; the Free alpha requires this field to be unset.
 
 ### Read-Only
 

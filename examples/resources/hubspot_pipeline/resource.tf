@@ -1,3 +1,4 @@
+# Development-only: hubspot_pipeline is not registered in v0.1.0-alpha.1.
 resource "hubspot_pipeline" "sales" {
   object_type = "deals"
   label       = "Sales pipeline"
