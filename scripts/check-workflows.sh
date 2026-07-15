@@ -31,6 +31,10 @@ if grep -q '^  schedule:' .github/workflows/acceptance-cleanup.yml; then
 fi
 grep -q 'verify-candidate-report.sh' .github/workflows/release.yml
 grep -q 'goreleaser release --clean --parallelism=2 --skip=announce,publish,sign' .github/workflows/release.yml
+grep -q '^[[:space:]]*@"$(TOOLS_BIN)/goreleaser" release --snapshot --clean --skip=sign$' Makefile || {
+  echo "local release snapshots must not require signing credentials" >&2
+  exit 1
+}
 if grep -q -- '--snapshot' .github/workflows/release.yml; then
   echo "production release must not use snapshot assets" >&2
   exit 1

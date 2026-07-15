@@ -62,7 +62,7 @@ check-workflows:
 	@./scripts/check-workflows.sh
 
 release-snapshot:
-	@"$(TOOLS_BIN)/goreleaser" release --snapshot --clean
+	@"$(TOOLS_BIN)/goreleaser" release --snapshot --clean --skip=sign
 
 docs:
 	@test -x "$(TOOLS_BIN)/tfplugindocs" || { echo "tfplugindocs $(TFPLUGINDOCS_VERSION) required; run make tools"; exit 1; }
