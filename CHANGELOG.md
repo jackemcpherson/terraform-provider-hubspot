@@ -26,3 +26,5 @@ All notable changes to this project are documented here.
 - Preserve deal-pipeline logical stage keys and generated IDs across complete-set
   updates, canonical imports, append-order drift, archive/restore, and protected
   reference failures, with paid capability and released-artifact acceptance gates.
+- Add offline ticket/custom pipeline metadata qualification plus fail-closed
+  Service Hub ticket live, janitor, engine-parity, and released-artifact scaffolds.

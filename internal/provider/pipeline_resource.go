@@ -394,6 +394,11 @@ func pipelineWriteFromModel(ctx context.Context, m pipelineModel) (hubspot.Pipel
 			}
 		}
 		if m.ObjectType.ValueString() == "tickets" {
+			for metadataKey := range metadata {
+				if metadataKey != "ticketState" {
+					return hubspot.PipelineWrite{}, errors.New("ticket stage metadata supports ticketState only")
+				}
+			}
 			if ticketState, ok := metadata["ticketState"]; ok && ticketState != "OPEN" && ticketState != "CLOSED" {
 				return hubspot.PipelineWrite{}, errors.New("ticket stage ticketState must be OPEN or CLOSED")
 			}

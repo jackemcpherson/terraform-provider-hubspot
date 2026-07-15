@@ -38,7 +38,7 @@ rm "$tmp/main.tf.tmpl"
 export TF_VAR_hubspot_access_token=$HUBSPOT_ACCESS_TOKEN
 export TF_VAR_acceptance_prefix=${HUBSPOT_ACCEPTANCE_PREFIX:?acceptance prefix is required}
 
-if [ "$shard" = free_properties ] || [ "$shard" = deal_pipelines ]; then
+if [ "$shard" = free_properties ] || [ "$shard" = deal_pipelines ] || [ "$shard" = ticket_pipelines ]; then
   export CAPABILITY_SHARD=$shard
   export HUBSPOT_ACCEPTANCE=1
   go test -tags=acceptance ./internal/acceptance -run "^TestAcc_${shard}_QuotaPreflight$" -count=1 -timeout=5m
@@ -68,8 +68,16 @@ if [ "$shard" = free_properties ]; then
   "$engine" -chdir="$tmp" plan -detailed-exitcode -input=false >/dev/null
 fi
 
-if [ "$shard" = deal_pipelines ]; then
-  command -v jq >/dev/null 2>&1 || { echo "jq is required for deal-pipeline released verification" >&2; exit 1; }
+if [ "$shard" = deal_pipelines ] || [ "$shard" = ticket_pipelines ]; then
+  command -v jq >/dev/null 2>&1 || { echo "jq is required for pipeline released verification" >&2; exit 1; }
+
+  if [ "$shard" = deal_pipelines ]; then
+    pipeline_object_type=deals
+    drift_test=TestReleasedDealPipelineDrift
+  else
+    pipeline_object_type=tickets
+    drift_test=TestReleasedTicketPipelineDrift
+  fi
   state_backup="$tmp/pre-import.tfstate"
   "$engine" -chdir="$tmp" state pull >"$state_backup"
   state_json=$("$engine" -chdir="$tmp" show -json)
@@ -78,13 +86,13 @@ if [ "$shard" = deal_pipelines ]; then
   closed_stage_id=$(printf '%s' "$state_json" | jq -er '.values.root_module.resources[] | select(.address == "hubspot_pipeline.released") | .values.stages.closed.id')
   export TF_VAR_open_stage_key=$open_stage_id
   export TF_VAR_closed_stage_key=$closed_stage_id
-  export HUBSPOT_RELEASED_PIPELINE_ID=${pipeline_id#deals/}
+  export HUBSPOT_RELEASED_PIPELINE_ID=${pipeline_id#"$pipeline_object_type"/}
   export HUBSPOT_RELEASED_STAGE_ID=$open_stage_id
   "$engine" -chdir="$tmp" state rm hubspot_pipeline.released >/dev/null
   "$engine" -chdir="$tmp" import -input=false hubspot_pipeline.released "$pipeline_id" >/dev/null
   "$engine" -chdir="$tmp" plan -detailed-exitcode -input=false >/dev/null
 
-  go test -tags=acceptance ./internal/acceptance -run '^TestReleasedDealPipelineDrift$' -count=1 -timeout=5m
+  go test -tags=acceptance ./internal/acceptance -run "^${drift_test}$" -count=1 -timeout=5m
   set +e
   "$engine" -chdir="$tmp" plan -detailed-exitcode -input=false >/dev/null 2>&1
   drift_code=$?
@@ -100,5 +108,8 @@ if [ "$shard" = free_properties ]; then
 fi
 if [ "$shard" = deal_pipelines ]; then
   go test -tags=acceptance ./internal/acceptance -run '^TestReleasedDealPipelineArchived$' -count=1 -timeout=5m
+fi
+if [ "$shard" = ticket_pipelines ]; then
+  go test -tags=acceptance ./internal/acceptance -run '^TestReleasedTicketPipelineArchived$' -count=1 -timeout=5m
 fi
 active=false

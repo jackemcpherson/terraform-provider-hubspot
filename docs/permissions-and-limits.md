@@ -14,6 +14,8 @@ Some resources also depend on account features:
 | Property group | Supported CRM object schema access | Nonempty or protected groups may reject archive. |
 | Property | Supported CRM object schema access | Definition archive has no provider restore operation. |
 | Deal pipeline | Sales Hub Starter or above, plus pipeline capacity | Records that reference stages may block archive. |
+| Ticket pipeline | Service Hub Starter or above, plus pipeline capacity | Tickets that reference stages may block archive. |
+| Custom-object pipeline | Enterprise, an eligible custom object, and custom-pipeline capacity | Object-specific metadata and record references require live qualification. |
 | Custom object schema | Enterprise, Sensitive Data eligibility when enabled, and custom-object capacity | External properties and other HubSpot references may block deletion. |
 | Sensitive property | Enterprise with Sensitive Data enabled and current object-specific sensitive write scope | HubSpot permanently deletes archived definitions after 90 days. |
 

@@ -313,6 +313,7 @@ func dealPipelineAppendConfig(apiBaseURL string) string {
 type pipelineAPI struct {
 	t                *testing.T
 	mu               sync.Mutex
+	objectType       string
 	active           bool
 	archived         bool
 	label            string
@@ -352,15 +353,19 @@ type pipelineStageWriteRequest struct {
 }
 
 func newPipelineAPI(t *testing.T) *pipelineAPI {
+	return newPipelineAPIForObjectType(t, "deals")
+}
+
+func newPipelineAPIForObjectType(t *testing.T, objectType string) *pipelineAPI {
 	t.Helper()
-	return &pipelineAPI{t: t, stages: map[string]pipelineAPIStage{}, nextStage: 1}
+	return &pipelineAPI{t: t, objectType: objectType, stages: map[string]pipelineAPIStage{}, nextStage: 1}
 }
 
 func (a *pipelineAPI) ServeHTTP(response http.ResponseWriter, request *http.Request) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	collection := "/crm/pipelines/2026-03/deals"
+	collection := "/crm/pipelines/2026-03/" + a.objectType
 	item := collection + "/pipeline-1"
 	stageCollection := item + "/stages"
 	response.Header().Set("Content-Type", "application/json")
@@ -648,12 +653,16 @@ func (a *pipelineAPI) mutatePipeline(label string, order int64) {
 }
 
 func (a *pipelineAPI) mutateStage(id, label string, order int64, probability string) {
+	a.mutateStageMetadata(id, label, order, map[string]string{"probability": probability})
+}
+
+func (a *pipelineAPI) mutateStageMetadata(id, label string, order int64, metadata map[string]string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	stage := a.stages[id]
 	stage.Label = label
 	stage.Order = order
-	stage.Metadata = map[string]string{"probability": probability}
+	stage.Metadata = metadata
 	a.stages[id] = stage
 }
 

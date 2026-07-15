@@ -27,16 +27,34 @@ func TestReleasedDealPipelineDrift(t *testing.T) {
 		t.Fatalf("read released deal pipeline for drift: %s", acceptance.SanitizedHubSpotError(err))
 	}
 	write := hubspot.PipelineWrite{Label: prefix + "released_out_of_band", DisplayOrder: pipeline.DisplayOrder, Stages: make([]hubspot.PipelineStageWrite, 0, len(pipeline.Stages))}
+	stageFound := false
 	for _, stage := range pipeline.Stages {
 		input := hubspot.PipelineStageWrite{StageID: stage.ID, Label: stage.Label, DisplayOrder: stage.DisplayOrder, Metadata: stage.Metadata}
 		if stage.ID == stageID {
+			stageFound = true
 			input.Label = "Released provider out-of-band stage"
 		}
 		write.Stages = append(write.Stages, input)
 	}
+	if !stageFound {
+		t.Fatal("released deal drift target was not present")
+	}
 	if _, err := clients.Pipelines.Update(ctx, "deals", pipelineID, write); err != nil {
 		t.Fatalf("mutate released deal pipeline: %s", acceptance.SanitizedHubSpotError(err))
 	}
+	verified, err := clients.Pipelines.Get(ctx, "deals", pipelineID)
+	if err != nil {
+		t.Fatalf("verify released deal pipeline drift: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	if verified.Label != write.Label {
+		t.Fatal("released deal pipeline scalar drift was not verified")
+	}
+	for _, stage := range verified.Stages {
+		if stage.ID == stageID && stage.Label == "Released provider out-of-band stage" {
+			return
+		}
+	}
+	t.Fatal("released deal pipeline stage drift was not verified")
 }
 
 func TestReleasedDealPipelineArchived(t *testing.T) {

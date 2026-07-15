@@ -27,7 +27,9 @@ func TestAcc_JanitorReport(t *testing.T) {
 		propertyCount, groupCount := countFreeOwnedConfiguration(t, ctx, clients, prefix)
 		t.Logf("stale owned CRM configuration: property_definitions=%d property_groups=%d", propertyCount, groupCount)
 	case "deal_pipelines":
-		t.Logf("stale owned CRM configuration: deal_pipelines=%d", countOwnedDealPipelines(t, ctx, clients, prefix))
+		t.Logf("stale owned CRM configuration: deal_pipelines=%d", countOwnedPipelines(t, ctx, clients, "deals", prefix))
+	case "ticket_pipelines":
+		t.Logf("stale owned CRM configuration: ticket_pipelines=%d", countOwnedPipelines(t, ctx, clients, "tickets", prefix))
 	}
 }
 
@@ -37,20 +39,24 @@ func TestAcc_ManualPrefixCleanup(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	if shard == "deal_pipelines" {
-		pipelines, err := clients.Pipelines.List(ctx, "deals")
+	if shard == "deal_pipelines" || shard == "ticket_pipelines" {
+		objectType := "deals"
+		if shard == "ticket_pipelines" {
+			objectType = "tickets"
+		}
+		pipelines, err := clients.Pipelines.List(ctx, objectType)
 		if err != nil {
-			t.Fatalf("list deal pipelines for manual cleanup: %s", acceptance.SanitizedHubSpotError(err))
+			t.Fatalf("list pipelines for manual cleanup: %s", acceptance.SanitizedHubSpotError(err))
 		}
 		for _, pipeline := range pipelines {
 			if !pipeline.Archived && strings.HasPrefix(pipeline.Label, prefix) {
-				if err := clients.Pipelines.Archive(ctx, "deals", pipeline.ID); err != nil {
-					t.Fatalf("archive owned deal pipeline during manual cleanup: %s", acceptance.SanitizedHubSpotError(err))
+				if err := clients.Pipelines.Archive(ctx, objectType, pipeline.ID); err != nil {
+					t.Fatalf("archive owned pipeline during manual cleanup: %s", acceptance.SanitizedHubSpotError(err))
 				}
 			}
 		}
-		if countOwnedDealPipelines(t, ctx, clients, prefix) != 0 {
-			t.Fatal("manual cleanup could not verify absence of all active prefixed deal pipelines")
+		if countOwnedPipelines(t, ctx, clients, objectType, prefix) != 0 {
+			t.Fatal("manual cleanup could not verify absence of all active prefixed pipelines")
 		}
 		return
 	}
@@ -88,7 +94,7 @@ func TestAcc_ManualPrefixCleanup(t *testing.T) {
 func janitorClients(t *testing.T) (*hubspot.ClientSet, string) {
 	t.Helper()
 	shard := requiredEnvironment(t, "CAPABILITY_SHARD")
-	if shard != "free_properties" && shard != "deal_pipelines" {
+	if shard != "free_properties" && shard != "deal_pipelines" && shard != "ticket_pipelines" {
 		t.Fatal("janitor implementation is unavailable for the selected capability shard")
 	}
 	token := requiredEnvironment(t, "HUBSPOT_ACCESS_TOKEN")
@@ -155,11 +161,11 @@ func requireFreeOwnedConfigurationAbsent(t *testing.T, prefix string) {
 	}
 }
 
-func countOwnedDealPipelines(t *testing.T, ctx context.Context, clients *hubspot.ClientSet, prefix string) int {
+func countOwnedPipelines(t *testing.T, ctx context.Context, clients *hubspot.ClientSet, objectType, prefix string) int {
 	t.Helper()
-	pipelines, err := clients.Pipelines.List(ctx, "deals")
+	pipelines, err := clients.Pipelines.List(ctx, objectType)
 	if err != nil {
-		t.Fatalf("list deal pipelines for janitor verification: %s", acceptance.SanitizedHubSpotError(err))
+		t.Fatalf("list pipelines for janitor verification: %s", acceptance.SanitizedHubSpotError(err))
 	}
 	count := 0
 	for _, pipeline := range pipelines {

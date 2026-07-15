@@ -1,0 +1,65 @@
+terraform {
+  required_version = ">= 1.8"
+
+  required_providers {
+    hubspot = {
+      source  = "__PROVIDER_SOURCE__"
+      version = "__PROVIDER_VERSION__"
+    }
+  }
+}
+
+variable "hubspot_access_token" {
+  type        = string
+  description = "Access token for the isolated ticket-pipeline acceptance account."
+  sensitive   = true
+  nullable    = false
+}
+
+variable "acceptance_prefix" {
+  type        = string
+  description = "Unique prefix owned by this released-provider verification run."
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^tf_acc_[A-Za-z0-9_]+_$", var.acceptance_prefix))
+    error_message = "acceptance_prefix must start with tf_acc_ and end with an underscore."
+  }
+}
+
+variable "open_stage_key" {
+  type    = string
+  default = "open"
+}
+
+variable "closed_stage_key" {
+  type    = string
+  default = "closed"
+}
+
+provider "hubspot" {
+  access_token = var.hubspot_access_token
+}
+
+resource "hubspot_pipeline" "released" {
+  object_type   = "tickets"
+  label         = "${var.acceptance_prefix}released_ticket_pipeline"
+  display_order = 100
+
+  stages = {
+    (var.open_stage_key) = {
+      label         = "Released provider open ticket stage"
+      display_order = 10
+      metadata = {
+        ticketState = "OPEN"
+      }
+    }
+    (var.closed_stage_key) = {
+      label         = "Released provider closed ticket stage"
+      display_order = 20
+      metadata = {
+        ticketState = "CLOSED"
+      }
+    }
+  }
+}

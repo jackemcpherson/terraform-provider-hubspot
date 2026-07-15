@@ -13,3 +13,19 @@ resource "hubspot_pipeline" "sales" {
     }
   }
 }
+
+resource "hubspot_pipeline" "support" {
+  object_type = "tickets"
+  label       = "Support pipeline"
+
+  stages = {
+    open = {
+      label    = "Open"
+      metadata = { ticketState = "OPEN" }
+    }
+    closed = {
+      label    = "Closed"
+      metadata = { ticketState = "CLOSED" }
+    }
+  }
+}

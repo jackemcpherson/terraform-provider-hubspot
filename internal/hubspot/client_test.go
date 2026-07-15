@@ -153,3 +153,42 @@ func TestPipelineClientPreservesStageIDsAndUsesDealDeletionGuards(t *testing.T) 
 		t.Fatalf("deal pipeline delete query = %q", deleteQuery)
 	}
 }
+
+func TestPipelineClientUsesTicketMetadataWithoutDealDeletionGuard(t *testing.T) {
+	var metadata map[string]string
+	var deleteQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		if request.URL.Path != "/crm/pipelines/2026-03/tickets/pipeline-1" {
+			t.Fatalf("ticket pipeline route = %q", request.URL.Path)
+		}
+		switch request.Method {
+		case http.MethodPut:
+			var body PipelineWrite
+			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+				t.Fatalf("decode ticket pipeline replace: %v", err)
+			}
+			metadata = body.Stages[0].Metadata
+			io.WriteString(writer, `{"id":"pipeline-1","label":"Tickets","displayOrder":1,"stages":[]}`)
+		case http.MethodDelete:
+			deleteQuery = request.URL.RawQuery
+			writer.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	defer server.Close()
+
+	client := &PipelineClient{transport: newTestTransport(t, server.URL)}
+	_, err := client.Update(context.Background(), "tickets", "pipeline-1", PipelineWrite{Label: "Tickets", DisplayOrder: 1, Stages: []PipelineStageWrite{{StageID: "stage-1", Label: "Open", DisplayOrder: 1, Metadata: map[string]string{"ticketState": "OPEN"}}}})
+	if err != nil {
+		t.Fatalf("replace ticket pipeline: %v", err)
+	}
+	if len(metadata) != 1 || metadata["ticketState"] != "OPEN" {
+		t.Fatalf("ticket metadata was not encoded exactly: %#v", metadata)
+	}
+	if err := client.Archive(context.Background(), "tickets", "pipeline-1"); err != nil {
+		t.Fatalf("archive ticket pipeline: %v", err)
+	}
+	if deleteQuery != "validateReferencesBeforeDelete=true" {
+		t.Fatalf("ticket pipeline delete query = %q", deleteQuery)
+	}
+}
