@@ -52,6 +52,19 @@ func (r *PipelineResource) Configure(_ context.Context, req resource.ConfigureRe
 	}
 	r.client = clients.Pipelines
 }
+func (r *PipelineResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, res *resource.ModifyPlanResponse) {
+	if req.Plan.Raw.IsNull() {
+		return
+	}
+	var plan pipelineModel
+	res.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if res.Diagnostics.HasError() || plan.ObjectType.IsUnknown() || plan.Stages.IsUnknown() {
+		return
+	}
+	if _, err := pipelineWriteFromModel(ctx, plan); err != nil {
+		res.Diagnostics.AddAttributeError(path.Root("stages"), "Invalid pipeline stage metadata", err.Error())
+	}
+}
 func (r *PipelineResource) Create(ctx context.Context, req resource.CreateRequest, res *resource.CreateResponse) {
 	var plan pipelineModel
 	res.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
@@ -63,12 +76,12 @@ func (r *PipelineResource) Create(ctx context.Context, req resource.CreateReques
 		res.Diagnostics.AddError("Invalid deal pipeline", err.Error())
 		return
 	}
-	out, err := r.client.Create(ctx, "deals", input)
+	out, err := r.client.Create(ctx, plan.ObjectType.ValueString(), input)
 	if err != nil {
 		appendHubSpotDiagnostic(&res.Diagnostics, "Pipeline creation failed", err)
 		return
 	}
-	verified, verifyErr := r.client.Get(ctx, "deals", out.ID)
+	verified, verifyErr := r.client.Get(ctx, plan.ObjectType.ValueString(), out.ID)
 	if verifyErr != nil {
 		appendHubSpotDiagnostic(&res.Diagnostics, "Pipeline creation verification failed", verifyErr)
 		return
@@ -117,7 +130,7 @@ func (r *PipelineResource) Update(ctx context.Context, req resource.UpdateReques
 		appendHubSpotDiagnostic(&res.Diagnostics, "Pipeline update verification failed", err)
 		return
 	}
-	res.Diagnostics.Append(res.State.Set(ctx, modelFromPipeline("deals", plan, out))...)
+	res.Diagnostics.Append(res.State.Set(ctx, modelFromPipeline(plan.ObjectType.ValueString(), plan, out))...)
 }
 func (r *PipelineResource) Delete(ctx context.Context, req resource.DeleteRequest, res *resource.DeleteResponse) {
 	var state pipelineModel
@@ -194,6 +207,11 @@ func pipelineWriteFromModel(ctx context.Context, m pipelineModel) (hubspot.Pipel
 				return hubspot.PipelineWrite{}, fmt.Errorf("stage %q probability must be 0.0 through 1.0 in 0.1 increments", key)
 			}
 		}
+		if m.ObjectType.ValueString() == "tickets" {
+			if ticketState, ok := metadata["ticketState"]; ok && ticketState != "OPEN" && ticketState != "CLOSED" {
+				return hubspot.PipelineWrite{}, fmt.Errorf("stage %q ticketState must be OPEN or CLOSED", key)
+			}
+		}
 		out.Stages = append(out.Stages, hubspot.PipelineStageWrite{Label: s.Label.ValueString(), DisplayOrder: s.DisplayOrder.ValueInt64(), Metadata: metadata})
 	}
 	if len(out.Stages) == 0 {
@@ -213,5 +231,31 @@ func stageMap(stages []hubspot.PipelineStage) types.Map {
 	return types.MapValueMust(types.ObjectType{AttrTypes: map[string]attr.Type{"id": types.StringType, "label": types.StringType, "display_order": types.Int64Type, "metadata": types.MapType{ElemType: types.StringType}, "write_permissions": types.StringType}}, vals)
 }
 func modelFromPipeline(objectType string, prior pipelineModel, p hubspot.Pipeline) pipelineModel {
-	return pipelineModel{ID: types.StringValue(p.ID), ObjectType: types.StringValue(objectType), Label: types.StringValue(p.Label), DisplayOrder: types.Int64Value(p.DisplayOrder), Stages: stageMap(p.Stages)}
+	known := map[string]string{}
+	var old map[string]pipelineStageModel
+	if !prior.Stages.IsNull() && !prior.Stages.IsUnknown() && !prior.Stages.ElementsAs(context.Background(), &old, false).HasError() {
+		for key, stage := range old {
+			if !stage.ID.IsNull() {
+				known[stage.ID.ValueString()] = key
+			}
+		}
+	}
+	vals := map[string]attr.Value{}
+	stageType := types.ObjectType{AttrTypes: map[string]attr.Type{"id": types.StringType, "label": types.StringType, "display_order": types.Int64Type, "metadata": types.MapType{ElemType: types.StringType}, "write_permissions": types.StringType}}
+	for _, stage := range p.Stages {
+		key := stage.ID
+		if priorKey, ok := known[stage.ID]; ok {
+			key = priorKey
+		}
+		vals[key] = stageObject(stage, stageType)
+	}
+	return pipelineModel{ID: types.StringValue(p.ID), ObjectType: types.StringValue(objectType), Label: types.StringValue(p.Label), DisplayOrder: types.Int64Value(p.DisplayOrder), Stages: types.MapValueMust(types.ObjectType{AttrTypes: stageType.AttrTypes}, vals)}
+}
+
+func stageObject(s hubspot.PipelineStage, typ types.ObjectType) attr.Value {
+	metadata := map[string]attr.Value{}
+	for k, v := range s.Metadata {
+		metadata[k] = types.StringValue(v)
+	}
+	return types.ObjectValueMust(typ.AttrTypes, map[string]attr.Value{"id": types.StringValue(s.ID), "label": types.StringValue(s.Label), "display_order": types.Int64Value(s.DisplayOrder), "metadata": types.MapValueMust(types.StringType, metadata), "write_permissions": types.StringValue(s.WritePermissions)})
 }
