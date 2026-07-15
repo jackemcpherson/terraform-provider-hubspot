@@ -38,8 +38,15 @@ archives:
     files:
       - terraform-registry-manifest.json
 
+sboms:
+  - artifacts: archive
+    documents:
+      - '${artifact}.spdx.sbom'
+
 checksum:
   name_template: '{{ .ProjectName }}_{{ .Version }}_SHA256SUMS'
+  extra_files:
+    - glob: terraform-registry-manifest.json
 
 signs:
   - artifacts: checksum
@@ -54,3 +61,7 @@ signs:
 
 changelog:
   disable: true
+
+release:
+  extra_files:
+    - glob: terraform-registry-manifest.json

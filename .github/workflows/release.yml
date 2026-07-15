@@ -1,0 +1,244 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: v-prefixed SemVer
+        required: true
+        type: string
+      commit:
+        description: Qualified full commit SHA
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  candidate-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    env:
+      COMMIT: ${{ inputs.commit }}
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - run: ./scripts/verify-candidate-report.sh "$COMMIT" "$REPOSITORY"
+
+  build:
+    needs: candidate-proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ inputs.version }}
+      COMMIT: ${{ inputs.commit }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.26.5'
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: '1.12.3'
+          tofu_wrapper: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: '1.15.8'
+          terraform_wrapper: false
+      - run: ./scripts/release-preflight.sh "$VERSION" "$COMMIT"
+      - name: Build real versioned assets from an unpushed local tag
+        run: |
+          git tag "$VERSION"
+          make tools
+          goreleaser release --clean --parallelism=2 --skip=announce,publish,sign
+          cp terraform-registry-manifest.json dist/
+          mkdir -p bundle/assets bundle/metadata
+          find dist -maxdepth 1 -type f \( -name '*.zip' -o -name '*.spdx.sbom' -o -name '*_SHA256SUMS' -o -name 'terraform-registry-manifest.json' \) -exec mv {} bundle/assets/ \;
+          syft scan dir:bundle/assets --output spdx-json=bundle/metadata/release.spdx.json
+          ./scripts/release-notes.sh "$VERSION" >bundle/metadata/release-notes.md
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: unsigned-${{ inputs.version }}
+          path: bundle/
+          if-no-files-found: error
+
+  rebuild:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ inputs.version }}
+      COMMIT: ${{ inputs.commit }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.26.5'
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: '1.12.3'
+          tofu_wrapper: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: '1.15.8'
+          terraform_wrapper: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: unsigned-${{ inputs.version }}
+          path: ${{ runner.temp }}/first-release-build
+      - name: Independently rebuild and compare
+        env:
+          FIRST_BUILD: ${{ runner.temp }}/first-release-build
+        run: |
+          ./scripts/release-preflight.sh "$VERSION" "$COMMIT"
+          git tag "$VERSION"
+          make tools
+          goreleaser release --clean --parallelism=2 --skip=announce,publish,sign
+          cp terraform-registry-manifest.json dist/
+          ./scripts/compare-release-builds.sh "$FIRST_BUILD/assets" dist
+
+  sign:
+    needs: rebuild
+    environment: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      COMMIT: ${{ inputs.commit }}
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_FINGERPRINT: ${{ secrets.GPG_FINGERPRINT }}
+      REPOSITORY: ${{ github.repository }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: unsigned-${{ inputs.version }}
+          path: bundle
+      - name: Verify first build before exposing the signing key
+        run: |
+          checksum=$(find bundle/assets -name '*_SHA256SUMS' -type f -print -quit)
+          test -n "$checksum"
+          (cd bundle/assets && shasum -a 256 -c "$(basename "$checksum")")
+      - name: Sign checksum and tag object without checking out source
+        run: |
+          printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          checksum=$(find bundle/assets -name '*_SHA256SUMS' -type f -print -quit)
+          gpg --batch --local-user "$GPG_FINGERPRINT" --detach-sign --output "$checksum.sig" "$checksum"
+          mkdir tag-repo
+          git -C tag-repo init
+          git -C tag-repo remote add origin "https://github.com/$REPOSITORY.git"
+          git -C tag-repo fetch --filter=blob:none --depth=1 origin "$COMMIT"
+          git -C tag-repo config user.name release-bot
+          git -C tag-repo config user.email release-bot@users.noreply.github.com
+          git -C tag-repo tag -s "$VERSION" -u "$GPG_FINGERPRINT" -m "$VERSION" "$COMMIT"
+          git -C tag-repo cat-file tag "$VERSION" >bundle/metadata/signed-tag
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: signed-${{ inputs.version }}
+          path: bundle/
+          if-no-files-found: error
+
+  attest:
+    needs: rebuild
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: unsigned-${{ inputs.version }}
+          path: bundle
+      - name: Attest archive provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: bundle/assets/*.zip
+      - name: Attest release SPDX SBOM
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v2.1.0
+        with:
+          subject-path: bundle/assets/*.zip
+          sbom-path: bundle/metadata/release.spdx.json
+
+  publish:
+    needs: [sign, attest]
+    environment: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      GPG_PUBLIC_KEY: ${{ vars.GPG_PUBLIC_KEY }}
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: '1.12.3'
+          tofu_wrapper: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: '1.15.8'
+          terraform_wrapper: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: signed-${{ inputs.version }}
+          path: bundle
+      - name: Verify assets and signed tag before publication
+        run: |
+          test -z "$(git ls-remote --tags origin "refs/tags/$VERSION")"
+          if gh release view "$VERSION" --repo "$REPOSITORY" >/dev/null 2>&1; then
+            echo "release already exists" >&2
+            exit 1
+          fi
+          ./scripts/smoke-release-archive.sh bundle/assets "$VERSION"
+          tag_oid=$(git mktag <bundle/metadata/signed-tag)
+          git update-ref "refs/tags/$VERSION" "$tag_oid"
+          printf '%s' "$GPG_PUBLIC_KEY" | gpg --batch --import
+          git verify-tag "$VERSION"
+          git push "https://x-access-token:$GH_TOKEN@github.com/$REPOSITORY.git" "refs/tags/$VERSION"
+      - name: Create, re-download, and verify draft
+        run: |
+          gh release create "$VERSION" bundle/assets/* --repo "$REPOSITORY" --draft --verify-tag --title "$VERSION" --notes-file bundle/metadata/release-notes.md
+          mkdir draft-assets
+          gh release download "$VERSION" --repo "$REPOSITORY" --dir draft-assets
+          ./scripts/compare-asset-sets.sh bundle/assets draft-assets
+          ./scripts/verify-release-assets.sh draft-assets "$GPG_PUBLIC_KEY"
+          for archive in bundle/assets/*.zip; do
+            gh attestation verify "$archive" --repo "$REPOSITORY"
+          done
+      - name: Publish immutable release
+        run: gh release edit "$VERSION" --repo "$REPOSITORY" --draft=false --latest

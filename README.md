@@ -48,6 +48,7 @@ Terraform users can change the source to
 - [Custom schema ownership and teardown](docs/custom-schema-lifecycle.md)
 - [State portability](docs/state-portability.md)
 - [Troubleshooting](docs/troubleshooting.md)
+- [Maintainer release operations](docs/release-operations.md)
 
 Generated field references are under [docs/resources](docs/resources) and
 [docs/data-sources](docs/data-sources). Reviewed configurations are under

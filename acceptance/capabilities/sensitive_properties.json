@@ -1,0 +1,1 @@
+{"shard":"sensitive_properties","tier":"enterprise","object_types":["contacts"],"scope_families":["crm.schemas.contacts.sensitive"],"quota_preflight":true}

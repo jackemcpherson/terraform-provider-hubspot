@@ -1,0 +1,194 @@
+name: Release candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Full trusted commit SHA
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: release-candidate-${{ inputs.commit }}
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  deterministic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    env:
+      CANDIDATE_COMMIT: ${{ inputs.commit }}
+      REPOSITORY: ${{ github.repository }}
+      WORKFLOW_REF: ${{ github.ref }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.26.5'
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: '1.12.3'
+          tofu_wrapper: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: '1.15.8'
+          terraform_wrapper: false
+      - name: Verify exact commit
+        run: |
+          test "${#CANDIDATE_COMMIT}" -eq 40
+          test "$WORKFLOW_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_COMMIT"
+          git fetch --no-tags "https://github.com/$REPOSITORY.git" main:refs/remotes/origin/main
+          git merge-base --is-ancestor "$CANDIDATE_COMMIT" refs/remotes/origin/main
+      - name: Qualify deterministic surface
+        run: make tools && make check
+
+  engine:
+    needs: deterministic
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - engine: tofu
+            version: 1.8.8
+          - engine: tofu
+            version: 1.10.10
+          - engine: tofu
+            version: 1.11.11
+          - engine: tofu
+            version: 1.12.3
+          - engine: terraform
+            version: 1.8.5
+          - engine: terraform
+            version: 1.15.8
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      ENGINE: ${{ matrix.engine }}
+      TOFU_EXPECTED_VERSION: ${{ matrix.version }}
+      TERRAFORM_EXPECTED_VERSION: ${{ matrix.version }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.26.5'
+      - if: matrix.engine == 'tofu'
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: ${{ matrix.version }}
+          tofu_wrapper: false
+      - if: matrix.engine == 'terraform'
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ matrix.version }}
+          terraform_wrapper: false
+      - run: ./scripts/engine-smoke.sh
+
+  security:
+    needs: deterministic
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.26.5'
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+      - run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -ignore 'unexpected key "queue" for "concurrency" section'
+      - run: pipx run zizmor==1.27.0 .
+
+  capability:
+    needs: deterministic
+    uses: ./.github/workflows/acceptance.yml
+    permissions:
+      contents: read
+    with:
+      ref: ${{ inputs.commit }}
+
+  reproducible-build:
+    needs: deterministic
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.26.5'
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: '1.12.3'
+          tofu_wrapper: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: '1.15.8'
+          terraform_wrapper: false
+      - name: Build twice and compare candidate artifacts
+        env:
+          FIRST_BUILD: ${{ runner.temp }}/first-candidate-build
+        run: |
+          make tools
+          goreleaser release --snapshot --clean --parallelism=2 --skip=sign
+          cp terraform-registry-manifest.json dist/
+          mv dist "$FIRST_BUILD"
+          goreleaser release --snapshot --clean --parallelism=2 --skip=sign
+          cp terraform-registry-manifest.json dist/
+          ./scripts/compare-release-builds.sh "$FIRST_BUILD" dist
+
+  qualified:
+    needs: [deterministic, engine, security, capability, reproducible-build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    env:
+      CANDIDATE_COMMIT: ${{ inputs.commit }}
+      DETERMINISTIC_RESULT: ${{ needs.deterministic.result }}
+      ENGINE_RESULT: ${{ needs.engine.result }}
+      SECURITY_RESULT: ${{ needs.security.result }}
+      CAPABILITY_RESULT: ${{ needs.capability.result }}
+      BUILD_RESULT: ${{ needs.reproducible-build.result }}
+    steps:
+      - name: Create commit-bound qualification report
+        run: |
+          test "$DETERMINISTIC_RESULT" = success
+          test "$ENGINE_RESULT" = success
+          test "$SECURITY_RESULT" = success
+          test "$CAPABILITY_RESULT" = success
+          test "$BUILD_RESULT" = success
+          jq -n \
+            --arg commit "$CANDIDATE_COMMIT" \
+            --arg deterministic "$DETERMINISTIC_RESULT" \
+            --arg engine "$ENGINE_RESULT" \
+            --arg security "$SECURITY_RESULT" \
+            --arg capability "$CAPABILITY_RESULT" \
+            --arg build "$BUILD_RESULT" \
+            '{commit:$commit,gates:[$deterministic,$engine,$security,$capability,$build]}' >candidate-report.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: candidate-${{ inputs.commit }}
+          path: candidate-report.json
+          if-no-files-found: error

@@ -1,5 +1,10 @@
 * @jackemcpherson
 .github/ @jackemcpherson
+.goreleaser.yml @jackemcpherson
+acceptance/ @jackemcpherson
+scripts/acceptance-shard.sh @jackemcpherson
+scripts/acceptance-cleanup.sh @jackemcpherson
+scripts/release-preflight.sh @jackemcpherson
 go.mod @jackemcpherson
 go.sum @jackemcpherson
 terraform-registry-manifest.json @jackemcpherson

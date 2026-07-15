@@ -50,16 +50,20 @@ check_examples() {
   done
 }
 
-if command -v tofu >/dev/null 2>&1; then
-  tofu version | grep -F 'OpenTofu v1.12.3' >/dev/null
+engine=${ENGINE:-both}
+tofu_expected=${TOFU_EXPECTED_VERSION:-1.12.3}
+terraform_expected=${TERRAFORM_EXPECTED_VERSION:-1.15.8}
+case "$engine" in both|tofu|terraform) ;; *) echo "ENGINE must be both, tofu, or terraform" >&2; exit 1 ;; esac
+
+if [ "$engine" = both ] || [ "$engine" = tofu ]; then
+  command -v tofu >/dev/null 2>&1 || { echo "OpenTofu is required for engine-smoke" >&2; exit 1; }
+  tofu version | grep -F "OpenTofu v$tofu_expected" >/dev/null
   check_examples tofu "$tmp/tofu.tfrc"
-else
-  echo "OpenTofu is required for engine-smoke" >&2
-  exit 1
 fi
 
-if command -v terraform >/dev/null 2>&1; then
-  terraform version | grep -F 'Terraform v1.15.8' >/dev/null
+if [ "$engine" = both ] || [ "$engine" = terraform ]; then
+  command -v terraform >/dev/null 2>&1 || { echo "Terraform is required for engine-smoke" >&2; exit 1; }
+  terraform version | grep -F "Terraform v$terraform_expected" >/dev/null
   cat >"$tmp/terraform.tfrc" <<EOF
 provider_installation {
   dev_overrides {
@@ -70,7 +74,4 @@ provider_installation {
 }
 EOF
   check_examples terraform "$tmp/terraform.tfrc"
-else
-  echo "Terraform is required for engine-smoke" >&2
-  exit 1
 fi

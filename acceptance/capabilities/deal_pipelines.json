@@ -1,0 +1,1 @@
+{"shard":"deal_pipelines","tier":"starter","object_types":["deals"],"scope_families":["crm.schemas.deals"],"quota_preflight":true}

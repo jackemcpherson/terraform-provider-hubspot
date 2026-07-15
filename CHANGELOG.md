@@ -18,3 +18,5 @@ All notable changes to this project are documented here.
   resource and documented registry-source portability.
 - Generated field references with reviewed import examples, consumer lifecycle
   guides, alias/module configuration, and dual-engine example validation.
+- Fail-closed capability-sharded acceptance, cleanup, candidate, signed release,
+  provenance, and post-release verification workflows.

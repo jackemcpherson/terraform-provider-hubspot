@@ -4,13 +4,26 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       routine-go:
         update-types: [patch, minor]
+        exclude-patterns:
+          - github.com/hashicorp/terraform-plugin-framework
+          - github.com/hashicorp/terraform-plugin-go
+    open-pull-requests-limit: 5
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       routine-actions:
         update-types: [patch, minor]
+        exclude-patterns:
+          - actions/setup-go
+          - opentofu/setup-opentofu
+          - hashicorp/setup-terraform
+    open-pull-requests-limit: 5
