@@ -134,3 +134,16 @@ func TestAPIBaseURLValidator(t *testing.T) {
 		})
 	}
 }
+
+func TestPropertyTypeValidatorDefersUnknownValues(t *testing.T) {
+	for _, value := range []types.String{types.StringUnknown(), types.StringNull()} {
+		response := validator.StringResponse{}
+		propertyTypeValidator{}.ValidateString(context.Background(), validator.StringRequest{
+			Path:        path.Root("type"),
+			ConfigValue: value,
+		}, &response)
+		if response.Diagnostics.HasError() {
+			t.Fatalf("deferred value %s produced diagnostics: %#v", value.String(), response.Diagnostics)
+		}
+	}
+}

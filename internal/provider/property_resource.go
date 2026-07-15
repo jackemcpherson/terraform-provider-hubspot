@@ -627,6 +627,9 @@ func (propertyTypeValidator) Description(context.Context) string {
 }
 func (v propertyTypeValidator) MarkdownDescription(c context.Context) string { return v.Description(c) }
 func (propertyTypeValidator) ValidateString(_ context.Context, r validator.StringRequest, res *validator.StringResponse) {
+	if r.ConfigValue.IsNull() || r.ConfigValue.IsUnknown() {
+		return
+	}
 	switch r.ConfigValue.ValueString() {
 	case "bool", "enumeration", "date", "datetime", "string", "number":
 	default:
