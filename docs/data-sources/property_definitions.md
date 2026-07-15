@@ -40,6 +40,7 @@ Read-Only:
 - `created_at` (String)
 - `created_user_id` (String)
 - `currency_property_name` (String)
+- `data_sensitivity` (String)
 - `date_display_hint` (String)
 - `description` (String)
 - `display_order` (Number)
