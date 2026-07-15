@@ -6,3 +6,4 @@ crash.log
 dist/
 bin/
 coverage.out
+acceptance-report/

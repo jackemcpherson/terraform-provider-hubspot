@@ -7,8 +7,11 @@ import (
 	"context"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/jackemcpherson/terraform-provider-hubspot/internal/hubspot"
 )
 
 func TestPropertyGroupResourceSchema(t *testing.T) {
@@ -42,6 +45,11 @@ func TestPropertyDefinitionDataSourceSchemas(t *testing.T) {
 			}
 		}
 	}
+	var singular datasource.SchemaResponse
+	NewPropertyDefinitionDataSource().Schema(context.Background(), datasource.SchemaRequest{}, &singular)
+	if !singular.Schema.Attributes["date_display_hint"].IsComputed() {
+		t.Fatal("date_display_hint must remain discovery-only computed metadata")
+	}
 }
 
 func TestPropertyResourceSchema(t *testing.T) {
@@ -51,5 +59,56 @@ func TestPropertyResourceSchema(t *testing.T) {
 		if _, ok := response.Schema.Attributes[name]; !ok {
 			t.Fatalf("missing property attribute %q", name)
 		}
+	}
+	if _, ok := response.Schema.Attributes["date_display_hint"]; ok {
+		t.Fatal("date_display_hint must not be configurable on managed properties")
+	}
+}
+
+func TestPropertyWriteSortsOptionValuesDeterministically(t *testing.T) {
+	options := map[string]attr.Value{
+		"zeta": types.ObjectValueMust(optionAttrTypes(), map[string]attr.Value{
+			"label": types.StringValue("Zeta"), "description": types.StringValue(""), "display_order": types.Int64Value(-1), "hidden": types.BoolValue(false),
+		}),
+		"alpha": types.ObjectValueMust(optionAttrTypes(), map[string]attr.Value{
+			"label": types.StringValue("Alpha"), "description": types.StringValue(""), "display_order": types.Int64Value(-1), "hidden": types.BoolValue(false),
+		}),
+	}
+	write, err := propertyWriteFromModel(context.Background(), propertyResourceModel{
+		Name: types.StringValue("test"), Label: types.StringValue("Test"), GroupName: types.StringValue("contactinformation"),
+		Type: types.StringValue("enumeration"), FieldType: types.StringValue("select"),
+		Options: types.MapValueMust(types.ObjectType{AttrTypes: optionAttrTypes()}, options),
+	})
+	if err != nil {
+		t.Fatalf("propertyWriteFromModel: %v", err)
+	}
+	if len(write.Options) != 2 || write.Options[0].Value != "alpha" || write.Options[1].Value != "zeta" {
+		t.Fatalf("option order = %#v", write.Options)
+	}
+}
+
+func TestAppendOrderNormalizationExposesRemoteDrift(t *testing.T) {
+	orderTen := int64(10)
+	orderTwenty := int64(20)
+	definition := hubspot.PropertyDefinition{Name: "managed", GroupName: "group", DisplayOrder: &orderTen}
+	if propertyIsLastInGroup(definition, []hubspot.PropertyDefinition{definition, {Name: "other", GroupName: "group", DisplayOrder: &orderTwenty}}) {
+		t.Fatal("property append sentinel must not hide a remote move away from the end of its group")
+	}
+
+	configured := propertyOptionMap(map[string]propertyOptionModel{
+		"alpha": {Label: types.StringValue("Alpha"), Description: types.StringValue(""), DisplayOrder: types.Int64Value(-1), Hidden: types.BoolValue(false)},
+		"beta":  {Label: types.StringValue("Beta"), Description: types.StringValue(""), DisplayOrder: types.Int64Value(-1), Hidden: types.BoolValue(false)},
+	})
+	model := propertyResourceModel{Options: propertyOptionMap(map[string]propertyOptionModel{
+		"alpha": {Label: types.StringValue("Alpha"), Description: types.StringValue(""), DisplayOrder: types.Int64Value(20), Hidden: types.BoolValue(false)},
+		"beta":  {Label: types.StringValue("Beta"), Description: types.StringValue(""), DisplayOrder: types.Int64Value(10), Hidden: types.BoolValue(false)},
+	})}
+	preserveConfiguredOptionAppendOrders(context.Background(), &model, configured)
+	var observed map[string]propertyOptionModel
+	if diagnostics := model.Options.ElementsAs(context.Background(), &observed, false); diagnostics.HasError() {
+		t.Fatal("decode normalized option state")
+	}
+	if observed["alpha"].DisplayOrder.ValueInt64() != 20 || observed["beta"].DisplayOrder.ValueInt64() != 10 {
+		t.Fatal("option append sentinels hid remote option-order drift")
 	}
 }

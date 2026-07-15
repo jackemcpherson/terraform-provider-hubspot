@@ -20,3 +20,6 @@ All notable changes to this project are documented here.
   guides, alias/module configuration, and dual-engine example validation.
 - Fail-closed capability-sharded acceptance, cleanup, candidate, signed release,
   provenance, and post-release verification workflows.
+- Black-box OpenTofu/Terraform acceptance coverage for Free CRM property
+  lifecycles, including canonical mutation readback, import/drift checks,
+  plan-time destructive-change warnings, and cleanup evidence.

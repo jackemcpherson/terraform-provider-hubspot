@@ -17,9 +17,13 @@ test -f "$fixture/main.tf.tmpl" || { echo "released-artifact fixture is missing 
 
 tmp=$(mktemp -d)
 active=false
+state_backup=
 cleanup() {
   code=$?
   if [ "$active" = true ]; then
+    if [ -n "$state_backup" ] && test -s "$state_backup"; then
+      "$engine" -chdir="$tmp" state push -force "$state_backup" >/dev/null 2>&1 || code=1
+    fi
     "$engine" -chdir="$tmp" destroy -auto-approve -input=false >/dev/null 2>&1 || code=1
   fi
   rm -rf "$tmp"
@@ -34,9 +38,38 @@ rm "$tmp/main.tf.tmpl"
 export TF_VAR_hubspot_access_token=$HUBSPOT_ACCESS_TOKEN
 export TF_VAR_acceptance_prefix=${HUBSPOT_ACCEPTANCE_PREFIX:?acceptance prefix is required}
 
+if [ "$shard" = free_properties ]; then
+  export CAPABILITY_SHARD=free_properties
+  export HUBSPOT_ACCEPTANCE=1
+  go test -tags=acceptance ./internal/acceptance -run '^TestAcc_free_properties_QuotaPreflight$' -count=1 -timeout=5m
+fi
+
 "$engine" -chdir="$tmp" init -input=false >/dev/null
 active=true
 "$engine" -chdir="$tmp" apply -auto-approve -input=false >/dev/null
 "$engine" -chdir="$tmp" plan -detailed-exitcode -input=false >/dev/null
+
+if [ "$shard" = free_properties ]; then
+  state_backup="$tmp/pre-import.tfstate"
+  "$engine" -chdir="$tmp" state pull >"$state_backup"
+  "$engine" -chdir="$tmp" state rm hubspot_property_group.released hubspot_property.scalar hubspot_property.enumeration >/dev/null
+  "$engine" -chdir="$tmp" import -input=false hubspot_property_group.released "contacts/${HUBSPOT_ACCEPTANCE_PREFIX}released_group" >/dev/null
+  "$engine" -chdir="$tmp" import -input=false hubspot_property.scalar "contacts/${HUBSPOT_ACCEPTANCE_PREFIX}released_scalar" >/dev/null
+  "$engine" -chdir="$tmp" import -input=false hubspot_property.enumeration "contacts/${HUBSPOT_ACCEPTANCE_PREFIX}released_enumeration" >/dev/null
+  "$engine" -chdir="$tmp" plan -detailed-exitcode -input=false >/dev/null
+
+  go test -tags=acceptance ./internal/acceptance -run '^TestReleasedFreePropertiesDrift$' -count=1 -timeout=5m
+  set +e
+  "$engine" -chdir="$tmp" plan -detailed-exitcode -input=false >/dev/null 2>&1
+  drift_code=$?
+  set -e
+  test "$drift_code" -eq 2 || { echo "released-provider drift phase did not detect a change" >&2; exit 1; }
+  "$engine" -chdir="$tmp" apply -auto-approve -input=false >/dev/null
+  "$engine" -chdir="$tmp" plan -detailed-exitcode -input=false >/dev/null
+fi
+
 "$engine" -chdir="$tmp" destroy -auto-approve -input=false >/dev/null
+if [ "$shard" = free_properties ]; then
+  go test -tags=acceptance ./internal/acceptance -run '^TestReleasedFreePropertiesAbsence$' -count=1 -timeout=5m
+fi
 active=false

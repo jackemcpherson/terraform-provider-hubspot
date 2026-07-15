@@ -109,6 +109,40 @@ func TestTransportDoesNotReplayAmbiguousCreate(t *testing.T) {
 	}
 }
 
+func TestParseErrorPreservesSafeNestedSubcategory(t *testing.T) {
+	err := parseError("archive property group", http.StatusBadRequest, http.Header{}, []byte(`{"message":"{\"message\":\"Can't delete a group with active properties\",\"category\":\"VALIDATION_ERROR\",\"subCategory\":\"PropertyGroupError.GROUP_WITH_ACTIVE_PROPERTIES\"}"}`), nil, time.Now())
+	if err.Category != "VALIDATION_ERROR" {
+		t.Fatalf("category = %q", err.Category)
+	}
+	if err.SubCategory != "PropertyGroupError.GROUP_WITH_ACTIVE_PROPERTIES" {
+		t.Fatalf("subcategory = %q", err.SubCategory)
+	}
+}
+
+func TestSafeCategoryRejectsUnsafeValues(t *testing.T) {
+	unsafe := []string{
+		"VALIDATION_ERROR] injected",
+		"VALIDATION_ERROR\nINJECTED",
+		strings.Repeat("A", 129),
+		"pat-na1-credential-shaped-value",
+		"ACCESS_TOKEN_EXPIRED",
+		"clientSecret",
+		"Bearer-value",
+		"123e4567-e89b-12d3-a456-426614174000",
+		"0123456789abcdef0123456789abcdef",
+	}
+	for _, value := range unsafe {
+		if got := safeCategory(value); got != "" {
+			t.Errorf("safeCategory accepted unsafe input %q as %q", value, got)
+		}
+	}
+	for _, value := range []string{"VALIDATION_ERROR", "PropertyGroupError.GROUP_WITH_ACTIVE_PROPERTIES"} {
+		if got := safeCategory(value); got != value {
+			t.Errorf("safeCategory rejected vetted enum %q", value)
+		}
+	}
+}
+
 func newTestTransport(t *testing.T, baseURL string) *Transport {
 	t.Helper()
 	parsed, err := url.Parse(baseURL)

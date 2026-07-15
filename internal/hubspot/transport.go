@@ -86,6 +86,7 @@ type Error struct {
 	Operation   string
 	Status      int
 	Category    string
+	SubCategory string
 	Message     string
 	Correlation string
 	RetryAfter  time.Duration
@@ -109,6 +110,7 @@ type errorEnvelope struct {
 	Status        string `json:"status"`
 	Message       string `json:"message"`
 	Category      string `json:"category"`
+	SubCategory   string `json:"subCategory"`
 	CorrelationID string `json:"correlationId"`
 }
 
@@ -293,7 +295,8 @@ func parseError(operation string, status int, header http.Header, body []byte, r
 	}
 	var envelope errorEnvelope
 	if json.Unmarshal(body, &envelope) == nil {
-		apiError.Category = envelope.Category
+		apiError.Category = safeCategory(envelope.Category)
+		apiError.SubCategory = safeCategory(envelope.SubCategory)
 		apiError.Message = safeMessage(envelope.Message)
 		apiError.Correlation = envelope.CorrelationID
 		var nested errorEnvelope
@@ -302,7 +305,10 @@ func parseError(operation string, status int, header http.Header, body []byte, r
 				apiError.Message = safeMessage(nested.Message)
 			}
 			if nested.Category != "" {
-				apiError.Category = nested.Category
+				apiError.Category = safeCategory(nested.Category)
+			}
+			if nested.SubCategory != "" {
+				apiError.SubCategory = safeCategory(nested.SubCategory)
 			}
 			if nested.CorrelationID != "" {
 				apiError.Correlation = nested.CorrelationID
@@ -388,6 +394,55 @@ func safeMessage(message string) string {
 		return message[:512]
 	}
 	return message
+}
+
+func safeCategory(category string) string {
+	category = strings.TrimSpace(category)
+	if category == "" || len(category) > 128 {
+		return ""
+	}
+	lower := strings.ToLower(category)
+	for _, forbidden := range []string{"pat-", "token", "secret", "bearer"} {
+		if strings.Contains(lower, forbidden) {
+			return ""
+		}
+	}
+	if looksLikeUUID(category) || looksLikeHexCredential(category) {
+		return ""
+	}
+	for _, character := range category {
+		if (character < 'a' || character > 'z') && (character < 'A' || character > 'Z') && (character < '0' || character > '9') && character != '_' && character != '-' && character != '.' {
+			return ""
+		}
+	}
+	return category
+}
+
+func looksLikeUUID(value string) bool {
+	parts := strings.Split(value, "-")
+	if len(parts) != 5 {
+		return false
+	}
+	lengths := []int{8, 4, 4, 4, 12}
+	for index, part := range parts {
+		if len(part) != lengths[index] || !isHex(part) {
+			return false
+		}
+	}
+	return true
+}
+
+func looksLikeHexCredential(value string) bool {
+	return len(value) >= 24 && isHex(value)
+}
+
+func isHex(value string) bool {
+	for _, character := range value {
+		if (character < 'a' || character > 'f') && (character < 'A' || character > 'F') && (character < '0' || character > '9') {
+			return false
+		}
+	}
+	return value != ""
 }
 
 func sleepContext(ctx context.Context, duration time.Duration) error {

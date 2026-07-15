@@ -51,6 +51,7 @@ func (r *PropertyGroupResource) Schema(_ context.Context, _ resource.SchemaReque
 				Computed:            true,
 				Description:         "Canonical object_type/name identity.",
 				MarkdownDescription: "Canonical `object_type/name` identity.",
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"object_type": schema.StringAttribute{
 				Required:            true,
@@ -105,27 +106,42 @@ func (r *PropertyGroupResource) Create(ctx context.Context, request resource.Cre
 		return
 	}
 
-	group, err := r.client.Create(ctx, plan.ObjectType.ValueString(), hubspot.PropertyGroupCreate{
+	_, err := r.client.Create(ctx, plan.ObjectType.ValueString(), hubspot.PropertyGroupCreate{
 		Name:         plan.Name.ValueString(),
 		Label:        plan.Label.ValueString(),
-		DisplayOrder: plan.DisplayOrder.ValueInt64(),
+		DisplayOrder: requestedDisplayOrder(plan.DisplayOrder),
 	})
 	if err != nil {
 		if isAmbiguous(err) {
 			if recovered, recoveryErr := r.client.Get(ctx, plan.ObjectType.ValueString(), plan.Name.ValueString()); recoveryErr == nil && propertyGroupMatchesPlan(recovered, plan) {
 				response.Diagnostics.AddWarning("Create response was ambiguous", "HubSpot did not confirm creation, but a property group with the exact configured identity was found and adopted after read-back.")
-				response.Diagnostics.Append(response.State.Set(ctx, modelFromGroup(plan.ObjectType.ValueString(), recovered))...)
+				model, modelErr := r.modelFromGroupWithOrder(ctx, plan.ObjectType.ValueString(), recovered, plan.DisplayOrder)
+				if modelErr != nil {
+					appendHubSpotDiagnostic(&response.Diagnostics, "Property group append-order verification failed", modelErr)
+					return
+				}
+				response.Diagnostics.Append(response.State.Set(ctx, model)...)
 				return
 			}
 		}
 		appendHubSpotDiagnostic(&response.Diagnostics, "Property group creation failed", err)
 		return
 	}
-	if group.Name != plan.Name.ValueString() {
+	verified, verifyErr := r.client.Get(ctx, plan.ObjectType.ValueString(), plan.Name.ValueString())
+	if verifyErr != nil {
+		appendHubSpotDiagnostic(&response.Diagnostics, "Property group creation verification failed", verifyErr)
+		return
+	}
+	if verified.Name != plan.Name.ValueString() || !propertyGroupMatchesPlan(verified, plan) {
 		response.Diagnostics.AddError("Property group identity mismatch", "HubSpot returned a property group identity different from the configured immutable name.")
 		return
 	}
-	response.Diagnostics.Append(response.State.Set(ctx, modelFromGroup(plan.ObjectType.ValueString(), group))...)
+	model, modelErr := r.modelFromGroupWithOrder(ctx, plan.ObjectType.ValueString(), verified, plan.DisplayOrder)
+	if modelErr != nil {
+		appendHubSpotDiagnostic(&response.Diagnostics, "Property group append-order verification failed", modelErr)
+		return
+	}
+	response.Diagnostics.Append(response.State.Set(ctx, model)...)
 }
 
 func (r *PropertyGroupResource) Read(ctx context.Context, request resource.ReadRequest, response *resource.ReadResponse) {
@@ -147,7 +163,12 @@ func (r *PropertyGroupResource) Read(ctx context.Context, request resource.ReadR
 		response.State.RemoveResource(ctx)
 		return
 	}
-	response.Diagnostics.Append(response.State.Set(ctx, modelFromGroup(state.ObjectType.ValueString(), group))...)
+	model, modelErr := r.modelFromGroupWithOrder(ctx, state.ObjectType.ValueString(), group, state.DisplayOrder)
+	if modelErr != nil {
+		appendHubSpotDiagnostic(&response.Diagnostics, "Property group append-order refresh failed", modelErr)
+		return
+	}
+	response.Diagnostics.Append(response.State.Set(ctx, model)...)
 }
 
 func (r *PropertyGroupResource) Update(ctx context.Context, request resource.UpdateRequest, response *resource.UpdateResponse) {
@@ -158,12 +179,17 @@ func (r *PropertyGroupResource) Update(ctx context.Context, request resource.Upd
 	}
 	group, err := r.client.Update(ctx, plan.ObjectType.ValueString(), plan.Name.ValueString(), hubspot.PropertyGroupUpdate{
 		Label:        plan.Label.ValueString(),
-		DisplayOrder: plan.DisplayOrder.ValueInt64(),
+		DisplayOrder: requestedDisplayOrder(plan.DisplayOrder),
 	})
 	if err != nil {
 		if recovered, recoveryErr := r.client.Get(ctx, plan.ObjectType.ValueString(), plan.Name.ValueString()); recoveryErr == nil && propertyGroupMatchesPlan(recovered, plan) {
 			response.Diagnostics.AddWarning("Update response was ambiguous", "HubSpot did not confirm the update, but a verified read-back supplied the current property group state.")
-			response.Diagnostics.Append(response.State.Set(ctx, modelFromGroup(plan.ObjectType.ValueString(), recovered))...)
+			model, modelErr := r.modelFromGroupWithOrder(ctx, plan.ObjectType.ValueString(), recovered, plan.DisplayOrder)
+			if modelErr != nil {
+				appendHubSpotDiagnostic(&response.Diagnostics, "Property group append-order verification failed", modelErr)
+				return
+			}
+			response.Diagnostics.Append(response.State.Set(ctx, model)...)
 			return
 		}
 		appendHubSpotDiagnostic(&response.Diagnostics, "Property group update failed", err)
@@ -178,7 +204,12 @@ func (r *PropertyGroupResource) Update(ctx context.Context, request resource.Upd
 		response.Diagnostics.AddError("Property group identity mismatch", "HubSpot returned an update identity different from the configured immutable name.")
 		return
 	}
-	response.Diagnostics.Append(response.State.Set(ctx, modelFromGroup(plan.ObjectType.ValueString(), verified))...)
+	model, modelErr := r.modelFromGroupWithOrder(ctx, plan.ObjectType.ValueString(), verified, plan.DisplayOrder)
+	if modelErr != nil {
+		appendHubSpotDiagnostic(&response.Diagnostics, "Property group append-order verification failed", modelErr)
+		return
+	}
+	response.Diagnostics.Append(response.State.Set(ctx, model)...)
 }
 
 func (r *PropertyGroupResource) Delete(ctx context.Context, request resource.DeleteRequest, response *resource.DeleteResponse) {
@@ -268,8 +299,36 @@ func modelFromGroup(objectType string, group hubspot.PropertyGroup) propertyGrou
 	}
 }
 
+func (r *PropertyGroupResource) modelFromGroupWithOrder(ctx context.Context, objectType string, group hubspot.PropertyGroup, configured types.Int64) (propertyGroupModel, error) {
+	model := modelFromGroup(objectType, group)
+	if !configured.IsNull() && !configured.IsUnknown() && configured.ValueInt64() == -1 {
+		groups, err := r.client.List(ctx, objectType)
+		if err != nil {
+			return propertyGroupModel{}, err
+		}
+		lastOrder := group.DisplayOrder
+		for _, candidate := range groups {
+			if !candidate.Archived && candidate.DisplayOrder > lastOrder {
+				lastOrder = candidate.DisplayOrder
+			}
+		}
+		if group.DisplayOrder == lastOrder {
+			model.DisplayOrder = types.Int64Value(-1)
+		}
+	}
+	return model, nil
+}
+
 func propertyGroupMatchesPlan(group hubspot.PropertyGroup, plan propertyGroupModel) bool {
-	return !group.Archived && group.Name == plan.Name.ValueString() && group.Label == plan.Label.ValueString() && group.DisplayOrder == plan.DisplayOrder.ValueInt64()
+	displayOrderMatches := plan.DisplayOrder.IsNull() || plan.DisplayOrder.IsUnknown() || plan.DisplayOrder.ValueInt64() == -1 || group.DisplayOrder == plan.DisplayOrder.ValueInt64()
+	return !group.Archived && group.Name == plan.Name.ValueString() && group.Label == plan.Label.ValueString() && displayOrderMatches
+}
+
+func requestedDisplayOrder(value types.Int64) int64 {
+	if value.IsNull() || value.IsUnknown() {
+		return -1
+	}
+	return value.ValueInt64()
 }
 
 func appendHubSpotDiagnostic(diagnostics *diag.Diagnostics, summary string, err error) {
@@ -278,6 +337,9 @@ func appendHubSpotDiagnostic(diagnostics *diag.Diagnostics, summary string, err 
 		detail := fmt.Sprintf("HubSpot returned HTTP %d", apiError.Status)
 		if apiError.Category != "" {
 			detail += " (" + apiError.Category + ")"
+		}
+		if apiError.SubCategory != "" {
+			detail += " [" + apiError.SubCategory + "]"
 		}
 		diagnostics.AddError(summary, detail+". State was retained; inspect scopes, account access, and the next plan.")
 		return
