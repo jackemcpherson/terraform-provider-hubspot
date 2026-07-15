@@ -8,10 +8,135 @@ import (
 	"errors"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/jackemcpherson/terraform-provider-hubspot/internal/hubspot"
 )
+
+func (s *Session) MutatePipeline(address, label string, displayOrder int64, stageKey, stageLabel string, stageOrder int64, metadata map[string]string) {
+	s.t.Helper()
+	clients, err := s.probeClients()
+	if err != nil {
+		s.t.Fatalf("configure sanitized pipeline probe: %v", err)
+	}
+	objectType := s.OpaqueStateString(address, "object_type")
+	remoteID := strings.TrimPrefix(s.OpaqueStateString(address, "id"), objectType+"/")
+	stageIDs := s.OpaqueStateMapNestedStrings(address, "stages", "id")
+	targetStageID := stageIDs[stageKey]
+	if targetStageID == "" {
+		s.t.Fatal("pipeline drift probe could not resolve the target stage identity")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	current, err := clients.Pipelines.Get(ctx, objectType, remoteID)
+	if err != nil {
+		s.t.Fatalf("read pipeline for drift probe: %s", SanitizedHubSpotError(err))
+	}
+	write := hubspot.PipelineWrite{Label: label, DisplayOrder: displayOrder, Stages: make([]hubspot.PipelineStageWrite, 0, len(current.Stages))}
+	for _, stage := range current.Stages {
+		input := hubspot.PipelineStageWrite{StageID: stage.ID, Label: stage.Label, DisplayOrder: stage.DisplayOrder, Metadata: stage.Metadata}
+		if stage.ID == targetStageID {
+			input.Label = stageLabel
+			input.DisplayOrder = stageOrder
+			input.Metadata = metadata
+		}
+		write.Stages = append(write.Stages, input)
+	}
+	if _, err := clients.Pipelines.Update(ctx, objectType, remoteID, write); err != nil {
+		s.t.Fatalf("mutate pipeline for drift probe: %s", SanitizedHubSpotError(err))
+	}
+	verified, err := clients.Pipelines.Get(ctx, objectType, remoteID)
+	if err != nil {
+		s.t.Fatalf("verify pipeline drift probe: %s", SanitizedHubSpotError(err))
+	}
+	if verified.Label != label || verified.DisplayOrder != displayOrder {
+		s.t.Fatal("pipeline drift probe did not reach the requested scalar configuration")
+	}
+	for _, stage := range verified.Stages {
+		if stage.ID == targetStageID && stage.Label == stageLabel && stage.DisplayOrder == stageOrder {
+			return
+		}
+	}
+	s.t.Fatal("pipeline drift probe did not reach the requested stage configuration")
+}
+
+func (s *Session) ArchivePipeline(address string) {
+	s.t.Helper()
+	clients, err := s.probeClients()
+	if err != nil {
+		s.t.Fatalf("configure sanitized pipeline probe: %v", err)
+	}
+	objectType := s.OpaqueStateString(address, "object_type")
+	remoteID := strings.TrimPrefix(s.OpaqueStateString(address, "id"), objectType+"/")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	if err := clients.Pipelines.Archive(ctx, objectType, remoteID); err != nil {
+		s.t.Fatalf("archive pipeline for restore probe: %s", SanitizedHubSpotError(err))
+	}
+	archived, err := clients.Pipelines.GetArchived(ctx, objectType, remoteID)
+	if err != nil {
+		s.t.Fatalf("verify archived pipeline presence: %s", SanitizedHubSpotError(err))
+	}
+	if !archived.Archived {
+		s.t.Fatal("pipeline archive probe did not verify archived CRM configuration")
+	}
+}
+
+func (s *Session) CreatePipelineStageOutOfBand(address, label string, displayOrder int64, metadata map[string]string) string {
+	s.t.Helper()
+	clients, err := s.probeClients()
+	if err != nil {
+		s.t.Fatalf("configure sanitized pipeline-stage probe: %v", err)
+	}
+	objectType := s.OpaqueStateString(address, "object_type")
+	remoteID := strings.TrimPrefix(s.OpaqueStateString(address, "id"), objectType+"/")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	current, err := clients.Pipelines.Get(ctx, objectType, remoteID)
+	if err != nil {
+		s.t.Fatalf("read pipeline for stage insertion probe: %s", SanitizedHubSpotError(err))
+	}
+	write := hubspot.PipelineWrite{Label: current.Label, DisplayOrder: current.DisplayOrder, Stages: make([]hubspot.PipelineStageWrite, 0, len(current.Stages)+1)}
+	for _, stage := range current.Stages {
+		write.Stages = append(write.Stages, hubspot.PipelineStageWrite{
+			StageID: stage.ID, Label: stage.Label, DisplayOrder: stage.DisplayOrder, Metadata: stage.Metadata,
+		})
+	}
+	write.Stages = append(write.Stages, hubspot.PipelineStageWrite{Label: label, DisplayOrder: displayOrder, Metadata: metadata})
+	if _, err := clients.Pipelines.Update(ctx, objectType, remoteID, write); err != nil {
+		s.t.Fatalf("insert out-of-band pipeline stage: %s", SanitizedHubSpotError(err))
+	}
+	verified, err := clients.Pipelines.Get(ctx, objectType, remoteID)
+	if err != nil {
+		s.t.Fatalf("verify out-of-band pipeline stage: %s", SanitizedHubSpotError(err))
+	}
+	for _, stage := range verified.Stages {
+		if stage.Label == label && stage.DisplayOrder == displayOrder && stage.ID != "" {
+			return stage.ID
+		}
+	}
+	s.t.Fatal("out-of-band pipeline stage insertion was not verified")
+	return ""
+}
+
+func (s *Session) RequirePipelineArchived(objectType, compositeID string) {
+	s.t.Helper()
+	clients, err := s.probeClients()
+	if err != nil {
+		s.t.Fatalf("configure sanitized pipeline terminal probe: %v", err)
+	}
+	remoteID := strings.TrimPrefix(compositeID, objectType+"/")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	pipeline, err := clients.Pipelines.GetArchived(ctx, objectType, remoteID)
+	if err != nil {
+		s.t.Fatalf("verify archived pipeline terminal state: %s", SanitizedHubSpotError(err))
+	}
+	if !pipeline.Archived || pipeline.ID != remoteID {
+		s.t.Fatal("pipeline terminal probe did not verify the canonical archived identity")
+	}
+}
 
 func (s *Session) MutatePropertyGroupLabel(objectType, name, label string) {
 	s.MutatePropertyGroup(objectType, name, label, nil)

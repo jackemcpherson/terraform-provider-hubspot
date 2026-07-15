@@ -49,7 +49,10 @@ const (
 
 type Failure string
 
-const PropertyGroupHasActiveProperties Failure = "HubSpot HTTP 400 (VALIDATION_ERROR) [PropertyGroupError.GROUP_WITH_ACTIVE_PROPERTIES]"
+const (
+	PropertyGroupHasActiveProperties Failure = "HubSpot HTTP 400 (VALIDATION_ERROR) [PropertyGroupError.GROUP_WITH_ACTIVE_PROPERTIES]"
+	PipelineStageInUse               Failure = "HubSpot HTTP 400 (VALIDATION_ERROR) [PipelineError.STAGE_ID_IN_USE]"
+)
 
 type Options struct {
 	Engine       Engine
@@ -235,6 +238,19 @@ func (s *Session) RequireValidationFailure(config, title string) {
 	}
 }
 
+func (s *Session) RequirePlanFailure(config, title string) {
+	s.t.Helper()
+	s.writeConfig(config)
+	err := s.command("plan", "-input=false", "-lock=false", "-no-color")
+	var commandError engineCommandError
+	if err == nil || !errors.As(err, &commandError) {
+		s.t.Fatal("acceptance plan unexpectedly succeeded")
+	}
+	if commandError.title != title {
+		s.t.Fatalf("acceptance plan produced a different safe failure: %v", err)
+	}
+}
+
 func (s *Session) RequireEmptyPlan(config string) {
 	s.t.Helper()
 	s.writeConfig(config)
@@ -397,6 +413,41 @@ func (s *Session) RequireStateString(address, attribute, expected string) {
 		return
 	}
 	s.t.Fatal("acceptance resource was absent from state")
+}
+
+func (s *Session) RequireStateStringPrefix(address, attribute, prefix string) {
+	s.t.Helper()
+	if !strings.HasPrefix(s.OpaqueStateString(address, attribute), prefix) {
+		s.t.Fatalf("state attribute %s did not use the required canonical prefix", attribute)
+	}
+}
+
+func (s *Session) OpaqueStateString(address, attribute string) string {
+	s.t.Helper()
+	values := s.stateValues(address)
+	var value string
+	if err := json.Unmarshal(values[attribute], &value); err != nil || value == "" {
+		s.t.Fatalf("decode nonempty state attribute %s", attribute)
+	}
+	return value
+}
+
+func (s *Session) OpaqueStateMapNestedStrings(address, mapAttribute, nestedAttribute string) map[string]string {
+	s.t.Helper()
+	values := s.stateValues(address)
+	var entries map[string]map[string]json.RawMessage
+	if err := json.Unmarshal(values[mapAttribute], &entries); err != nil {
+		s.t.Fatalf("decode state map attribute %s", mapAttribute)
+	}
+	result := make(map[string]string, len(entries))
+	for key, entry := range entries {
+		var value string
+		if err := json.Unmarshal(entry[nestedAttribute], &value); err != nil || value == "" {
+			s.t.Fatalf("decode nonempty nested state attribute %s", nestedAttribute)
+		}
+		result[key] = value
+	}
+	return result
 }
 
 func (s *Session) RequireStateAbsent(address string) {

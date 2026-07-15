@@ -95,3 +95,61 @@ func TestPropertyDefinitionClientSelectorsAndPagination(t *testing.T) {
 		t.Fatalf("options = %#v", definitions[0].Options)
 	}
 }
+
+func TestPipelineClientPreservesStageIDsAndUsesDealDeletionGuards(t *testing.T) {
+	var replacedStageID string
+	var deleteQuery string
+	var getQueries []string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.Method {
+		case http.MethodGet:
+			getQueries = append(getQueries, request.URL.RawQuery)
+			if strings.HasSuffix(request.URL.Path, "/pipeline-1") {
+				io.WriteString(writer, `{"id":"pipeline-1","label":"Pipeline","displayOrder":1,"stages":[],"archived":true}`)
+				return
+			}
+			io.WriteString(writer, `{"results":[{"id":"pipeline-1","label":"Pipeline","displayOrder":1,"stages":[]}]}`)
+		case http.MethodPut:
+			var body PipelineWrite
+			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+				t.Fatalf("decode pipeline replace: %v", err)
+			}
+			replacedStageID = body.Stages[0].StageID
+			io.WriteString(writer, `{"id":"pipeline-1","label":"Pipeline","displayOrder":1,"stages":[]}`)
+		case http.MethodDelete:
+			deleteQuery = request.URL.RawQuery
+			writer.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	defer server.Close()
+
+	client := &PipelineClient{transport: newTestTransport(t, server.URL)}
+	pipelines, err := client.List(context.Background(), "deals")
+	if err != nil || len(pipelines) != 1 || pipelines[0].ID != "pipeline-1" {
+		t.Fatalf("pipeline list did not decode canonical results: %#v, %v", pipelines, err)
+	}
+	archived, err := client.GetArchived(context.Background(), "deals", "pipeline-1")
+	if err != nil || !archived.Archived {
+		t.Fatalf("archived pipeline lookup = %#v, %v", archived, err)
+	}
+	if len(getQueries) != 2 || getQueries[0] != "" || getQueries[1] != "archived=true" {
+		t.Fatalf("pipeline selectors = %#v", getQueries)
+	}
+	_, err = client.Update(context.Background(), "deals", "pipeline-1", PipelineWrite{
+		Label: "Pipeline", DisplayOrder: 1,
+		Stages: []PipelineStageWrite{{StageID: "stage-1", Label: "Stage", DisplayOrder: 1, Metadata: map[string]string{"probability": "0.1"}}},
+	})
+	if err != nil {
+		t.Fatalf("replace pipeline: %v", err)
+	}
+	if replacedStageID != "stage-1" {
+		t.Fatal("pipeline replace omitted the known stage ID")
+	}
+	if err := client.Archive(context.Background(), "deals", "pipeline-1"); err != nil {
+		t.Fatalf("archive pipeline: %v", err)
+	}
+	if deleteQuery != "validateReferencesBeforeDelete=true&validateDealStageUsagesBeforeDelete=true" {
+		t.Fatalf("deal pipeline delete query = %q", deleteQuery)
+	}
+}

@@ -17,20 +17,43 @@ import (
 )
 
 func TestAcc_JanitorReport(t *testing.T) {
-	clients := freeJanitorClients(t)
+	clients, shard := janitorClients(t)
 	prefix := requiredEnvironment(t, "HUBSPOT_ACCEPTANCE_PREFIX")
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	propertyCount, groupCount := countFreeOwnedConfiguration(t, ctx, clients, prefix)
-	t.Logf("stale owned CRM configuration: property_definitions=%d property_groups=%d", propertyCount, groupCount)
+	switch shard {
+	case "free_properties":
+		propertyCount, groupCount := countFreeOwnedConfiguration(t, ctx, clients, prefix)
+		t.Logf("stale owned CRM configuration: property_definitions=%d property_groups=%d", propertyCount, groupCount)
+	case "deal_pipelines":
+		t.Logf("stale owned CRM configuration: deal_pipelines=%d", countOwnedDealPipelines(t, ctx, clients, prefix))
+	}
 }
 
 func TestAcc_ManualPrefixCleanup(t *testing.T) {
-	clients := freeJanitorClients(t)
+	clients, shard := janitorClients(t)
 	prefix := requiredEnvironment(t, "HUBSPOT_ACCEPTANCE_PREFIX")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
+
+	if shard == "deal_pipelines" {
+		pipelines, err := clients.Pipelines.List(ctx, "deals")
+		if err != nil {
+			t.Fatalf("list deal pipelines for manual cleanup: %s", acceptance.SanitizedHubSpotError(err))
+		}
+		for _, pipeline := range pipelines {
+			if !pipeline.Archived && strings.HasPrefix(pipeline.Label, prefix) {
+				if err := clients.Pipelines.Archive(ctx, "deals", pipeline.ID); err != nil {
+					t.Fatalf("archive owned deal pipeline during manual cleanup: %s", acceptance.SanitizedHubSpotError(err))
+				}
+			}
+		}
+		if countOwnedDealPipelines(t, ctx, clients, prefix) != 0 {
+			t.Fatal("manual cleanup could not verify absence of all active prefixed deal pipelines")
+		}
+		return
+	}
 
 	properties, err := clients.Properties.List(ctx, "contacts", false, "non_sensitive", "")
 	if err != nil {
@@ -62,9 +85,10 @@ func TestAcc_ManualPrefixCleanup(t *testing.T) {
 	}
 }
 
-func freeJanitorClients(t *testing.T) *hubspot.ClientSet {
+func janitorClients(t *testing.T) (*hubspot.ClientSet, string) {
 	t.Helper()
-	if requiredEnvironment(t, "CAPABILITY_SHARD") != "free_properties" {
+	shard := requiredEnvironment(t, "CAPABILITY_SHARD")
+	if shard != "free_properties" && shard != "deal_pipelines" {
 		t.Fatal("janitor implementation is unavailable for the selected capability shard")
 	}
 	token := requiredEnvironment(t, "HUBSPOT_ACCESS_TOKEN")
@@ -79,6 +103,15 @@ func freeJanitorClients(t *testing.T) *hubspot.ClientSet {
 	})
 	if err != nil {
 		t.Fatal("configure HubSpot acceptance janitor")
+	}
+	return clients, shard
+}
+
+func freeJanitorClients(t *testing.T) *hubspot.ClientSet {
+	t.Helper()
+	clients, shard := janitorClients(t)
+	if shard != "free_properties" {
+		t.Fatal("free janitor client used the wrong capability shard")
 	}
 	return clients
 }
@@ -110,11 +143,29 @@ func countFreeOwnedConfiguration(t *testing.T, ctx context.Context, clients *hub
 
 func requireFreeOwnedConfigurationAbsent(t *testing.T, prefix string) {
 	t.Helper()
-	clients := freeJanitorClients(t)
+	clients, shard := janitorClients(t)
+	if shard != "free_properties" {
+		t.Fatal("free owned-configuration verification used the wrong capability shard")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	properties, groups := countFreeOwnedConfiguration(t, ctx, clients, prefix)
 	if properties != 0 || groups != 0 {
 		t.Fatal("independent cleanup verification found active owned CRM configuration")
 	}
+}
+
+func countOwnedDealPipelines(t *testing.T, ctx context.Context, clients *hubspot.ClientSet, prefix string) int {
+	t.Helper()
+	pipelines, err := clients.Pipelines.List(ctx, "deals")
+	if err != nil {
+		t.Fatalf("list deal pipelines for janitor verification: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	count := 0
+	for _, pipeline := range pipelines {
+		if !pipeline.Archived && strings.HasPrefix(pipeline.Label, prefix) {
+			count++
+		}
+	}
+	return count
 }

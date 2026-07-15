@@ -23,3 +23,6 @@ All notable changes to this project are documented here.
 - Black-box OpenTofu/Terraform acceptance coverage for Free CRM property
   lifecycles, including canonical mutation readback, import/drift checks,
   plan-time destructive-change warnings, and cleanup evidence.
+- Preserve deal-pipeline logical stage keys and generated IDs across complete-set
+  updates, canonical imports, append-order drift, archive/restore, and protected
+  reference failures, with paid capability and released-artifact acceptance gates.

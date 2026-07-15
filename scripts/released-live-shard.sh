@@ -38,10 +38,10 @@ rm "$tmp/main.tf.tmpl"
 export TF_VAR_hubspot_access_token=$HUBSPOT_ACCESS_TOKEN
 export TF_VAR_acceptance_prefix=${HUBSPOT_ACCEPTANCE_PREFIX:?acceptance prefix is required}
 
-if [ "$shard" = free_properties ]; then
-  export CAPABILITY_SHARD=free_properties
+if [ "$shard" = free_properties ] || [ "$shard" = deal_pipelines ]; then
+  export CAPABILITY_SHARD=$shard
   export HUBSPOT_ACCEPTANCE=1
-  go test -tags=acceptance ./internal/acceptance -run '^TestAcc_free_properties_QuotaPreflight$' -count=1 -timeout=5m
+  go test -tags=acceptance ./internal/acceptance -run "^TestAcc_${shard}_QuotaPreflight$" -count=1 -timeout=5m
 fi
 
 "$engine" -chdir="$tmp" init -input=false >/dev/null
@@ -68,8 +68,37 @@ if [ "$shard" = free_properties ]; then
   "$engine" -chdir="$tmp" plan -detailed-exitcode -input=false >/dev/null
 fi
 
+if [ "$shard" = deal_pipelines ]; then
+  command -v jq >/dev/null 2>&1 || { echo "jq is required for deal-pipeline released verification" >&2; exit 1; }
+  state_backup="$tmp/pre-import.tfstate"
+  "$engine" -chdir="$tmp" state pull >"$state_backup"
+  state_json=$("$engine" -chdir="$tmp" show -json)
+  pipeline_id=$(printf '%s' "$state_json" | jq -er '.values.root_module.resources[] | select(.address == "hubspot_pipeline.released") | .values.id')
+  open_stage_id=$(printf '%s' "$state_json" | jq -er '.values.root_module.resources[] | select(.address == "hubspot_pipeline.released") | .values.stages.open.id')
+  closed_stage_id=$(printf '%s' "$state_json" | jq -er '.values.root_module.resources[] | select(.address == "hubspot_pipeline.released") | .values.stages.closed.id')
+  export TF_VAR_open_stage_key=$open_stage_id
+  export TF_VAR_closed_stage_key=$closed_stage_id
+  export HUBSPOT_RELEASED_PIPELINE_ID=${pipeline_id#deals/}
+  export HUBSPOT_RELEASED_STAGE_ID=$open_stage_id
+  "$engine" -chdir="$tmp" state rm hubspot_pipeline.released >/dev/null
+  "$engine" -chdir="$tmp" import -input=false hubspot_pipeline.released "$pipeline_id" >/dev/null
+  "$engine" -chdir="$tmp" plan -detailed-exitcode -input=false >/dev/null
+
+  go test -tags=acceptance ./internal/acceptance -run '^TestReleasedDealPipelineDrift$' -count=1 -timeout=5m
+  set +e
+  "$engine" -chdir="$tmp" plan -detailed-exitcode -input=false >/dev/null 2>&1
+  drift_code=$?
+  set -e
+  test "$drift_code" -eq 2 || { echo "released deal-pipeline drift phase did not detect a change" >&2; exit 1; }
+  "$engine" -chdir="$tmp" apply -auto-approve -input=false >/dev/null
+  "$engine" -chdir="$tmp" plan -detailed-exitcode -input=false >/dev/null
+fi
+
 "$engine" -chdir="$tmp" destroy -auto-approve -input=false >/dev/null
 if [ "$shard" = free_properties ]; then
   go test -tags=acceptance ./internal/acceptance -run '^TestReleasedFreePropertiesAbsence$' -count=1 -timeout=5m
+fi
+if [ "$shard" = deal_pipelines ]; then
+  go test -tags=acceptance ./internal/acceptance -run '^TestReleasedDealPipelineArchived$' -count=1 -timeout=5m
 fi
 active=false

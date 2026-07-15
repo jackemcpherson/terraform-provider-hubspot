@@ -131,6 +131,7 @@ type PipelineStage struct {
 	WritePermissions string            `json:"writePermissions"`
 }
 type PipelineStageWrite struct {
+	StageID      string            `json:"stageId,omitempty"`
 	Label        string            `json:"label"`
 	DisplayOrder int64             `json:"displayOrder"`
 	Metadata     map[string]string `json:"metadata"`
@@ -145,17 +146,41 @@ func pipelinePath(objectType string) string {
 	return "/crm/pipelines/2026-03/" + url.PathEscape(objectType)
 }
 func (c *PipelineClient) Get(ctx context.Context, objectType, id string) (Pipeline, error) {
+	return c.get(ctx, objectType, id, false)
+}
+func (c *PipelineClient) GetArchived(ctx context.Context, objectType, id string) (Pipeline, error) {
+	return c.get(ctx, objectType, id, true)
+}
+func (c *PipelineClient) get(ctx context.Context, objectType, id string, archived bool) (Pipeline, error) {
 	if err := validateObjectType(objectType); err != nil {
 		return Pipeline{}, err
 	}
+	query := ""
+	operation := "pipeline-read"
+	if archived {
+		query = "?archived=true"
+		operation = "pipeline-read-archived"
+	}
 	var out Pipeline
-	if err := c.transport.Do(ctx, Operation{Name: "pipeline-read", Method: http.MethodGet, Path: pipelinePath(objectType) + "/" + url.PathEscape(id), Replay: ReplaySafe}, nil, &out); err != nil {
+	if err := c.transport.Do(ctx, Operation{Name: operation, Method: http.MethodGet, Path: pipelinePath(objectType) + "/" + url.PathEscape(id) + query, Replay: ReplaySafe}, nil, &out); err != nil {
 		return Pipeline{}, err
 	}
 	if out.ID == "" {
 		return Pipeline{}, errors.New("HubSpot pipeline response omitted id")
 	}
 	return out, nil
+}
+func (c *PipelineClient) List(ctx context.Context, objectType string) ([]Pipeline, error) {
+	if err := validateObjectType(objectType); err != nil {
+		return nil, err
+	}
+	var page struct {
+		Results []Pipeline `json:"results"`
+	}
+	if err := c.transport.Do(ctx, Operation{Name: "pipeline-list", Method: http.MethodGet, Path: pipelinePath(objectType), Replay: ReplaySafe}, nil, &page); err != nil {
+		return nil, err
+	}
+	return page.Results, nil
 }
 func (c *PipelineClient) Create(ctx context.Context, objectType string, input PipelineWrite) (Pipeline, error) {
 	if err := validateObjectType(objectType); err != nil {
@@ -183,7 +208,7 @@ func (c *PipelineClient) Update(ctx context.Context, objectType, id string, inpu
 		return Pipeline{}, err
 	}
 	var out Pipeline
-	if err := c.transport.Do(ctx, Operation{Name: "pipeline-update", Method: http.MethodPut, Path: pipelinePath(objectType) + "/" + url.PathEscape(id), Replay: ReplayExplicit}, bytes.NewReader(body), &out); err != nil {
+	if err := c.transport.Do(ctx, Operation{Name: "pipeline-update", Method: http.MethodPut, Path: pipelinePath(objectType) + "/" + url.PathEscape(id), Replay: ReplayNever}, bytes.NewReader(body), &out); err != nil {
 		return Pipeline{}, err
 	}
 	return out, nil
@@ -191,13 +216,17 @@ func (c *PipelineClient) Update(ctx context.Context, objectType, id string, inpu
 func (c *PipelineClient) Restore(ctx context.Context, objectType, id string) (Pipeline, error) {
 	body := []byte(`{"archived":false}`)
 	var out Pipeline
-	if err := c.transport.Do(ctx, Operation{Name: "pipeline-restore", Method: http.MethodPatch, Path: pipelinePath(objectType) + "/" + url.PathEscape(id), Replay: ReplayExplicit}, bytes.NewReader(body), &out); err != nil {
+	if err := c.transport.Do(ctx, Operation{Name: "pipeline-restore", Method: http.MethodPatch, Path: pipelinePath(objectType) + "/" + url.PathEscape(id), Replay: ReplayNever}, bytes.NewReader(body), &out); err != nil {
 		return Pipeline{}, err
 	}
 	return out, nil
 }
 func (c *PipelineClient) Archive(ctx context.Context, objectType, id string) error {
-	return c.transport.Do(ctx, Operation{Name: "pipeline-archive", Method: http.MethodDelete, Path: pipelinePath(objectType) + "/" + url.PathEscape(id) + "?validateReferencesBeforeDelete=true", Replay: ReplayExplicit}, nil, nil)
+	query := "?validateReferencesBeforeDelete=true"
+	if objectType == "deals" {
+		query += "&validateDealStageUsagesBeforeDelete=true"
+	}
+	return c.transport.Do(ctx, Operation{Name: "pipeline-archive", Method: http.MethodDelete, Path: pipelinePath(objectType) + "/" + url.PathEscape(id) + query, Replay: ReplayNever}, nil, nil)
 }
 
 type PropertyDefinitionClient struct{ transport *Transport }

@@ -16,5 +16,13 @@ the stage may block the operation. Import rejects pipelines containing
 set.
 
 Pipeline deletion uses HubSpot archival and removes state only after a confirming
-read. A create with an uncertain response is not replayed because a label is not a
-safe identity. The provider does not promise restore behavior.
+read proves that the same pipeline ID is archived. If refresh or import observes
+that canonical archived pipeline, the provider retains its pipeline and stage
+identities in Terraform state and marks its archived status privately; the next
+plan proposes an in-place restore, and apply verifies the same active identity
+before reconciling configuration. A create with an uncertain response is not
+replayed because a label is not a safe identity.
+
+Omitting pipeline or stage `display_order` requests HubSpot's append behavior. The
+provider retains the `-1` intent only while the pipeline or stages remain at the
+end of their remote ordering, so an out-of-band reorder remains visible as drift.
