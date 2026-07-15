@@ -26,7 +26,9 @@ Manages a custom HubSpot object schema with continuously owned bootstrap propert
 
 - `allows_sensitive_properties` (Boolean)
 - `associated_objects` (Set of String)
+- `deletion_protection` (Boolean)
 - `description` (String)
+- `expected_external_properties` (Set of String)
 - `required_properties` (Set of String)
 - `searchable_properties` (Set of String)
 - `secondary_display_properties` (List of String)

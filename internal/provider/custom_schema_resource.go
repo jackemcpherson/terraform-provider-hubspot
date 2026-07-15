@@ -7,6 +7,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -42,6 +43,8 @@ type customSchemaModel struct {
 	RequiredProperties                types.Set    `tfsdk:"required_properties"`
 	SearchableProperties              types.Set    `tfsdk:"searchable_properties"`
 	SecondaryDisplayProperties        types.List   `tfsdk:"secondary_display_properties"`
+	ExpectedExternalProperties        types.Set    `tfsdk:"expected_external_properties"`
+	DeletionProtection                types.Bool   `tfsdk:"deletion_protection"`
 	Properties                        types.Map    `tfsdk:"properties"`
 }
 
@@ -51,7 +54,7 @@ func (r *CustomSchemaResource) Metadata(_ context.Context, _ resource.MetadataRe
 }
 func (r *CustomSchemaResource) Schema(_ context.Context, _ resource.SchemaRequest, res *resource.SchemaResponse) {
 	propertyType := types.ObjectType{AttrTypes: map[string]attr.Type{"label": types.StringType, "type": types.StringType, "field_type": types.StringType, "description": types.StringType, "display_order": types.Int64Type, "form_field": types.BoolType, "hidden": types.BoolType, "has_unique_value": types.BoolType, "show_currency_symbol": types.BoolType, "options": types.MapType{ElemType: types.StringType}}}
-	res.Schema = schema.Schema{Description: "Manages a custom HubSpot object schema with continuously owned bootstrap properties.", Attributes: map[string]schema.Attribute{"id": schema.StringAttribute{Computed: true}, "object_type_id": schema.StringAttribute{Computed: true}, "fully_qualified_name": schema.StringAttribute{Computed: true}, "name": schema.StringAttribute{Required: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}}, "labels": schema.ObjectAttribute{Required: true, AttributeTypes: map[string]attr.Type{"singular": types.StringType, "plural": types.StringType}}, "primary_display_property": schema.StringAttribute{Required: true}, "description": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("")}, "allows_sensitive_properties": schema.BoolAttribute{Optional: true, Computed: true}, "associated_objects": schema.SetAttribute{Optional: true, Computed: true, ElementType: types.StringType, PlanModifiers: []planmodifier.Set{setRequiresReplace{}}}, "should_create_same_object_association": schema.BoolAttribute{Optional: true, Computed: true}, "required_properties": schema.SetAttribute{Optional: true, Computed: true, ElementType: types.StringType}, "searchable_properties": schema.SetAttribute{Optional: true, Computed: true, ElementType: types.StringType}, "secondary_display_properties": schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType}, "properties": schema.MapAttribute{Required: true, ElementType: propertyType}}}
+	res.Schema = schema.Schema{Description: "Manages a custom HubSpot object schema with continuously owned bootstrap properties.", Attributes: map[string]schema.Attribute{"id": schema.StringAttribute{Computed: true}, "object_type_id": schema.StringAttribute{Computed: true}, "fully_qualified_name": schema.StringAttribute{Computed: true}, "name": schema.StringAttribute{Required: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}}, "labels": schema.ObjectAttribute{Required: true, AttributeTypes: map[string]attr.Type{"singular": types.StringType, "plural": types.StringType}}, "primary_display_property": schema.StringAttribute{Required: true}, "description": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("")}, "allows_sensitive_properties": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false)}, "associated_objects": schema.SetAttribute{Optional: true, Computed: true, ElementType: types.StringType, PlanModifiers: []planmodifier.Set{setRequiresReplace{}}}, "should_create_same_object_association": schema.BoolAttribute{Optional: true, Computed: true}, "required_properties": schema.SetAttribute{Optional: true, Computed: true, ElementType: types.StringType}, "searchable_properties": schema.SetAttribute{Optional: true, Computed: true, ElementType: types.StringType}, "secondary_display_properties": schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType}, "expected_external_properties": schema.SetAttribute{Optional: true, Computed: true, ElementType: types.StringType}, "deletion_protection": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true)}, "properties": schema.MapAttribute{Required: true, ElementType: propertyType}}}
 }
 func (r *CustomSchemaResource) Configure(_ context.Context, req resource.ConfigureRequest, res *resource.ConfigureResponse) {
 	clients, ok := req.ProviderData.(*hubspot.ClientSet)
@@ -116,7 +119,33 @@ func (r *CustomSchemaResource) Read(ctx context.Context, req resource.ReadReques
 		appendHubSpotDiagnostic(&res.Diagnostics, "Custom schema refresh failed", err)
 		return
 	}
-	res.Diagnostics.Append(res.State.Set(ctx, modelFromSchema(out))...)
+	remote := modelFromSchema(out)
+	remote.ExpectedExternalProperties = state.ExpectedExternalProperties
+	remote.DeletionProtection = state.DeletionProtection
+	owned := map[string]struct{}{}
+	var ownedProps map[string]schemaPropertyModel
+	if !state.Properties.IsNull() && !state.Properties.IsUnknown() {
+		_ = state.Properties.ElementsAs(ctx, &ownedProps, false)
+		for name := range ownedProps {
+			owned[name] = struct{}{}
+		}
+	}
+	expected := map[string]struct{}{}
+	var expectedList []string
+	if !state.ExpectedExternalProperties.IsNull() && !state.ExpectedExternalProperties.IsUnknown() {
+		_ = state.ExpectedExternalProperties.ElementsAs(ctx, &expectedList, false)
+		for _, name := range expectedList {
+			expected[name] = struct{}{}
+		}
+	}
+	for _, prop := range out.Properties {
+		if _, ok := owned[prop.Name]; !ok {
+			if _, quiet := expected[prop.Name]; !quiet {
+				res.Diagnostics.AddWarning("Unexpected external schema property", "A remote property is outside this schema resource ownership; it remains unmanaged and blocks safe destroy.")
+			}
+		}
+	}
+	res.Diagnostics.Append(res.State.Set(ctx, &remote)...)
 }
 func (r *CustomSchemaResource) Update(ctx context.Context, req resource.UpdateRequest, res *resource.UpdateResponse) {
 	var plan customSchemaModel
@@ -147,6 +176,23 @@ func (r *CustomSchemaResource) Delete(ctx context.Context, req resource.DeleteRe
 	res.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if res.Diagnostics.HasError() {
 		return
+	}
+	if state.DeletionProtection.IsNull() || state.DeletionProtection.IsUnknown() || state.DeletionProtection.ValueBool() {
+		res.Diagnostics.AddError("Custom schema deletion protection is enabled", "Apply deletion_protection = false in a prior plan before destroying this schema.")
+		return
+	}
+	current, readErr := r.client.Get(ctx, state.ObjectTypeID.ValueString())
+	if readErr != nil {
+		appendHubSpotDiagnostic(&res.Diagnostics, "Custom schema destroy preflight failed", readErr)
+		return
+	}
+	var owned map[string]schemaPropertyModel
+	_ = state.Properties.ElementsAs(ctx, &owned, false)
+	for _, prop := range current.Properties {
+		if _, ok := owned[prop.Name]; !ok {
+			res.Diagnostics.AddError("External schema property blocks destroy", "A property outside this resource's owned property map remains on the schema; remove it through its owning resource first.")
+			return
+		}
 	}
 	if err := r.client.Archive(ctx, state.ObjectTypeID.ValueString()); err != nil {
 		if isNotFound(err) {

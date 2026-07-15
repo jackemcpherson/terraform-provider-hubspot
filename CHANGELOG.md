@@ -13,3 +13,4 @@ All notable changes to this project are documented here.
 - Advanced calculation, currency, owner-reference, and sensitivity fields.
 - Deal pipeline resource with nested stage identity and probability validation.
 - Custom object schema core with continuously owned bootstrap properties.
+- Custom-schema deletion protection and split-ownership preflight.
