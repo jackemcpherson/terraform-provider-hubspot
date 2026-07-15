@@ -1,0 +1,210 @@
+package provider
+
+import (
+	"context"
+	"errors"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/jackemcpherson/terraform-provider-hubspot/internal/hubspot"
+	"strings"
+)
+
+type CustomSchemaResource struct{ client *hubspot.SchemaClient }
+type schemaPropertyModel struct {
+	Label              types.String `tfsdk:"label"`
+	Type               types.String `tfsdk:"type"`
+	FieldType          types.String `tfsdk:"field_type"`
+	Description        types.String `tfsdk:"description"`
+	DisplayOrder       types.Int64  `tfsdk:"display_order"`
+	FormField          types.Bool   `tfsdk:"form_field"`
+	Hidden             types.Bool   `tfsdk:"hidden"`
+	HasUniqueValue     types.Bool   `tfsdk:"has_unique_value"`
+	ShowCurrencySymbol types.Bool   `tfsdk:"show_currency_symbol"`
+	Options            types.Map    `tfsdk:"options"`
+}
+type customSchemaModel struct {
+	ID                                types.String `tfsdk:"id"`
+	ObjectTypeID                      types.String `tfsdk:"object_type_id"`
+	FullyQualifiedName                types.String `tfsdk:"fully_qualified_name"`
+	Name                              types.String `tfsdk:"name"`
+	Labels                            types.Object `tfsdk:"labels"`
+	PrimaryDisplayProperty            types.String `tfsdk:"primary_display_property"`
+	Description                       types.String `tfsdk:"description"`
+	AllowsSensitiveProperties         types.Bool   `tfsdk:"allows_sensitive_properties"`
+	AssociatedObjects                 types.Set    `tfsdk:"associated_objects"`
+	ShouldCreateSameObjectAssociation types.Bool   `tfsdk:"should_create_same_object_association"`
+	RequiredProperties                types.Set    `tfsdk:"required_properties"`
+	SearchableProperties              types.Set    `tfsdk:"searchable_properties"`
+	SecondaryDisplayProperties        types.List   `tfsdk:"secondary_display_properties"`
+	Properties                        types.Map    `tfsdk:"properties"`
+}
+
+func NewCustomSchemaResource() resource.Resource { return &CustomSchemaResource{} }
+func (r *CustomSchemaResource) Metadata(_ context.Context, _ resource.MetadataRequest, res *resource.MetadataResponse) {
+	res.TypeName = "hubspot_custom_object_schema"
+}
+func (r *CustomSchemaResource) Schema(_ context.Context, _ resource.SchemaRequest, res *resource.SchemaResponse) {
+	propertyType := types.ObjectType{AttrTypes: map[string]attr.Type{"label": types.StringType, "type": types.StringType, "field_type": types.StringType, "description": types.StringType, "display_order": types.Int64Type, "form_field": types.BoolType, "hidden": types.BoolType, "has_unique_value": types.BoolType, "show_currency_symbol": types.BoolType, "options": types.MapType{ElemType: types.StringType}}}
+	res.Schema = schema.Schema{Description: "Manages a custom HubSpot object schema with continuously owned bootstrap properties.", Attributes: map[string]schema.Attribute{"id": schema.StringAttribute{Computed: true}, "object_type_id": schema.StringAttribute{Computed: true}, "fully_qualified_name": schema.StringAttribute{Computed: true}, "name": schema.StringAttribute{Required: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}}, "labels": schema.ObjectAttribute{Required: true, AttributeTypes: map[string]attr.Type{"singular": types.StringType, "plural": types.StringType}}, "primary_display_property": schema.StringAttribute{Required: true}, "description": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("")}, "allows_sensitive_properties": schema.BoolAttribute{Optional: true, Computed: true}, "associated_objects": schema.SetAttribute{Optional: true, Computed: true, ElementType: types.StringType, PlanModifiers: []planmodifier.Set{setRequiresReplace{}}}, "should_create_same_object_association": schema.BoolAttribute{Optional: true, Computed: true}, "required_properties": schema.SetAttribute{Optional: true, Computed: true, ElementType: types.StringType}, "searchable_properties": schema.SetAttribute{Optional: true, Computed: true, ElementType: types.StringType}, "secondary_display_properties": schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType}, "properties": schema.MapAttribute{Required: true, ElementType: propertyType}}}
+}
+func (r *CustomSchemaResource) Configure(_ context.Context, req resource.ConfigureRequest, res *resource.ConfigureResponse) {
+	clients, ok := req.ProviderData.(*hubspot.ClientSet)
+	if !ok || clients == nil || clients.Schemas == nil {
+		res.Diagnostics.AddError("Provider is not configured", "The HubSpot schema client was not available.")
+		return
+	}
+	r.client = clients.Schemas
+}
+func (r *CustomSchemaResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, res *resource.ModifyPlanResponse) {
+	if req.Plan.Raw.IsNull() {
+		return
+	}
+	var plan customSchemaModel
+	res.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if res.Diagnostics.HasError() || plan.Properties.IsUnknown() {
+		return
+	}
+	var props map[string]schemaPropertyModel
+	if diags := plan.Properties.ElementsAs(ctx, &props, false); diags.HasError() {
+		return
+	}
+	if _, ok := props[plan.PrimaryDisplayProperty.ValueString()]; !ok {
+		res.Diagnostics.AddAttributeError(path.Root("primary_display_property"), "Unknown owned property", "Every role must reference a property in the owned properties map.")
+	}
+}
+func (r *CustomSchemaResource) Create(ctx context.Context, req resource.CreateRequest, res *resource.CreateResponse) {
+	var plan customSchemaModel
+	res.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if res.Diagnostics.HasError() {
+		return
+	}
+	in, err := schemaWriteFromModel(ctx, plan)
+	if err != nil {
+		res.Diagnostics.AddError("Invalid custom schema", err.Error())
+		return
+	}
+	out, err := r.client.Create(ctx, in)
+	if err != nil {
+		appendHubSpotDiagnostic(&res.Diagnostics, "Custom schema creation failed", err)
+		return
+	}
+	verified, err := r.client.Get(ctx, out.ObjectTypeID)
+	if err != nil {
+		appendHubSpotDiagnostic(&res.Diagnostics, "Custom schema creation verification failed", err)
+		return
+	}
+	res.Diagnostics.Append(res.State.Set(ctx, modelFromSchema(verified))...)
+}
+func (r *CustomSchemaResource) Read(ctx context.Context, req resource.ReadRequest, res *resource.ReadResponse) {
+	var state customSchemaModel
+	res.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if res.Diagnostics.HasError() {
+		return
+	}
+	out, err := r.client.Get(ctx, state.ObjectTypeID.ValueString())
+	if err != nil {
+		if isNotFound(err) {
+			res.State.RemoveResource(ctx)
+			return
+		}
+		appendHubSpotDiagnostic(&res.Diagnostics, "Custom schema refresh failed", err)
+		return
+	}
+	res.Diagnostics.Append(res.State.Set(ctx, modelFromSchema(out))...)
+}
+func (r *CustomSchemaResource) Update(ctx context.Context, req resource.UpdateRequest, res *resource.UpdateResponse) {
+	var plan customSchemaModel
+	res.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if res.Diagnostics.HasError() {
+		return
+	}
+	var state customSchemaModel
+	res.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	in, err := schemaWriteFromModel(ctx, plan)
+	if err != nil {
+		res.Diagnostics.AddError("Invalid custom schema", err.Error())
+		return
+	}
+	if _, err = r.client.Update(ctx, state.ObjectTypeID.ValueString(), in); err != nil {
+		appendHubSpotDiagnostic(&res.Diagnostics, "Custom schema update failed", err)
+		return
+	}
+	out, err := r.client.Get(ctx, state.ObjectTypeID.ValueString())
+	if err != nil {
+		appendHubSpotDiagnostic(&res.Diagnostics, "Custom schema update verification failed", err)
+		return
+	}
+	res.Diagnostics.Append(res.State.Set(ctx, modelFromSchema(out))...)
+}
+func (r *CustomSchemaResource) Delete(ctx context.Context, req resource.DeleteRequest, res *resource.DeleteResponse) {
+	var state customSchemaModel
+	res.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if res.Diagnostics.HasError() {
+		return
+	}
+	if err := r.client.Archive(ctx, state.ObjectTypeID.ValueString()); err != nil {
+		if isNotFound(err) {
+			res.State.RemoveResource(ctx)
+			return
+		}
+		appendHubSpotDiagnostic(&res.Diagnostics, "Custom schema archival failed", err)
+		return
+	}
+	res.State.RemoveResource(ctx)
+}
+func (r *CustomSchemaResource) ImportState(ctx context.Context, req resource.ImportStateRequest, res *resource.ImportStateResponse) {
+	if strings.TrimSpace(req.ID) == "" {
+		res.Diagnostics.AddAttributeError(path.Root("id"), "Invalid schema import ID", "Use an objectTypeId or fully qualified name.")
+		return
+	}
+	out, err := r.client.Get(ctx, req.ID)
+	if err != nil {
+		appendHubSpotDiagnostic(&res.Diagnostics, "Custom schema import failed", err)
+		return
+	}
+	res.Diagnostics.Append(res.State.Set(ctx, modelFromSchema(out))...)
+}
+func schemaWriteFromModel(ctx context.Context, m customSchemaModel) (hubspot.SchemaWrite, error) {
+	if m.Properties.IsNull() || m.Properties.IsUnknown() {
+		return hubspot.SchemaWrite{}, errors.New("custom schema requires nonempty properties")
+	}
+	var props map[string]schemaPropertyModel
+	if diags := m.Properties.ElementsAs(ctx, &props, false); diags.HasError() || len(props) == 0 {
+		return hubspot.SchemaWrite{}, errors.New("custom schema requires nonempty properties")
+	}
+	labels := m.Labels.Attributes()
+	singular, ok1 := labels["singular"].(types.String)
+	plural, ok2 := labels["plural"].(types.String)
+	if !ok1 || !ok2 {
+		return hubspot.SchemaWrite{}, errors.New("invalid labels")
+	}
+	out := hubspot.SchemaWrite{Name: m.Name.ValueString(), Labels: map[string]string{"singular": singular.ValueString(), "plural": plural.ValueString()}, Description: m.Description.ValueString(), PrimaryDisplayProperty: m.PrimaryDisplayProperty.ValueString(), AllowsSensitiveProperties: m.AllowsSensitiveProperties.ValueBool(), ShouldCreateSameObjectAssociation: m.ShouldCreateSameObjectAssociation.ValueBool()}
+	for k, p := range props {
+		out.Properties = append(out.Properties, hubspot.SchemaProperty{Name: k, Label: p.Label.ValueString(), Type: p.Type.ValueString(), FieldType: p.FieldType.ValueString(), Description: p.Description.ValueString(), DisplayOrder: p.DisplayOrder.ValueInt64(), FormField: p.FormField.ValueBool(), Hidden: p.Hidden.ValueBool(), HasUniqueValue: p.HasUniqueValue.ValueBool(), ShowCurrencySymbol: p.ShowCurrencySymbol.ValueBool()})
+	}
+	return out, nil
+}
+func modelFromSchema(s hubspot.CustomSchema) customSchemaModel {
+	labels := types.ObjectValueMust(map[string]attr.Type{"singular": types.StringType, "plural": types.StringType}, map[string]attr.Value{"singular": types.StringValue(s.Labels.Singular), "plural": types.StringValue(s.Labels.Plural)})
+	vals := map[string]attr.Value{}
+	for _, p := range s.Properties {
+		vals[p.Name] = types.ObjectValueMust(map[string]attr.Type{"label": types.StringType, "type": types.StringType, "field_type": types.StringType, "description": types.StringType, "display_order": types.Int64Type, "form_field": types.BoolType, "hidden": types.BoolType, "has_unique_value": types.BoolType, "show_currency_symbol": types.BoolType, "options": types.MapType{ElemType: types.StringType}}, map[string]attr.Value{"label": types.StringValue(p.Label), "type": types.StringValue(p.Type), "field_type": types.StringValue(p.FieldType), "description": types.StringValue(p.Description), "display_order": types.Int64Value(p.DisplayOrder), "form_field": types.BoolValue(p.FormField), "hidden": types.BoolValue(p.Hidden), "has_unique_value": types.BoolValue(p.HasUniqueValue), "show_currency_symbol": types.BoolValue(p.ShowCurrencySymbol), "options": types.MapNull(types.StringType)})
+	}
+	return customSchemaModel{ID: types.StringValue(s.ObjectTypeID), ObjectTypeID: types.StringValue(s.ObjectTypeID), FullyQualifiedName: types.StringValue(s.FullyQualifiedName), Name: types.StringValue(s.Name), Labels: labels, PrimaryDisplayProperty: types.StringValue(s.PrimaryDisplayProperty), Description: types.StringValue(s.Description), Properties: types.MapValueMust(types.ObjectType{AttrTypes: map[string]attr.Type{"label": types.StringType, "type": types.StringType, "field_type": types.StringType, "description": types.StringType, "display_order": types.Int64Type, "form_field": types.BoolType, "hidden": types.BoolType, "has_unique_value": types.BoolType, "show_currency_symbol": types.BoolType, "options": types.MapType{ElemType: types.StringType}}}, vals)}
+}
+
+type setRequiresReplace struct{}
+
+func (setRequiresReplace) Description(context.Context) string             { return "changes require replacement" }
+func (v setRequiresReplace) MarkdownDescription(c context.Context) string { return v.Description(c) }
+func (setRequiresReplace) PlanModifySet(_ context.Context, req planmodifier.SetRequest, res *planmodifier.SetResponse) {
+	if !req.PlanValue.Equal(req.StateValue) {
+		res.RequiresReplace = true
+	}
+}

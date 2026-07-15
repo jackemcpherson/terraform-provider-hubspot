@@ -23,6 +23,7 @@ type ClientSet struct {
 	PropertyGroups *PropertyGroupClient
 	Properties     *PropertyDefinitionClient
 	Pipelines      *PipelineClient
+	Schemas        *SchemaClient
 }
 
 func NewClientSet(config TransportConfig) (*ClientSet, error) {
@@ -30,7 +31,88 @@ func NewClientSet(config TransportConfig) (*ClientSet, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ClientSet{PropertyGroups: &PropertyGroupClient{transport: transport}, Properties: &PropertyDefinitionClient{transport: transport}, Pipelines: &PipelineClient{transport: transport}}, nil
+	return &ClientSet{PropertyGroups: &PropertyGroupClient{transport: transport}, Properties: &PropertyDefinitionClient{transport: transport}, Pipelines: &PipelineClient{transport: transport}, Schemas: &SchemaClient{transport: transport}}, nil
+}
+
+type SchemaClient struct{ transport *Transport }
+type CustomSchema struct {
+	ObjectTypeID       string `json:"objectTypeId"`
+	FullyQualifiedName string `json:"fullyQualifiedName"`
+	Name               string `json:"name"`
+	Labels             struct {
+		Singular string `json:"singular"`
+		Plural   string `json:"plural"`
+	} `json:"labels"`
+	Description            string           `json:"description"`
+	PrimaryDisplayProperty string           `json:"primaryDisplayProperty"`
+	Properties             []SchemaProperty `json:"properties"`
+	Archived               bool             `json:"archived"`
+}
+type SchemaProperty struct {
+	Name               string           `json:"name"`
+	Label              string           `json:"label"`
+	Type               string           `json:"type"`
+	FieldType          string           `json:"fieldType"`
+	Description        string           `json:"description"`
+	DisplayOrder       int64            `json:"displayOrder"`
+	FormField          bool             `json:"formField"`
+	Hidden             bool             `json:"hidden"`
+	HasUniqueValue     bool             `json:"hasUniqueValue"`
+	ShowCurrencySymbol bool             `json:"showCurrencySymbol"`
+	Options            []PropertyOption `json:"options"`
+}
+type SchemaWrite struct {
+	Name                              string            `json:"name"`
+	Labels                            map[string]string `json:"labels"`
+	Description                       string            `json:"description"`
+	PrimaryDisplayProperty            string            `json:"primaryDisplayProperty"`
+	AssociatedObjects                 []string          `json:"associatedObjects"`
+	Properties                        []SchemaProperty  `json:"properties"`
+	RequiredProperties                []string          `json:"requiredProperties"`
+	SearchableProperties              []string          `json:"searchableProperties"`
+	SecondaryDisplayProperties        []string          `json:"secondaryDisplayProperties"`
+	AllowsSensitiveProperties         bool              `json:"allowsSensitiveProperties"`
+	ShouldCreateSameObjectAssociation bool              `json:"shouldCreateSameObjectAssociation"`
+}
+
+func schemaPath() string { return "/crm-object-schemas/2026-03/schemas" }
+func (c *SchemaClient) Get(ctx context.Context, id string) (CustomSchema, error) {
+	var out CustomSchema
+	if err := c.transport.Do(ctx, Operation{Name: "schema-read", Method: http.MethodGet, Path: schemaPath() + "/" + url.PathEscape(id), Replay: ReplaySafe}, nil, &out); err != nil {
+		return out, err
+	}
+	if out.ObjectTypeID == "" {
+		return out, errors.New("HubSpot schema response omitted objectTypeId")
+	}
+	return out, nil
+}
+func (c *SchemaClient) Create(ctx context.Context, in SchemaWrite) (CustomSchema, error) {
+	body, err := json.Marshal(in)
+	if err != nil {
+		return CustomSchema{}, err
+	}
+	var out CustomSchema
+	if err := c.transport.Do(ctx, Operation{Name: "schema-create", Method: http.MethodPost, Path: schemaPath(), Replay: ReplayNever}, bytes.NewReader(body), &out); err != nil {
+		return out, err
+	}
+	if out.ObjectTypeID == "" {
+		return out, errors.New("HubSpot schema response omitted objectTypeId")
+	}
+	return out, nil
+}
+func (c *SchemaClient) Update(ctx context.Context, id string, in SchemaWrite) (CustomSchema, error) {
+	body, err := json.Marshal(in)
+	if err != nil {
+		return CustomSchema{}, err
+	}
+	var out CustomSchema
+	if err := c.transport.Do(ctx, Operation{Name: "schema-update", Method: http.MethodPatch, Path: schemaPath() + "/" + url.PathEscape(id), Replay: ReplayExplicit}, bytes.NewReader(body), &out); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+func (c *SchemaClient) Archive(ctx context.Context, id string) error {
+	return c.transport.Do(ctx, Operation{Name: "schema-archive", Method: http.MethodDelete, Path: schemaPath() + "/" + url.PathEscape(id), Replay: ReplayExplicit}, nil, nil)
 }
 
 type PipelineClient struct{ transport *Transport }
