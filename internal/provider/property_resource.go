@@ -57,7 +57,7 @@ func (r *PropertyResource) Metadata(_ context.Context, _ resource.MetadataReques
 	response.TypeName = "hubspot_property"
 }
 func (r *PropertyResource) Schema(_ context.Context, _ resource.SchemaRequest, response *resource.SchemaResponse) {
-	response.Schema = schema.Schema{Description: "Manages one ordinary or enumeration HubSpot CRM property definition.", Attributes: map[string]schema.Attribute{
+	response.Schema = schema.Schema{Version: 1, Description: "Manages one ordinary or enumeration HubSpot CRM property definition.", Attributes: map[string]schema.Attribute{
 		"id":          schema.StringAttribute{Computed: true},
 		"object_type": schema.StringAttribute{Required: true, Validators: []validator.String{identifierValidator{kind: "CRM object type"}}, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
 		"name":        schema.StringAttribute{Required: true, Validators: []validator.String{identifierValidator{kind: "property name"}}, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
@@ -71,6 +71,10 @@ func (r *PropertyResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 		"calculation_formula": schema.StringAttribute{Optional: true, Computed: true}, "currency_property_name": schema.StringAttribute{Optional: true, Computed: true}, "number_display_hint": schema.StringAttribute{Optional: true, Computed: true}, "text_display_hint": schema.StringAttribute{Optional: true, Computed: true}, "referenced_object_type": schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
 		"options": schema.MapAttribute{Optional: true, Computed: true, ElementType: types.ObjectType{AttrTypes: map[string]attr.Type{"label": types.StringType, "description": types.StringType, "display_order": types.Int64Type, "hidden": types.BoolType}}},
 	}}
+}
+
+func (r *PropertyResource) UpgradeState(context.Context) map[int64]resource.StateUpgrader {
+	return map[int64]resource.StateUpgrader{0: identityStateUpgrade()}
 }
 func (r *PropertyResource) Configure(_ context.Context, request resource.ConfigureRequest, response *resource.ConfigureResponse) {
 	clients, ok := request.ProviderData.(*hubspot.ClientSet)

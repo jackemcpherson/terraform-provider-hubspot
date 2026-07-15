@@ -42,7 +42,11 @@ func (r *PipelineResource) Metadata(_ context.Context, _ resource.MetadataReques
 }
 func (r *PipelineResource) Schema(_ context.Context, _ resource.SchemaRequest, res *resource.SchemaResponse) {
 	stageType := types.ObjectType{AttrTypes: map[string]attr.Type{"id": types.StringType, "label": types.StringType, "display_order": types.Int64Type, "metadata": types.MapType{ElemType: types.StringType}, "write_permissions": types.StringType}}
-	res.Schema = schema.Schema{Description: "Manages a deal pipeline and its exclusively owned stages.", Attributes: map[string]schema.Attribute{"id": schema.StringAttribute{Computed: true}, "object_type": schema.StringAttribute{Required: true, Validators: []validator.String{identifierValidator{kind: "CRM object type"}}, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}}, "label": schema.StringAttribute{Required: true}, "display_order": schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(-1)}, "stages": schema.MapAttribute{Required: true, ElementType: stageType}}}
+	res.Schema = schema.Schema{Version: 1, Description: "Manages a deal pipeline and its exclusively owned stages.", Attributes: map[string]schema.Attribute{"id": schema.StringAttribute{Computed: true}, "object_type": schema.StringAttribute{Required: true, Validators: []validator.String{identifierValidator{kind: "CRM object type"}}, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}}, "label": schema.StringAttribute{Required: true}, "display_order": schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(-1)}, "stages": schema.MapAttribute{Required: true, ElementType: stageType}}}
+}
+
+func (r *PipelineResource) UpgradeState(context.Context) map[int64]resource.StateUpgrader {
+	return map[int64]resource.StateUpgrader{0: identityStateUpgrade()}
 }
 func (r *PipelineResource) Configure(_ context.Context, req resource.ConfigureRequest, res *resource.ConfigureResponse) {
 	clients, ok := req.ProviderData.(*hubspot.ClientSet)

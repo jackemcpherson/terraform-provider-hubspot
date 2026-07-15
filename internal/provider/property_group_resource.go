@@ -44,6 +44,7 @@ func (r *PropertyGroupResource) Metadata(_ context.Context, _ resource.MetadataR
 
 func (r *PropertyGroupResource) Schema(_ context.Context, _ resource.SchemaRequest, response *resource.SchemaResponse) {
 	response.Schema = schema.Schema{
+		Version:     1,
 		Description: "Manages one HubSpot CRM property group for an exact CRM object type.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
@@ -79,6 +80,10 @@ func (r *PropertyGroupResource) Schema(_ context.Context, _ resource.SchemaReque
 			},
 		},
 	}
+}
+
+func (r *PropertyGroupResource) UpgradeState(context.Context) map[int64]resource.StateUpgrader {
+	return map[int64]resource.StateUpgrader{0: identityStateUpgrade()}
 }
 
 func (r *PropertyGroupResource) Configure(_ context.Context, request resource.ConfigureRequest, response *resource.ConfigureResponse) {

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add deterministic, offline schema-version-0-to-1 state migration for all
+  managed resources and document registry-source portability.
+
 All notable changes to this project are documented here.
 
 ## [Unreleased]
