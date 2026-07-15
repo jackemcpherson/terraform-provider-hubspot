@@ -101,7 +101,7 @@ func (p *Provider) Configure(ctx context.Context, request provider.ConfigureRequ
 }
 
 func (p *Provider) Resources(context.Context) []func() resource.Resource {
-	return []func() resource.Resource{NewPropertyGroupResource, NewPropertyResource}
+	return []func() resource.Resource{NewPropertyGroupResource, NewPropertyResource, NewPipelineResource}
 }
 
 func (p *Provider) DataSources(context.Context) []func() datasource.DataSource {

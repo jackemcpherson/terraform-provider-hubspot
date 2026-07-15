@@ -22,6 +22,7 @@ import (
 type ClientSet struct {
 	PropertyGroups *PropertyGroupClient
 	Properties     *PropertyDefinitionClient
+	Pipelines      *PipelineClient
 }
 
 func NewClientSet(config TransportConfig) (*ClientSet, error) {
@@ -29,7 +30,92 @@ func NewClientSet(config TransportConfig) (*ClientSet, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ClientSet{PropertyGroups: &PropertyGroupClient{transport: transport}, Properties: &PropertyDefinitionClient{transport: transport}}, nil
+	return &ClientSet{PropertyGroups: &PropertyGroupClient{transport: transport}, Properties: &PropertyDefinitionClient{transport: transport}, Pipelines: &PipelineClient{transport: transport}}, nil
+}
+
+type PipelineClient struct{ transport *Transport }
+type Pipeline struct {
+	ID           string          `json:"id"`
+	Label        string          `json:"label"`
+	DisplayOrder int64           `json:"displayOrder"`
+	Stages       []PipelineStage `json:"stages"`
+	Archived     bool            `json:"archived"`
+}
+type PipelineStage struct {
+	ID               string            `json:"id"`
+	Label            string            `json:"label"`
+	DisplayOrder     int64             `json:"displayOrder"`
+	Metadata         map[string]string `json:"metadata"`
+	WritePermissions string            `json:"writePermissions"`
+}
+type PipelineStageWrite struct {
+	Label        string            `json:"label"`
+	DisplayOrder int64             `json:"displayOrder"`
+	Metadata     map[string]string `json:"metadata"`
+}
+type PipelineWrite struct {
+	Label        string               `json:"label"`
+	DisplayOrder int64                `json:"displayOrder"`
+	Stages       []PipelineStageWrite `json:"stages"`
+}
+
+func pipelinePath(objectType string) string {
+	return "/crm/pipelines/2026-03/" + url.PathEscape(objectType)
+}
+func (c *PipelineClient) Get(ctx context.Context, objectType, id string) (Pipeline, error) {
+	if err := validateObjectType(objectType); err != nil {
+		return Pipeline{}, err
+	}
+	var out Pipeline
+	if err := c.transport.Do(ctx, Operation{Name: "pipeline-read", Method: http.MethodGet, Path: pipelinePath(objectType) + "/" + url.PathEscape(id), Replay: ReplaySafe}, nil, &out); err != nil {
+		return Pipeline{}, err
+	}
+	if out.ID == "" {
+		return Pipeline{}, errors.New("HubSpot pipeline response omitted id")
+	}
+	return out, nil
+}
+func (c *PipelineClient) Create(ctx context.Context, objectType string, input PipelineWrite) (Pipeline, error) {
+	if err := validateObjectType(objectType); err != nil {
+		return Pipeline{}, err
+	}
+	if len(input.Stages) == 0 {
+		return Pipeline{}, errors.New("pipeline requires at least one stage")
+	}
+	body, err := json.Marshal(input)
+	if err != nil {
+		return Pipeline{}, err
+	}
+	var out Pipeline
+	if err := c.transport.Do(ctx, Operation{Name: "pipeline-create", Method: http.MethodPost, Path: pipelinePath(objectType), Replay: ReplayNever}, bytes.NewReader(body), &out); err != nil {
+		return Pipeline{}, err
+	}
+	if out.ID == "" {
+		return Pipeline{}, errors.New("HubSpot pipeline response omitted id")
+	}
+	return out, nil
+}
+func (c *PipelineClient) Update(ctx context.Context, objectType, id string, input PipelineWrite) (Pipeline, error) {
+	body, err := json.Marshal(input)
+	if err != nil {
+		return Pipeline{}, err
+	}
+	var out Pipeline
+	if err := c.transport.Do(ctx, Operation{Name: "pipeline-update", Method: http.MethodPut, Path: pipelinePath(objectType) + "/" + url.PathEscape(id), Replay: ReplayExplicit}, bytes.NewReader(body), &out); err != nil {
+		return Pipeline{}, err
+	}
+	return out, nil
+}
+func (c *PipelineClient) Restore(ctx context.Context, objectType, id string) (Pipeline, error) {
+	body := []byte(`{"archived":false}`)
+	var out Pipeline
+	if err := c.transport.Do(ctx, Operation{Name: "pipeline-restore", Method: http.MethodPatch, Path: pipelinePath(objectType) + "/" + url.PathEscape(id), Replay: ReplayExplicit}, bytes.NewReader(body), &out); err != nil {
+		return Pipeline{}, err
+	}
+	return out, nil
+}
+func (c *PipelineClient) Archive(ctx context.Context, objectType, id string) error {
+	return c.transport.Do(ctx, Operation{Name: "pipeline-archive", Method: http.MethodDelete, Path: pipelinePath(objectType) + "/" + url.PathEscape(id) + "?validateReferencesBeforeDelete=true", Replay: ReplayExplicit}, nil, nil)
 }
 
 type PropertyDefinitionClient struct{ transport *Transport }
