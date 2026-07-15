@@ -8,6 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -53,14 +54,44 @@ func (r *CustomSchemaResource) Metadata(_ context.Context, _ resource.MetadataRe
 	res.TypeName = "hubspot_custom_object_schema"
 }
 func (r *CustomSchemaResource) Schema(_ context.Context, _ resource.SchemaRequest, res *resource.SchemaResponse) {
-	propertyType := types.ObjectType{AttrTypes: map[string]attr.Type{"label": types.StringType, "type": types.StringType, "field_type": types.StringType, "description": types.StringType, "display_order": types.Int64Type, "form_field": types.BoolType, "hidden": types.BoolType, "has_unique_value": types.BoolType, "show_currency_symbol": types.BoolType, "options": types.MapType{ElemType: types.StringType}}}
-	res.Schema = schema.Schema{Version: 1, Description: "Manages a custom HubSpot object schema with continuously owned bootstrap properties.", Attributes: map[string]schema.Attribute{"id": schema.StringAttribute{Computed: true}, "object_type_id": schema.StringAttribute{Computed: true}, "fully_qualified_name": schema.StringAttribute{Computed: true}, "name": schema.StringAttribute{Required: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}}, "labels": schema.ObjectAttribute{Required: true, AttributeTypes: map[string]attr.Type{"singular": types.StringType, "plural": types.StringType}}, "primary_display_property": schema.StringAttribute{Required: true}, "description": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("")}, "allows_sensitive_properties": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false)}, "associated_objects": schema.SetAttribute{Optional: true, Computed: true, ElementType: types.StringType, PlanModifiers: []planmodifier.Set{setRequiresReplace{}}}, "should_create_same_object_association": schema.BoolAttribute{Optional: true, Computed: true}, "required_properties": schema.SetAttribute{Optional: true, Computed: true, ElementType: types.StringType}, "searchable_properties": schema.SetAttribute{Optional: true, Computed: true, ElementType: types.StringType}, "secondary_display_properties": schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType}, "expected_external_properties": schema.SetAttribute{Optional: true, Computed: true, ElementType: types.StringType}, "deletion_protection": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true)}, "properties": schema.MapAttribute{Required: true, ElementType: propertyType}}}
+	res.Schema = schema.Schema{Version: 1, Description: "Manages a custom HubSpot object schema with continuously owned bootstrap properties.", Attributes: map[string]schema.Attribute{
+		"id":                                    schema.StringAttribute{Computed: true, Description: "Canonical HubSpot object type ID."},
+		"object_type_id":                        schema.StringAttribute{Computed: true, Description: "HubSpot object type ID returned after creation."},
+		"fully_qualified_name":                  schema.StringAttribute{Computed: true, Description: "HubSpot fully qualified schema name."},
+		"name":                                  schema.StringAttribute{Required: true, Description: "Immutable schema internal name.", PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
+		"labels":                                schema.ObjectAttribute{Required: true, Description: "Singular and plural display labels.", AttributeTypes: map[string]attr.Type{"singular": types.StringType, "plural": types.StringType}},
+		"primary_display_property":              schema.StringAttribute{Required: true, Description: "Owned property used as the primary display value."},
+		"description":                           schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString(""), Description: "Schema description."},
+		"allows_sensitive_properties":           schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: "Allows sensitive properties on eligible Enterprise accounts."},
+		"associated_objects":                    schema.SetAttribute{Optional: true, Computed: true, ElementType: types.StringType, Description: "Exact object types associated at schema creation.", PlanModifiers: []planmodifier.Set{setRequiresReplace{}}},
+		"should_create_same_object_association": schema.BoolAttribute{Optional: true, Computed: true, Description: "Requests a same-object association at creation."},
+		"required_properties":                   schema.SetAttribute{Optional: true, Computed: true, ElementType: types.StringType, Description: "Owned properties required by the schema."},
+		"searchable_properties":                 schema.SetAttribute{Optional: true, Computed: true, ElementType: types.StringType, Description: "Owned properties indexed for search."},
+		"secondary_display_properties":          schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType, Description: "Ordered owned properties shown as secondary values."},
+		"expected_external_properties":          schema.SetAttribute{Optional: true, Computed: true, ElementType: types.StringType, Description: "Separately managed properties acknowledged without adoption."},
+		"deletion_protection":                   schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true), Description: "Blocks schema deletion until disabled in a prior apply."},
+		"properties": schema.MapNestedAttribute{Required: true, Description: "Nonempty map of continuously owned bootstrap properties.", NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
+			"label":                schema.StringAttribute{Required: true, Description: "Property display label."},
+			"type":                 schema.StringAttribute{Required: true, Description: "HubSpot property storage type."},
+			"field_type":           schema.StringAttribute{Required: true, Description: "HubSpot editor field type."},
+			"description":          schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString(""), Description: "Property description."},
+			"display_order":        schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(-1), Description: "HubSpot display order; defaults to -1."},
+			"form_field":           schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: "Whether the property can appear in forms."},
+			"hidden":               schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: "Whether HubSpot hides the property."},
+			"has_unique_value":     schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: "Whether property values must be unique."},
+			"show_currency_symbol": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: "Whether HubSpot displays a currency symbol."},
+			"options":              schema.MapAttribute{Optional: true, Computed: true, ElementType: types.StringType, Description: "Reserved option metadata for supported property types."},
+		}}},
+	}}
 }
 
 func (r *CustomSchemaResource) UpgradeState(context.Context) map[int64]resource.StateUpgrader {
 	return map[int64]resource.StateUpgrader{0: identityStateUpgrade()}
 }
 func (r *CustomSchemaResource) Configure(_ context.Context, req resource.ConfigureRequest, res *resource.ConfigureResponse) {
+	if req.ProviderData == nil {
+		return
+	}
 	clients, ok := req.ProviderData.(*hubspot.ClientSet)
 	if !ok || clients == nil || clients.Schemas == nil {
 		res.Diagnostics.AddError("Provider is not configured", "The HubSpot schema client was not available.")

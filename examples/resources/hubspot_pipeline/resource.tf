@@ -1,13 +1,3 @@
-terraform {
-  required_providers {
-    hubspot = {
-      source = "registry.opentofu.org/jackemcpherson/hubspot"
-    }
-  }
-}
-
-provider "hubspot" {}
-
 resource "hubspot_pipeline" "sales" {
   object_type = "deals"
   label       = "Sales pipeline"

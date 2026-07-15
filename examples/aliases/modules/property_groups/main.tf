@@ -6,8 +6,6 @@ terraform {
   }
 }
 
-provider "hubspot" {}
-
 resource "hubspot_property_group" "marketing" {
   object_type = "contacts"
   name        = "marketing"

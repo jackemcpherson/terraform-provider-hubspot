@@ -71,12 +71,12 @@ func NewPropertyDefinitionsDataSource() datasource.DataSource {
 
 func propertyDefinitionAttrs(includeName bool) map[string]schema.Attribute {
 	attrs := map[string]schema.Attribute{
-		"id": schema.StringAttribute{Computed: true}, "object_type": schema.StringAttribute{Required: true, Validators: []validator.String{identifierValidator{kind: "CRM object type"}}}, "archived": schema.BoolAttribute{Optional: true, Computed: true}, "data_sensitivity": schema.StringAttribute{Optional: true, Computed: true, Validators: []validator.String{sensitivityValidator{}}}, "locale": schema.StringAttribute{Optional: true},
+		"id": schema.StringAttribute{Computed: true, Description: "Canonical object_type/property_name identity."}, "object_type": schema.StringAttribute{Required: true, Description: "Exact CRM object type API identifier.", Validators: []validator.String{identifierValidator{kind: "CRM object type"}}}, "archived": schema.BoolAttribute{Optional: true, Computed: true, Description: "Select archived definitions instead of active definitions; defaults to false."}, "data_sensitivity": schema.StringAttribute{Optional: true, Computed: true, Description: "Sensitivity selector; defaults to non_sensitive.", Validators: []validator.String{sensitivityValidator{}}}, "locale": schema.StringAttribute{Optional: true, Description: "Optional HubSpot locale selector."},
 		"label": schema.StringAttribute{Computed: true}, "group_name": schema.StringAttribute{Computed: true}, "type": schema.StringAttribute{Computed: true}, "field_type": schema.StringAttribute{Computed: true}, "description": schema.StringAttribute{Computed: true}, "display_order": schema.Int64Attribute{Computed: true}, "form_field": schema.BoolAttribute{Computed: true}, "hidden": schema.BoolAttribute{Computed: true}, "has_unique_value": schema.BoolAttribute{Computed: true}, "external_options": schema.BoolAttribute{Computed: true}, "referenced_object_type": schema.StringAttribute{Computed: true}, "show_currency_symbol": schema.BoolAttribute{Computed: true}, "calculation_formula": schema.StringAttribute{Computed: true}, "currency_property_name": schema.StringAttribute{Computed: true}, "number_display_hint": schema.StringAttribute{Computed: true}, "text_display_hint": schema.StringAttribute{Computed: true}, "date_display_hint": schema.StringAttribute{Computed: true}, "sensitivity_category": schema.StringAttribute{Computed: true}, "calculated": schema.BoolAttribute{Computed: true}, "hubspot_defined": schema.BoolAttribute{Computed: true}, "is_archived": schema.BoolAttribute{Computed: true}, "archived_at": schema.StringAttribute{Computed: true}, "created_at": schema.StringAttribute{Computed: true}, "updated_at": schema.StringAttribute{Computed: true}, "created_user_id": schema.StringAttribute{Computed: true}, "updated_user_id": schema.StringAttribute{Computed: true},
 		"options": schema.MapAttribute{Computed: true, ElementType: types.ObjectType{AttrTypes: optionAttrTypes()}}, "modification_metadata": schema.ObjectAttribute{Computed: true, AttributeTypes: metadataAttrTypes()},
 	}
 	if includeName {
-		attrs["name"] = schema.StringAttribute{Required: true, Validators: []validator.String{identifierValidator{kind: "property name"}}}
+		attrs["name"] = schema.StringAttribute{Required: true, Description: "Exact immutable property name.", Validators: []validator.String{identifierValidator{kind: "property name"}}}
 	}
 	return attrs
 }
@@ -94,6 +94,9 @@ func (d *PropertyDefinitionDataSource) Schema(_ context.Context, _ datasource.Sc
 	r.Schema = schema.Schema{Description: "Reads one HubSpot CRM property definition without reading CRM records.", Attributes: propertyDefinitionAttrs(true)}
 }
 func (d *PropertyDefinitionDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, r *datasource.ConfigureResponse) {
+	if req.ProviderData == nil {
+		return
+	}
 	clients, ok := req.ProviderData.(*hubspot.ClientSet)
 	if !ok || clients == nil {
 		r.Diagnostics.AddError("Provider is not configured", "The HubSpot client set was not available.")
@@ -137,7 +140,7 @@ func (d *PropertyDefinitionsDataSource) Metadata(_ context.Context, _ datasource
 	r.TypeName = "hubspot_property_definitions"
 }
 func (d *PropertyDefinitionsDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, r *datasource.SchemaResponse) {
-	r.Schema = schema.Schema{Description: "Reads HubSpot CRM property definitions without reading CRM records.", Attributes: map[string]schema.Attribute{"object_type": schema.StringAttribute{Required: true, Validators: []validator.String{identifierValidator{kind: "CRM object type"}}}, "archived": schema.BoolAttribute{Optional: true, Computed: true}, "data_sensitivity": schema.StringAttribute{Optional: true, Computed: true, Validators: []validator.String{sensitivityValidator{}}}, "locale": schema.StringAttribute{Optional: true}, "definitions": schema.MapAttribute{Computed: true, ElementType: types.ObjectType{AttrTypes: definitionAttrTypes()}}}}
+	r.Schema = schema.Schema{Description: "Reads HubSpot CRM property definitions without reading CRM records.", Attributes: map[string]schema.Attribute{"object_type": schema.StringAttribute{Required: true, Description: "Exact CRM object type API identifier.", Validators: []validator.String{identifierValidator{kind: "CRM object type"}}}, "archived": schema.BoolAttribute{Optional: true, Computed: true, Description: "Select archived definitions instead of active definitions; defaults to false."}, "data_sensitivity": schema.StringAttribute{Optional: true, Computed: true, Description: "Sensitivity selector; defaults to non_sensitive.", Validators: []validator.String{sensitivityValidator{}}}, "locale": schema.StringAttribute{Optional: true, Description: "Optional HubSpot locale selector."}, "definitions": schema.MapAttribute{Computed: true, Description: "Definitions keyed by immutable property name; an empty map is valid.", ElementType: types.ObjectType{AttrTypes: definitionAttrTypes()}}}}
 }
 func definitionAttrTypes() map[string]attr.Type {
 	a := propertyDefinitionAttrs(false)
@@ -152,6 +155,9 @@ func definitionAttrTypes() map[string]attr.Type {
 	return out
 }
 func (d *PropertyDefinitionsDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, r *datasource.ConfigureResponse) {
+	if req.ProviderData == nil {
+		return
+	}
 	clients, ok := req.ProviderData.(*hubspot.ClientSet)
 	if !ok || clients == nil {
 		r.Diagnostics.AddError("Provider is not configured", "The HubSpot client set was not available.")

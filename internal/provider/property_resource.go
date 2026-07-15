@@ -58,18 +58,32 @@ func (r *PropertyResource) Metadata(_ context.Context, _ resource.MetadataReques
 }
 func (r *PropertyResource) Schema(_ context.Context, _ resource.SchemaRequest, response *resource.SchemaResponse) {
 	response.Schema = schema.Schema{Version: 1, Description: "Manages one ordinary or enumeration HubSpot CRM property definition.", Attributes: map[string]schema.Attribute{
-		"id":          schema.StringAttribute{Computed: true},
-		"object_type": schema.StringAttribute{Required: true, Validators: []validator.String{identifierValidator{kind: "CRM object type"}}, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
-		"name":        schema.StringAttribute{Required: true, Validators: []validator.String{identifierValidator{kind: "property name"}}, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
-		"label":       schema.StringAttribute{Required: true}, "group_name": schema.StringAttribute{Required: true},
-		"type": schema.StringAttribute{Required: true, Validators: []validator.String{propertyTypeValidator{}}}, "field_type": schema.StringAttribute{Required: true, Validators: []validator.String{propertyFieldTypeValidator{}}},
-		"description": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("")}, "display_order": schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(-1)},
-		"form_field": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false)}, "hidden": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false)},
-		"has_unique_value": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), PlanModifiers: []planmodifier.Bool{boolRequiresReplace{}}},
-		"data_sensitivity": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("non_sensitive"), Validators: []validator.String{sensitivityValidator{}}, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
-		"external_options": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), PlanModifiers: []planmodifier.Bool{boolRequiresReplace{}}}, "show_currency_symbol": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false)},
-		"calculation_formula": schema.StringAttribute{Optional: true, Computed: true}, "currency_property_name": schema.StringAttribute{Optional: true, Computed: true}, "number_display_hint": schema.StringAttribute{Optional: true, Computed: true}, "text_display_hint": schema.StringAttribute{Optional: true, Computed: true}, "referenced_object_type": schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
-		"options": schema.MapAttribute{Optional: true, Computed: true, ElementType: types.ObjectType{AttrTypes: map[string]attr.Type{"label": types.StringType, "description": types.StringType, "display_order": types.Int64Type, "hidden": types.BoolType}}},
+		"id":                     schema.StringAttribute{Computed: true, Description: "Canonical object_type/property_name identity."},
+		"object_type":            schema.StringAttribute{Required: true, Description: "Exact CRM object type; changes replace the definition.", Validators: []validator.String{identifierValidator{kind: "CRM object type"}}, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
+		"name":                   schema.StringAttribute{Required: true, Description: "Immutable property name; changes replace the definition.", Validators: []validator.String{identifierValidator{kind: "property name"}}, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
+		"label":                  schema.StringAttribute{Required: true, Description: "Property display label."},
+		"group_name":             schema.StringAttribute{Required: true, Description: "Internal name of the owning property group."},
+		"type":                   schema.StringAttribute{Required: true, Description: "HubSpot storage type. Type changes update in place and can affect existing record values.", Validators: []validator.String{propertyTypeValidator{}}},
+		"field_type":             schema.StringAttribute{Required: true, Description: "HubSpot editor field type. Field-type changes update in place and can affect existing record values.", Validators: []validator.String{propertyFieldTypeValidator{}}},
+		"description":            schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString(""), Description: "Property description; defaults to an empty string."},
+		"display_order":          schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(-1), Description: "HubSpot display order; defaults to -1."},
+		"form_field":             schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: "Whether the property can appear in forms; defaults to false."},
+		"hidden":                 schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: "Whether HubSpot hides the property; defaults to false."},
+		"has_unique_value":       schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: "Whether values must be unique; defaults to false and changes replace the definition.", PlanModifiers: []planmodifier.Bool{boolRequiresReplace{}}},
+		"data_sensitivity":       schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("non_sensitive"), Description: "One of non_sensitive, sensitive, or highly_sensitive; defaults to non_sensitive and changes replace the definition.", Validators: []validator.String{sensitivityValidator{}}, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
+		"external_options":       schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: "Delegates option ownership to HubSpot; defaults to false and changes replace the definition.", PlanModifiers: []planmodifier.Bool{boolRequiresReplace{}}},
+		"show_currency_symbol":   schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: "Whether HubSpot shows a currency symbol; defaults to false."},
+		"calculation_formula":    schema.StringAttribute{Optional: true, Computed: true, Description: "HubSpot calculation formula; omitted when null."},
+		"currency_property_name": schema.StringAttribute{Optional: true, Computed: true, Description: "Internal name of the currency source property; omitted when null."},
+		"number_display_hint":    schema.StringAttribute{Optional: true, Computed: true, Description: "HubSpot number display hint; omitted when null."},
+		"text_display_hint":      schema.StringAttribute{Optional: true, Computed: true, Description: "HubSpot text display hint; omitted when null."},
+		"referenced_object_type": schema.StringAttribute{Optional: true, Computed: true, Description: "Referenced CRM object type; changes replace the definition.", PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
+		"options": schema.MapNestedAttribute{Optional: true, Computed: true, Description: "Complete option set keyed by immutable CRM record value.", NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
+			"label":         schema.StringAttribute{Required: true, Description: "Option display label."},
+			"description":   schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString(""), Description: "Option description; defaults to an empty string."},
+			"display_order": schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(-1), Description: "HubSpot display order; defaults to -1."},
+			"hidden":        schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: "Whether HubSpot hides the option; defaults to false."},
+		}}},
 	}}
 }
 
@@ -77,6 +91,9 @@ func (r *PropertyResource) UpgradeState(context.Context) map[int64]resource.Stat
 	return map[int64]resource.StateUpgrader{0: identityStateUpgrade()}
 }
 func (r *PropertyResource) Configure(_ context.Context, request resource.ConfigureRequest, response *resource.ConfigureResponse) {
+	if request.ProviderData == nil {
+		return
+	}
 	clients, ok := request.ProviderData.(*hubspot.ClientSet)
 	if !ok || clients == nil || clients.Properties == nil {
 		response.Diagnostics.AddError("Provider is not configured", "The HubSpot property client was not available.")

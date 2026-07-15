@@ -12,3 +12,17 @@ To move between the Terraform and OpenTofu registry source identities, use the
 engine command in both directions and keep the generated backup. Run `plan`
 afterward; a successful source replacement is expected to produce an empty plan
 and makes no HubSpot API calls.
+
+```sh
+tofu state replace-provider \
+  registry.terraform.io/jackemcpherson/hubspot \
+  registry.opentofu.org/jackemcpherson/hubspot
+
+terraform state replace-provider \
+  registry.opentofu.org/jackemcpherson/hubspot \
+  registry.terraform.io/jackemcpherson/hubspot
+```
+
+The CLIs write a state backup before replacement. Do not delete it until the
+subsequent plan is empty. These commands change provider source addresses in
+state; they do not migrate third-party provider schemas.

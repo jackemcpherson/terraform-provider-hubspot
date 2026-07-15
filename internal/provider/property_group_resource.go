@@ -87,6 +87,9 @@ func (r *PropertyGroupResource) UpgradeState(context.Context) map[int64]resource
 }
 
 func (r *PropertyGroupResource) Configure(_ context.Context, request resource.ConfigureRequest, response *resource.ConfigureResponse) {
+	if request.ProviderData == nil {
+		return
+	}
 	clients, ok := request.ProviderData.(*hubspot.ClientSet)
 	if !ok || clients == nil || clients.PropertyGroups == nil {
 		response.Diagnostics.AddError("Provider is not configured", "The HubSpot client set was not available to hubspot_property_group.")
@@ -108,10 +111,12 @@ func (r *PropertyGroupResource) Create(ctx context.Context, request resource.Cre
 		DisplayOrder: plan.DisplayOrder.ValueInt64(),
 	})
 	if err != nil {
-		if recovered, recoveryErr := r.client.Get(ctx, plan.ObjectType.ValueString(), plan.Name.ValueString()); recoveryErr == nil && propertyGroupMatchesPlan(recovered, plan) {
-			response.Diagnostics.AddWarning("Create response was ambiguous", "HubSpot did not confirm creation, but a property group with the exact configured identity was found and adopted after read-back.")
-			response.Diagnostics.Append(response.State.Set(ctx, modelFromGroup(plan.ObjectType.ValueString(), recovered))...)
-			return
+		if isAmbiguous(err) {
+			if recovered, recoveryErr := r.client.Get(ctx, plan.ObjectType.ValueString(), plan.Name.ValueString()); recoveryErr == nil && propertyGroupMatchesPlan(recovered, plan) {
+				response.Diagnostics.AddWarning("Create response was ambiguous", "HubSpot did not confirm creation, but a property group with the exact configured identity was found and adopted after read-back.")
+				response.Diagnostics.Append(response.State.Set(ctx, modelFromGroup(plan.ObjectType.ValueString(), recovered))...)
+				return
+			}
 		}
 		appendHubSpotDiagnostic(&response.Diagnostics, "Property group creation failed", err)
 		return

@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
@@ -41,14 +42,28 @@ func (r *PipelineResource) Metadata(_ context.Context, _ resource.MetadataReques
 	res.TypeName = "hubspot_pipeline"
 }
 func (r *PipelineResource) Schema(_ context.Context, _ resource.SchemaRequest, res *resource.SchemaResponse) {
-	stageType := types.ObjectType{AttrTypes: map[string]attr.Type{"id": types.StringType, "label": types.StringType, "display_order": types.Int64Type, "metadata": types.MapType{ElemType: types.StringType}, "write_permissions": types.StringType}}
-	res.Schema = schema.Schema{Version: 1, Description: "Manages a deal pipeline and its exclusively owned stages.", Attributes: map[string]schema.Attribute{"id": schema.StringAttribute{Computed: true}, "object_type": schema.StringAttribute{Required: true, Validators: []validator.String{identifierValidator{kind: "CRM object type"}}, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}}, "label": schema.StringAttribute{Required: true}, "display_order": schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(-1)}, "stages": schema.MapAttribute{Required: true, ElementType: stageType}}}
+	res.Schema = schema.Schema{Version: 1, Description: "Manages a pipeline and its exclusively owned writable stages.", Attributes: map[string]schema.Attribute{
+		"id":            schema.StringAttribute{Computed: true, Description: "Canonical object_type/pipeline_id identity."},
+		"object_type":   schema.StringAttribute{Required: true, Description: "Exact HubSpot CRM object type API identifier.", Validators: []validator.String{identifierValidator{kind: "CRM object type"}}, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
+		"label":         schema.StringAttribute{Required: true, Description: "Pipeline display label."},
+		"display_order": schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(-1), Description: "HubSpot display order; defaults to -1."},
+		"stages": schema.MapNestedAttribute{Required: true, Description: "Complete set of writable stages, keyed by stable local identity.", NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
+			"id":                schema.StringAttribute{Computed: true, Description: "HubSpot-generated stage ID."},
+			"label":             schema.StringAttribute{Required: true, Description: "Stage display label."},
+			"display_order":     schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(-1), Description: "HubSpot display order; defaults to -1."},
+			"metadata":          schema.MapAttribute{Optional: true, Computed: true, ElementType: types.StringType, Default: mapdefault.StaticValue(types.MapValueMust(types.StringType, map[string]attr.Value{})), Description: "Object-specific stage metadata."},
+			"write_permissions": schema.StringAttribute{Computed: true, Description: "HubSpot stage write-permission classification."},
+		}}},
+	}}
 }
 
 func (r *PipelineResource) UpgradeState(context.Context) map[int64]resource.StateUpgrader {
 	return map[int64]resource.StateUpgrader{0: identityStateUpgrade()}
 }
 func (r *PipelineResource) Configure(_ context.Context, req resource.ConfigureRequest, res *resource.ConfigureResponse) {
+	if req.ProviderData == nil {
+		return
+	}
 	clients, ok := req.ProviderData.(*hubspot.ClientSet)
 	if !ok || clients == nil || clients.Pipelines == nil {
 		res.Diagnostics.AddError("Provider is not configured", "The HubSpot pipeline client was not available.")
@@ -125,11 +140,11 @@ func (r *PipelineResource) Update(ctx context.Context, req resource.UpdateReques
 		res.Diagnostics.AddError("Pipeline identity missing", "The pipeline ID was not present in state.")
 		return
 	}
-	if _, err = r.client.Update(ctx, "deals", old.ID.ValueString(), input); err != nil {
+	if _, err = r.client.Update(ctx, old.ObjectType.ValueString(), old.ID.ValueString(), input); err != nil {
 		appendHubSpotDiagnostic(&res.Diagnostics, "Pipeline update failed", err)
 		return
 	}
-	out, err := r.client.Get(ctx, "deals", old.ID.ValueString())
+	out, err := r.client.Get(ctx, old.ObjectType.ValueString(), old.ID.ValueString())
 	if err != nil {
 		appendHubSpotDiagnostic(&res.Diagnostics, "Pipeline update verification failed", err)
 		return

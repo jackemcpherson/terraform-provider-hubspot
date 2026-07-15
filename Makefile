@@ -54,6 +54,7 @@ check-docs:
 	@test "$$(wc -l < registry-addresses.txt | tr -d ' ')" = 2
 	@grep -q '"format_version": 1' terraform-registry-manifest.json
 	@grep -q '"protocol_versions": \["6.0"\]' terraform-registry-manifest.json
+	@./scripts/check-generated-docs.sh
 
 check-workflows:
 	@for workflow in .github/workflows/*.yml; do \
