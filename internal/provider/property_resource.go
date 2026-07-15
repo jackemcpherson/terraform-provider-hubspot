@@ -29,22 +29,27 @@ type propertyOptionModel struct {
 	Hidden       types.Bool   `tfsdk:"hidden"`
 }
 type propertyResourceModel struct {
-	ID                 types.String `tfsdk:"id"`
-	ObjectType         types.String `tfsdk:"object_type"`
-	Name               types.String `tfsdk:"name"`
-	Label              types.String `tfsdk:"label"`
-	GroupName          types.String `tfsdk:"group_name"`
-	Type               types.String `tfsdk:"type"`
-	FieldType          types.String `tfsdk:"field_type"`
-	Description        types.String `tfsdk:"description"`
-	DisplayOrder       types.Int64  `tfsdk:"display_order"`
-	FormField          types.Bool   `tfsdk:"form_field"`
-	Hidden             types.Bool   `tfsdk:"hidden"`
-	HasUniqueValue     types.Bool   `tfsdk:"has_unique_value"`
-	DataSensitivity    types.String `tfsdk:"data_sensitivity"`
-	ExternalOptions    types.Bool   `tfsdk:"external_options"`
-	ShowCurrencySymbol types.Bool   `tfsdk:"show_currency_symbol"`
-	Options            types.Map    `tfsdk:"options"`
+	ID                   types.String `tfsdk:"id"`
+	ObjectType           types.String `tfsdk:"object_type"`
+	Name                 types.String `tfsdk:"name"`
+	Label                types.String `tfsdk:"label"`
+	GroupName            types.String `tfsdk:"group_name"`
+	Type                 types.String `tfsdk:"type"`
+	FieldType            types.String `tfsdk:"field_type"`
+	Description          types.String `tfsdk:"description"`
+	DisplayOrder         types.Int64  `tfsdk:"display_order"`
+	FormField            types.Bool   `tfsdk:"form_field"`
+	Hidden               types.Bool   `tfsdk:"hidden"`
+	HasUniqueValue       types.Bool   `tfsdk:"has_unique_value"`
+	DataSensitivity      types.String `tfsdk:"data_sensitivity"`
+	ExternalOptions      types.Bool   `tfsdk:"external_options"`
+	ShowCurrencySymbol   types.Bool   `tfsdk:"show_currency_symbol"`
+	CalculationFormula   types.String `tfsdk:"calculation_formula"`
+	CurrencyPropertyName types.String `tfsdk:"currency_property_name"`
+	NumberDisplayHint    types.String `tfsdk:"number_display_hint"`
+	TextDisplayHint      types.String `tfsdk:"text_display_hint"`
+	ReferencedObjectType types.String `tfsdk:"referenced_object_type"`
+	Options              types.Map    `tfsdk:"options"`
 }
 
 func NewPropertyResource() resource.Resource { return &PropertyResource{} }
@@ -63,6 +68,7 @@ func (r *PropertyResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 		"has_unique_value": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), PlanModifiers: []planmodifier.Bool{boolRequiresReplace{}}},
 		"data_sensitivity": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("non_sensitive"), Validators: []validator.String{sensitivityValidator{}}, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
 		"external_options": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), PlanModifiers: []planmodifier.Bool{boolRequiresReplace{}}}, "show_currency_symbol": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false)},
+		"calculation_formula": schema.StringAttribute{Optional: true, Computed: true}, "currency_property_name": schema.StringAttribute{Optional: true, Computed: true}, "number_display_hint": schema.StringAttribute{Optional: true, Computed: true}, "text_display_hint": schema.StringAttribute{Optional: true, Computed: true}, "referenced_object_type": schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
 		"options": schema.MapAttribute{Optional: true, Computed: true, ElementType: types.ObjectType{AttrTypes: map[string]attr.Type{"label": types.StringType, "description": types.StringType, "display_order": types.Int64Type, "hidden": types.BoolType}}},
 	}}
 }
@@ -73,6 +79,17 @@ func (r *PropertyResource) Configure(_ context.Context, request resource.Configu
 		return
 	}
 	r.client = clients.Properties
+}
+func (r *PropertyResource) ModifyPlan(ctx context.Context, request resource.ModifyPlanRequest, response *resource.ModifyPlanResponse) {
+	if request.Plan.Raw.IsNull() {
+		return
+	}
+	var plan propertyResourceModel
+	response.Diagnostics.Append(request.Plan.Get(ctx, &plan)...)
+	if response.Diagnostics.HasError() || plan.DataSensitivity.IsNull() || plan.DataSensitivity.IsUnknown() || plan.DataSensitivity.ValueString() == "non_sensitive" {
+		return
+	}
+	response.Diagnostics.AddWarning("Sensitive property tier and retention risk", "Sensitive and highly_sensitive properties require Enterprise eligibility and object-specific sensitive write scopes. Classification is immutable, and archived sensitive properties are permanently deleted after 90 days; verify account tier, scopes, and cleanup before apply.")
 }
 func (r *PropertyResource) Create(ctx context.Context, request resource.CreateRequest, response *resource.CreateResponse) {
 	var plan propertyResourceModel
@@ -240,7 +257,7 @@ func propertyWriteFromModel(ctx context.Context, model propertyResourceModel) (h
 	for value, opt := range options {
 		list = append(list, hubspot.PropertyOption{Value: value, Label: opt.Label.ValueString(), Description: stringPointer(opt.Description), DisplayOrder: intPointer(opt.DisplayOrder), Hidden: boolPointer(opt.Hidden)})
 	}
-	return hubspot.PropertyWrite{Name: model.Name.ValueString(), Label: model.Label.ValueString(), GroupName: model.GroupName.ValueString(), Type: model.Type.ValueString(), FieldType: model.FieldType.ValueString(), Description: stringPointer(model.Description), DisplayOrder: intPointer(model.DisplayOrder), FormField: boolPointer(model.FormField), Hidden: boolPointer(model.Hidden), HasUniqueValue: boolPointer(model.HasUniqueValue), DataSensitivity: stringPointer(model.DataSensitivity), ExternalOptions: boolPointer(model.ExternalOptions), ShowCurrencySymbol: boolPointer(model.ShowCurrencySymbol), Options: list}, nil
+	return hubspot.PropertyWrite{Name: model.Name.ValueString(), Label: model.Label.ValueString(), GroupName: model.GroupName.ValueString(), Type: model.Type.ValueString(), FieldType: model.FieldType.ValueString(), Description: stringPointer(model.Description), DisplayOrder: intPointer(model.DisplayOrder), FormField: boolPointer(model.FormField), Hidden: boolPointer(model.Hidden), HasUniqueValue: boolPointer(model.HasUniqueValue), DataSensitivity: stringPointer(model.DataSensitivity), ExternalOptions: boolPointer(model.ExternalOptions), ShowCurrencySymbol: boolPointer(model.ShowCurrencySymbol), CalculationFormula: stringPointer(model.CalculationFormula), CurrencyPropertyName: stringPointer(model.CurrencyPropertyName), NumberDisplayHint: stringPointer(model.NumberDisplayHint), TextDisplayHint: stringPointer(model.TextDisplayHint), ReferencedObjectType: stringPointer(model.ReferencedObjectType), Options: list}, nil
 }
 func stringPointer(v types.String) *string {
 	if v.IsNull() || v.IsUnknown() {
@@ -270,7 +287,7 @@ func sensitivityValue(v types.String) string {
 	return v.ValueString()
 }
 func modelFromPropertyDefinition(objectType string, d hubspot.PropertyDefinition) propertyResourceModel {
-	m := propertyResourceModel{ID: types.StringValue(objectType + "/" + d.Name), ObjectType: types.StringValue(objectType), Name: types.StringValue(d.Name), Label: types.StringValue(d.Label), GroupName: types.StringValue(d.GroupName), Type: types.StringValue(d.Type), FieldType: types.StringValue(d.FieldType), Description: optionalString(d.Description), DisplayOrder: optionalInt(d.DisplayOrder), FormField: optionalBool(d.FormField), Hidden: optionalBool(d.Hidden), HasUniqueValue: optionalBool(d.HasUniqueValue), DataSensitivity: optionalString(d.DataSensitivity), ExternalOptions: optionalBool(d.ExternalOptions), ShowCurrencySymbol: optionalBool(d.ShowCurrencySymbol)}
+	m := propertyResourceModel{ID: types.StringValue(objectType + "/" + d.Name), ObjectType: types.StringValue(objectType), Name: types.StringValue(d.Name), Label: types.StringValue(d.Label), GroupName: types.StringValue(d.GroupName), Type: types.StringValue(d.Type), FieldType: types.StringValue(d.FieldType), Description: optionalString(d.Description), DisplayOrder: optionalInt(d.DisplayOrder), FormField: optionalBool(d.FormField), Hidden: optionalBool(d.Hidden), HasUniqueValue: optionalBool(d.HasUniqueValue), DataSensitivity: optionalString(d.DataSensitivity), ExternalOptions: optionalBool(d.ExternalOptions), ShowCurrencySymbol: optionalBool(d.ShowCurrencySymbol), CalculationFormula: optionalString(d.CalculationFormula), CurrencyPropertyName: optionalString(d.CurrencyPropertyName), NumberDisplayHint: optionalString(d.NumberDisplayHint), TextDisplayHint: optionalString(d.TextDisplayHint), ReferencedObjectType: optionalString(d.ReferencedObjectType)}
 	vals := map[string]attr.Value{}
 	for _, o := range d.Options {
 		vals[o.Value] = types.ObjectValueMust(optionAttrTypes(), map[string]attr.Value{"label": types.StringValue(o.Label), "description": optionalString(o.Description), "display_order": optionalInt(o.DisplayOrder), "hidden": optionalBool(o.Hidden)})
@@ -286,7 +303,7 @@ func propertyMatchesPlan(d hubspot.PropertyDefinition, p propertyResourceModel) 
 	if d.Name != p.Name.ValueString() || d.Label != p.Label.ValueString() || d.GroupName != p.GroupName.ValueString() || d.Type != p.Type.ValueString() || d.FieldType != p.FieldType.ValueString() {
 		return false
 	}
-	if !stringMatches(p.Description, d.Description) || !intMatches(p.DisplayOrder, d.DisplayOrder) || !boolMatches(p.FormField, d.FormField) || !boolMatches(p.Hidden, d.Hidden) || !boolMatches(p.HasUniqueValue, d.HasUniqueValue) || !stringMatches(p.DataSensitivity, d.DataSensitivity) || !boolMatches(p.ExternalOptions, d.ExternalOptions) || !boolMatches(p.ShowCurrencySymbol, d.ShowCurrencySymbol) {
+	if !stringMatches(p.Description, d.Description) || !intMatches(p.DisplayOrder, d.DisplayOrder) || !boolMatches(p.FormField, d.FormField) || !boolMatches(p.Hidden, d.Hidden) || !boolMatches(p.HasUniqueValue, d.HasUniqueValue) || !stringMatches(p.DataSensitivity, d.DataSensitivity) || !boolMatches(p.ExternalOptions, d.ExternalOptions) || !boolMatches(p.ShowCurrencySymbol, d.ShowCurrencySymbol) || !stringMatches(p.CalculationFormula, d.CalculationFormula) || !stringMatches(p.CurrencyPropertyName, d.CurrencyPropertyName) || !stringMatches(p.NumberDisplayHint, d.NumberDisplayHint) || !stringMatches(p.TextDisplayHint, d.TextDisplayHint) || !stringMatches(p.ReferencedObjectType, d.ReferencedObjectType) {
 		return false
 	}
 	if p.Options.IsNull() || p.Options.IsUnknown() {

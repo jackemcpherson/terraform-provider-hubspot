@@ -26,6 +26,8 @@ Manages one ordinary or enumeration HubSpot CRM property definition.
 
 ### Optional
 
+- `calculation_formula` (String)
+- `currency_property_name` (String)
 - `data_sensitivity` (String)
 - `description` (String)
 - `display_order` (Number)
@@ -33,8 +35,11 @@ Manages one ordinary or enumeration HubSpot CRM property definition.
 - `form_field` (Boolean)
 - `has_unique_value` (Boolean)
 - `hidden` (Boolean)
+- `number_display_hint` (String)
 - `options` (Map of Object) (see [below for nested schema](#nestedatt--options))
+- `referenced_object_type` (String)
 - `show_currency_symbol` (Boolean)
+- `text_display_hint` (String)
 
 ### Read-Only
 

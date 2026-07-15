@@ -10,3 +10,4 @@ All notable changes to this project are documented here.
 - Property-group transport/client boundary and full Terraform lifecycle tracer.
 - Read-only active/archived property-definition discovery data sources.
 - Ordinary scalar and enumeration property lifecycle resource.
+- Advanced calculation, currency, owner-reference, and sensitivity fields.

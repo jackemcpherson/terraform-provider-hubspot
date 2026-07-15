@@ -35,20 +35,25 @@ func NewClientSet(config TransportConfig) (*ClientSet, error) {
 type PropertyDefinitionClient struct{ transport *Transport }
 
 type PropertyWrite struct {
-	Name               string
-	Label              string
-	GroupName          string
-	Type               string
-	FieldType          string
-	Description        *string
-	DisplayOrder       *int64
-	FormField          *bool
-	Hidden             *bool
-	HasUniqueValue     *bool
-	DataSensitivity    *string
-	ExternalOptions    *bool
-	ShowCurrencySymbol *bool
-	Options            []PropertyOption
+	Name                 string
+	Label                string
+	GroupName            string
+	Type                 string
+	FieldType            string
+	Description          *string
+	DisplayOrder         *int64
+	FormField            *bool
+	Hidden               *bool
+	HasUniqueValue       *bool
+	DataSensitivity      *string
+	ExternalOptions      *bool
+	ShowCurrencySymbol   *bool
+	CalculationFormula   *string
+	CurrencyPropertyName *string
+	NumberDisplayHint    *string
+	TextDisplayHint      *string
+	ReferencedObjectType *string
+	Options              []PropertyOption
 }
 
 type PropertyOption struct {
@@ -246,7 +251,7 @@ func (c *PropertyDefinitionClient) Archive(ctx context.Context, objectType, name
 
 func propertyWritePayload(input PropertyWrite, create bool) map[string]any {
 	payload := map[string]any{"label": input.Label, "groupName": input.GroupName, "type": input.Type, "fieldType": input.FieldType}
-	for key, value := range map[string]any{"description": input.Description, "displayOrder": input.DisplayOrder, "formField": input.FormField, "hidden": input.Hidden, "showCurrencySymbol": input.ShowCurrencySymbol} {
+	for key, value := range map[string]any{"description": input.Description, "displayOrder": input.DisplayOrder, "formField": input.FormField, "hidden": input.Hidden, "showCurrencySymbol": input.ShowCurrencySymbol, "calculationFormula": input.CalculationFormula, "currencyPropertyName": input.CurrencyPropertyName, "numberDisplayHint": input.NumberDisplayHint, "textDisplayHint": input.TextDisplayHint, "referencedObjectType": input.ReferencedObjectType} {
 		if value != nil {
 			payload[key] = value
 		}
@@ -268,7 +273,7 @@ func propertyWritePayload(input PropertyWrite, create bool) map[string]any {
 		sort.Slice(options, func(i, j int) bool { return options[i].Value < options[j].Value })
 		encoded := make([]propertyOptionPayload, 0, len(options))
 		for _, option := range options {
-			encoded = append(encoded, propertyOptionPayload{Value: option.Value, Label: option.Label, Description: option.Description, DisplayOrder: option.DisplayOrder, Hidden: option.Hidden})
+			encoded = append(encoded, propertyOptionPayload(option))
 		}
 		payload["options"] = encoded
 	}
