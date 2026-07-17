@@ -102,6 +102,7 @@ func runFreePropertyGroupLifecycle(t *testing.T, engine acceptance.Engine) {
 		session.RequireEmptyPlan(updated)
 		session.Destroy(updated)
 		session.RequirePropertyGroupAbsent("contacts", name)
+		session.RequirePropertyGroupArchived("contacts", name)
 		session.Apply(updated)
 		session.RequireEmptyPlan(updated)
 		session.ArchivePropertyGroup("contacts", name)
@@ -177,6 +178,9 @@ func runPropertyLifecycleAndDiscovery(t *testing.T, engine acceptance.Engine) {
 		session.RequirePropertyAbsent("contacts", prefix+"scalar")
 		session.RequirePropertyAbsent("contacts", prefix+"enumeration")
 		session.RequirePropertyGroupAbsent("contacts", prefix+"property_group")
+		session.RequirePropertyArchived("contacts", prefix+"scalar")
+		session.RequirePropertyArchived("contacts", prefix+"enumeration")
+		session.RequirePropertyGroupArchived("contacts", prefix+"property_group")
 		session.Apply(updated)
 		session.RequireEmptyPlan(updated)
 		managedOnly := strings.Split(updated, `
@@ -306,6 +310,8 @@ func runStandardObjectTypeCoverage(t *testing.T, engine acceptance.Engine, regis
 			session.Destroy(config)
 			session.RequirePropertyAbsent(objectType, prefix+objectType+"_property")
 			session.RequirePropertyGroupAbsent(objectType, prefix+objectType+"_group")
+			session.RequirePropertyArchived(objectType, prefix+objectType+"_property")
+			session.RequirePropertyGroupArchived(objectType, prefix+objectType+"_group")
 		}
 	})
 	requireFreeOwnedConfigurationAbsentForStandardObjectTypes(t, prefix)

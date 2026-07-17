@@ -16,6 +16,13 @@ acceptance fails. The demo and the shard share a portal lock keyed by
 the non-cancelling `hubspot-account-free_properties` concurrency group across
 runners. Do not bypass either gate for this portal.
 
+HubSpot's property DELETE operations archive definitions and groups into its
+recycling bin rather than offering a permanent-purge endpoint. Free acceptance
+therefore treats verified archival plus active-name reuse as its terminal cleanup
+invariant: no active prefix-owned configuration may remain, each archive path is
+read back, and the same Git-authored names must recreate successfully before the
+demo rebuild is verified.
+
 The scheduled janitor reports stale `tf_acc_` configuration. It never deletes.
 Manual cleanup requires a selected shard, an exact owned prefix ending in `_`,
 the protected shard environment, and the confirmation text shown by the workflow.

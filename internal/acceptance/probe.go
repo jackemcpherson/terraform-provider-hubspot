@@ -216,6 +216,23 @@ func (s *Session) RequirePropertyGroupAbsent(objectType, name string) {
 	}
 }
 
+func (s *Session) RequirePropertyGroupArchived(objectType, name string) {
+	s.t.Helper()
+	clients, err := s.probeClients()
+	if err != nil {
+		s.t.Fatalf("configure sanitized property group probe: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	group, err := clients.PropertyGroups.Get(ctx, objectType, name)
+	if err != nil {
+		s.t.Fatalf("verify archived property group: %s", SanitizedHubSpotError(err))
+	}
+	if !group.Archived {
+		s.t.Fatal("property group terminal probe did not verify archived CRM configuration")
+	}
+}
+
 func (s *Session) MutatePropertyLabel(objectType, name, label string) {
 	s.t.Helper()
 	clients, err := s.probeClients()
@@ -306,6 +323,23 @@ func (s *Session) RequirePropertyAbsent(objectType, name string) {
 		if !errors.As(err, &apiError) || apiError.Status != 404 {
 			s.t.Fatalf("verify property definition absence: %s", SanitizedHubSpotError(err))
 		}
+	}
+}
+
+func (s *Session) RequirePropertyArchived(objectType, name string) {
+	s.t.Helper()
+	clients, err := s.probeClients()
+	if err != nil {
+		s.t.Fatalf("configure sanitized property probe: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	property, err := clients.Properties.Get(ctx, objectType, name, true, "non_sensitive", "")
+	if err != nil {
+		s.t.Fatalf("verify archived property definition: %s", SanitizedHubSpotError(err))
+	}
+	if property.Archived == nil || !*property.Archived {
+		s.t.Fatal("property terminal probe did not verify archived CRM configuration")
 	}
 }
 
