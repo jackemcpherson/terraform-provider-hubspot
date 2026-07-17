@@ -44,7 +44,7 @@ before publication and post-publication verification.
 - [Preserve deferred paid and Enterprise capabilities](issues/01-preserve-deferred-capabilities.md) — Preserve the current paid/Enterprise baseline as an immutable annotated remote tag and selectively reintroduce only later, explicitly qualified capabilities.
 - [Write the Free-only v0.1.0 public contract](issues/02-write-free-only-v0-1-contract.md) — Public v0.1.0 is the non-sensitive property/group and discovery surface only, bounded by one Free portal's ten-property lifecycle and full dual-engine/dual-registry readiness gates.
 - [Reduce the provider and documentation to the Free-only surface](issues/03-reduce-provider-to-free-surface.md) — Register and document only the Free property/group and discovery surface; defer paid/Enterprise tests and workflow shards without deleting their preserved source.
-- [Prove deterministic one-portal Free-tier lifecycle coverage](issues/04-prove-one-portal-free-lifecycle.md) — One fail-closed coordinator frees demo capacity for prefix-owned Free acceptance, then rebuilds the Git-authored demo while verifying lifecycle coverage and cleanup across the standard CRM object types.
+- [Prove deterministic one-portal Free-tier lifecycle coverage](issues/04-prove-one-portal-free-lifecycle.md) — Serialize the shared portal, reserve full demo-rebuild capacity, exercise the Free lifecycle across all standard objects on both engines, and always rebuild then verify the Git-authored demo.
 
 ## Not yet specified
 

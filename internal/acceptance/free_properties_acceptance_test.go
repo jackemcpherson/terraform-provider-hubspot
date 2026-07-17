@@ -256,18 +256,27 @@ func TestAcc_free_properties_TerraformParity(t *testing.T) {
 }
 
 func TestAcc_free_properties_StandardObjectTypeCoverage(t *testing.T) {
+	runStandardObjectTypeCoverage(t, acceptance.OpenTofu, "registry.opentofu.org")
+}
+
+func TestAcc_free_properties_StandardObjectTypeTerraformParity(t *testing.T) {
+	runStandardObjectTypeCoverage(t, acceptance.Terraform, "registry.terraform.io")
+}
+
+func runStandardObjectTypeCoverage(t *testing.T, engine acceptance.Engine, registryHost string) {
+	t.Helper()
 	requireAcceptanceEnabled(t)
 	prefix := requiredEnvironment(t, "HUBSPOT_ACCEPTANCE_PREFIX")
 	ledger := requiredEnvironment(t, "HUBSPOT_ACCEPTANCE_CLEANUP_LEDGER")
 
 	acceptance.Run(t, acceptance.Options{
-		Engine:     acceptance.OpenTofu,
+		Engine:     engine,
 		Shard:      acceptance.FreeProperties,
 		Prefix:     prefix,
 		LedgerPath: ledger,
 	}, func(session *acceptance.Session) {
 		for _, objectType := range []string{"contacts", "companies", "deals", "tickets"} {
-			config := liveStandardObjectConfig(prefix, objectType)
+			config := liveStandardObjectConfig(prefix, objectType, registryHost)
 			session.Apply(config)
 			session.RequireEmptyPlan(config)
 			session.MutatePropertyLabel(objectType, prefix+objectType+"_property", "Out-of-band "+objectType+" property")
@@ -325,14 +334,14 @@ resource "hubspot_property_group" "test" {
 `, name, label, order)
 }
 
-func liveStandardObjectConfig(prefix, objectType string) string {
+func liveStandardObjectConfig(prefix, objectType, registryHost string) string {
 	groupName := prefix + objectType + "_group"
 	propertyName := prefix + objectType + "_property"
 	return fmt.Sprintf(`
 terraform {
   required_providers {
     hubspot = {
-      source = "registry.opentofu.org/jackemcpherson/hubspot"
+      source = %q
     }
   }
 }
@@ -353,7 +362,7 @@ resource "hubspot_property" "test" {
   type        = "string"
   field_type  = "text"
 }
-`, objectType, groupName, "Acceptance "+objectType+" properties", objectType, propertyName, "Acceptance "+objectType+" property")
+`, registryHost+"/jackemcpherson/hubspot", objectType, groupName, "Acceptance "+objectType+" properties", objectType, propertyName, "Acceptance "+objectType+" property")
 }
 
 func livePropertyConfig(prefix string, updated bool) string {

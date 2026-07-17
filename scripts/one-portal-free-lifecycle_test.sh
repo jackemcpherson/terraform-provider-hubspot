@@ -18,7 +18,7 @@ EOF
 chmod +x "$tmp/demo" "$tmp/acceptance"
 
 run() {
-  CALL_LOG="$log" CAPABILITY_SHARD=free_properties HUBSPOT_DEMO_SCRIPT="$tmp/demo" HUBSPOT_ACCEPTANCE_SCRIPT="$tmp/acceptance" "$root/scripts/one-portal-free-lifecycle.sh"
+  CALL_LOG="$log" CAPABILITY_SHARD=free_properties HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" HUBSPOT_DEMO_SCRIPT="$tmp/demo" HUBSPOT_ACCEPTANCE_SCRIPT="$tmp/acceptance" "$root/scripts/one-portal-free-lifecycle.sh"
 }
 
 run
@@ -26,10 +26,11 @@ test "$(cat "$log")" = 'demo:local:destroy-plan
 demo:local:destroy-apply
 acceptance
 demo:local:plan
-demo:local:apply'
+demo:local:apply
+demo:local:verify'
 
 : >"$log"
-if CALL_LOG="$log" CAPABILITY_SHARD=free_properties ACCEPTANCE_RESULT=failed HUBSPOT_DEMO_SCRIPT="$tmp/demo" HUBSPOT_ACCEPTANCE_SCRIPT="$tmp/acceptance" "$root/scripts/one-portal-free-lifecycle.sh"; then
+if CALL_LOG="$log" CAPABILITY_SHARD=free_properties ACCEPTANCE_RESULT=failed HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" HUBSPOT_DEMO_SCRIPT="$tmp/demo" HUBSPOT_ACCEPTANCE_SCRIPT="$tmp/acceptance" "$root/scripts/one-portal-free-lifecycle.sh"; then
   echo "expected acceptance failure" >&2
   exit 1
 fi
@@ -37,4 +38,11 @@ test "$(cat "$log")" = 'demo:local:destroy-plan
 demo:local:destroy-apply
 acceptance
 demo:local:plan
-demo:local:apply'
+demo:local:apply
+demo:local:verify'
+
+mkdir "$tmp/lock"
+if CALL_LOG="$log" CAPABILITY_SHARD=free_properties HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" HUBSPOT_DEMO_SCRIPT="$tmp/demo" HUBSPOT_ACCEPTANCE_SCRIPT="$tmp/acceptance" "$root/scripts/one-portal-free-lifecycle.sh"; then
+  echo "expected concurrent lifecycle rejection" >&2
+  exit 1
+fi

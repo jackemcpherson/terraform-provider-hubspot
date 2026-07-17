@@ -16,7 +16,7 @@ import (
 	"github.com/jackemcpherson/terraform-provider-hubspot/internal/hubspot"
 )
 
-const freePropertyOverallHeadroom = 3
+const freePropertyOverallHeadroom = 10
 
 var freePropertyObjectHeadroom = map[string]int64{
 	"0-1": 3,

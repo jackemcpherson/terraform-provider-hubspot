@@ -13,15 +13,25 @@ both OpenTofu and Terraform without mutating CRM records or leaving test state?
 
 ## Answer
 
-`make one-portal-free-lifecycle` now coordinates the shared portal: it applies the
-demo's reviewed destroy plan, runs only the `free_properties` acceptance shard, and
-always recreates the Git-authored demo through a fresh reviewed plan after the
-suite, including after an acceptance failure. Its shell-level black-box test proves
-both the success and failure call order.
+`make one-portal-free-lifecycle` now serializes the shared portal with an atomic
+directory lock, applies the demo's reviewed destroy plan, runs only the
+`free_properties` acceptance shard, and always rebuilds then verifies the
+Git-authored demo. The wrapper's black-box test proves the successful and failed
+acceptance paths, the exact rebuild/verify sequence, and rejection of a concurrent
+run.
 
-The Free capability manifest and quota preflight cover contacts, companies, deals,
-and tickets. The OpenTofu tracer performs create, drift, import, destroy, and
-verified cleanup for each; the existing Free lifecycle and Terraform-parity cases
-continue to cover archive/absence, discovery, warnings, and cross-engine behavior.
-All owned configuration is prefix-scoped, and no test creates or reads CRM records.
-`make check` passes.
+The quota preflight reserves the complete ten-property capacity needed to rebuild
+the demo and verifies per-object headroom for contacts, companies, deals, and
+tickets. The standard-object lifecycle tracer now runs on both OpenTofu and
+Terraform: create, no-op refresh, drift detection and reconciliation, import,
+destroy, and verified absence for each object type. The existing Free lifecycle
+and Terraform parity tests cover archive/absence, recreate, discovery, and plan
+warnings. All configuration remains prefix-owned; no test creates or reads CRM
+records. `make check` passes.
+
+## Comments
+
+- 2026-07-17 — Post-implementation review reopened this ticket. The initial
+  coordinator lacked mutual exclusion and exact post-rebuild verification; its
+  quota preflight did not reserve the full ten-property reconstruction capacity;
+  and its expanded object-type tracer did not prove the lifecycle on Terraform.
