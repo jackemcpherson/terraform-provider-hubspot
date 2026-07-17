@@ -71,7 +71,7 @@ func NewPropertyDefinitionsDataSource() datasource.DataSource {
 
 func propertyDefinitionAttrs(includeName bool) map[string]schema.Attribute {
 	attrs := map[string]schema.Attribute{
-		"id": schema.StringAttribute{Computed: true, Description: "Canonical object_type/property_name identity."}, "object_type": schema.StringAttribute{Required: true, Description: "Exact CRM object type API identifier.", Validators: []validator.String{identifierValidator{kind: "CRM object type"}}}, "archived": schema.BoolAttribute{Optional: true, Computed: true, Description: "Select archived definitions instead of active definitions; defaults to false."}, "data_sensitivity": schema.StringAttribute{Optional: true, Computed: true, Description: "Sensitivity selector; defaults to non_sensitive.", Validators: []validator.String{sensitivityValidator{}}}, "locale": schema.StringAttribute{Optional: true, Description: "Optional HubSpot locale selector."},
+		"id": schema.StringAttribute{Computed: true, Description: "Canonical object_type/property_name identity."}, "object_type": schema.StringAttribute{Required: true, Description: "Exact CRM object type API identifier.", Validators: []validator.String{identifierValidator{kind: "CRM object type"}}}, "archived": schema.BoolAttribute{Optional: true, Computed: true, Description: "Select archived definitions instead of active definitions; defaults to false."}, "data_sensitivity": schema.StringAttribute{Optional: true, Computed: true, Description: "Must be non_sensitive; sensitive definition discovery is deferred from v0.1.", Validators: []validator.String{freeTierSensitivityValidator{}}}, "locale": schema.StringAttribute{Optional: true, Description: "Optional HubSpot locale selector."},
 		"label": schema.StringAttribute{Computed: true}, "group_name": schema.StringAttribute{Computed: true}, "type": schema.StringAttribute{Computed: true}, "field_type": schema.StringAttribute{Computed: true}, "description": schema.StringAttribute{Computed: true}, "display_order": schema.Int64Attribute{Computed: true}, "form_field": schema.BoolAttribute{Computed: true}, "hidden": schema.BoolAttribute{Computed: true}, "has_unique_value": schema.BoolAttribute{Computed: true}, "external_options": schema.BoolAttribute{Computed: true}, "referenced_object_type": schema.StringAttribute{Computed: true}, "show_currency_symbol": schema.BoolAttribute{Computed: true}, "calculation_formula": schema.StringAttribute{Computed: true}, "currency_property_name": schema.StringAttribute{Computed: true}, "number_display_hint": schema.StringAttribute{Computed: true}, "text_display_hint": schema.StringAttribute{Computed: true}, "date_display_hint": schema.StringAttribute{Computed: true}, "sensitivity_category": schema.StringAttribute{Computed: true}, "calculated": schema.BoolAttribute{Computed: true}, "hubspot_defined": schema.BoolAttribute{Computed: true}, "is_archived": schema.BoolAttribute{Computed: true}, "archived_at": schema.StringAttribute{Computed: true}, "created_at": schema.StringAttribute{Computed: true}, "updated_at": schema.StringAttribute{Computed: true}, "created_user_id": schema.StringAttribute{Computed: true}, "updated_user_id": schema.StringAttribute{Computed: true},
 		"options": schema.MapAttribute{Computed: true, ElementType: types.ObjectType{AttrTypes: optionAttrTypes()}}, "modification_metadata": schema.ObjectAttribute{Computed: true, AttributeTypes: metadataAttrTypes()},
 	}
@@ -140,7 +140,7 @@ func (d *PropertyDefinitionsDataSource) Metadata(_ context.Context, _ datasource
 	r.TypeName = "hubspot_property_definitions"
 }
 func (d *PropertyDefinitionsDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, r *datasource.SchemaResponse) {
-	r.Schema = schema.Schema{Description: "Reads HubSpot CRM property definitions without reading CRM records.", Attributes: map[string]schema.Attribute{"object_type": schema.StringAttribute{Required: true, Description: "Exact CRM object type API identifier.", Validators: []validator.String{identifierValidator{kind: "CRM object type"}}}, "archived": schema.BoolAttribute{Optional: true, Computed: true, Description: "Select archived definitions instead of active definitions; defaults to false."}, "data_sensitivity": schema.StringAttribute{Optional: true, Computed: true, Description: "Sensitivity selector; defaults to non_sensitive.", Validators: []validator.String{sensitivityValidator{}}}, "locale": schema.StringAttribute{Optional: true, Description: "Optional HubSpot locale selector."}, "definitions": schema.MapAttribute{Computed: true, Description: "Definitions keyed by immutable property name; an empty map is valid.", ElementType: types.ObjectType{AttrTypes: definitionAttrTypes()}}}}
+	r.Schema = schema.Schema{Description: "Reads HubSpot CRM property definitions without reading CRM records.", Attributes: map[string]schema.Attribute{"object_type": schema.StringAttribute{Required: true, Description: "Exact CRM object type API identifier.", Validators: []validator.String{identifierValidator{kind: "CRM object type"}}}, "archived": schema.BoolAttribute{Optional: true, Computed: true, Description: "Select archived definitions instead of active definitions; defaults to false."}, "data_sensitivity": schema.StringAttribute{Optional: true, Computed: true, Description: "Must be non_sensitive; sensitive definition discovery is deferred from v0.1.", Validators: []validator.String{freeTierSensitivityValidator{}}}, "locale": schema.StringAttribute{Optional: true, Description: "Optional HubSpot locale selector."}, "definitions": schema.MapAttribute{Computed: true, Description: "Definitions keyed by immutable property name; an empty map is valid.", ElementType: types.ObjectType{AttrTypes: definitionAttrTypes()}}}}
 }
 func definitionAttrTypes() map[string]attr.Type {
 	a := propertyDefinitionAttrs(false)
@@ -275,20 +275,20 @@ func definitionObject(m propertyDefinitionModel) attr.Value {
 	return types.ObjectValueMust(definitionAttrTypes(), map[string]attr.Value{"name": m.Name, "label": m.Label, "group_name": m.GroupName, "type": m.Type, "field_type": m.FieldType, "description": m.Description, "display_order": m.DisplayOrder, "form_field": m.FormField, "hidden": m.Hidden, "has_unique_value": m.HasUniqueValue, "external_options": m.ExternalOptions, "referenced_object_type": m.ReferencedObjectType, "show_currency_symbol": m.ShowCurrencySymbol, "calculation_formula": m.CalculationFormula, "currency_property_name": m.CurrencyPropertyName, "number_display_hint": m.NumberDisplayHint, "text_display_hint": m.TextDisplayHint, "date_display_hint": m.DateDisplayHint, "data_sensitivity": m.DataSensitivity, "sensitivity_category": m.SensitivityCategory, "calculated": m.Calculated, "hubspot_defined": m.HubSpotDefined, "is_archived": m.ArchivedValue, "archived_at": m.ArchivedAt, "created_at": m.CreatedAt, "updated_at": m.UpdatedAt, "created_user_id": m.CreatedUserID, "updated_user_id": m.UpdatedUserID, "options": m.Options, "modification_metadata": m.ModificationMetadata})
 }
 
-type sensitivityValidator struct{}
+type freeTierSensitivityValidator struct{}
 
-func (sensitivityValidator) Description(context.Context) string {
-	return "must be non_sensitive, sensitive, or highly_sensitive"
+func (freeTierSensitivityValidator) Description(context.Context) string {
+	return "must be non_sensitive; sensitive property definitions are deferred from v0.1"
 }
-func (s sensitivityValidator) MarkdownDescription(ctx context.Context) string {
+func (s freeTierSensitivityValidator) MarkdownDescription(ctx context.Context) string {
 	return s.Description(ctx)
 }
-func (sensitivityValidator) ValidateString(_ context.Context, request validator.StringRequest, response *validator.StringResponse) {
+func (freeTierSensitivityValidator) ValidateString(_ context.Context, request validator.StringRequest, response *validator.StringResponse) {
 	if request.ConfigValue.IsNull() || request.ConfigValue.IsUnknown() {
 		return
 	}
 	value := request.ConfigValue.ValueString()
-	if value != "non_sensitive" && value != "sensitive" && value != "highly_sensitive" {
-		response.Diagnostics.AddAttributeError(request.Path, "Invalid data sensitivity", "Use non_sensitive, sensitive, or highly_sensitive.")
+	if value != "non_sensitive" {
+		response.Diagnostics.AddAttributeError(request.Path, "Sensitive property definitions are deferred", "v0.1 supports only non_sensitive property definitions and discovery.")
 	}
 }

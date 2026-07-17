@@ -35,10 +35,7 @@ finish() {
 trap finish EXIT
 trap 'exit 1' HUP INT TERM
 
-case "$shard" in
-  free_properties|deal_pipelines|ticket_pipelines|custom_schemas|sensitive_properties|custom_pipelines) ;;
-  *) echo "unknown capability shard" >&2; exit 1 ;;
-esac
+test "$shard" = free_properties || { echo "v0.1 supports only the free_properties capability shard" >&2; exit 1; }
 
 printf '%s\n' "$prefix" | grep -Eq '^tf_acc_[A-Za-z0-9_]+_$' || { echo "acceptance prefix must use tf_acc_ and end with an underscore" >&2; exit 1; }
 

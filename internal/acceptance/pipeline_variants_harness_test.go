@@ -1,6 +1,8 @@
 // Copyright (c) 2026 jackemcpherson
 // SPDX-License-Identifier: MPL-2.0
 
+//go:build deferred
+
 package acceptance_test
 
 import (

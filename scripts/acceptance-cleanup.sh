@@ -6,10 +6,7 @@ shard=${2:?shard is required}
 prefix=${3:-}
 confirm=${4:-}
 
-case "$shard" in
-  free_properties|deal_pipelines|ticket_pipelines|custom_schemas|sensitive_properties|custom_pipelines) ;;
-  *) echo "unknown capability shard" >&2; exit 1 ;;
-esac
+test "$shard" = free_properties || { echo "v0.1 supports only the free_properties capability shard" >&2; exit 1; }
 
 : "${HUBSPOT_ACCESS_TOKEN:?HUBSPOT_ACCESS_TOKEN is required}"
 export CAPABILITY_SHARD=$shard

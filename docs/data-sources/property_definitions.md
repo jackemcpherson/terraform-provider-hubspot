@@ -28,7 +28,7 @@ data "hubspot_property_definitions" "contacts" {
 ### Optional
 
 - `archived` (Boolean) Select archived definitions instead of active definitions; defaults to false.
-- `data_sensitivity` (String) Sensitivity selector; defaults to non_sensitive.
+- `data_sensitivity` (String) Must be non_sensitive; sensitive definition discovery is deferred from v0.1.
 - `locale` (String) Optional HubSpot locale selector.
 
 ### Read-Only

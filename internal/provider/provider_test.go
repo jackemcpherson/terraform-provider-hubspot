@@ -52,6 +52,17 @@ func TestProviderServesProtocol6(t *testing.T) {
 	}
 }
 
+func TestProviderRegistersOnlyFreeTierTypes(t *testing.T) {
+	p := New("test")().(*Provider)
+
+	if got, want := len(p.Resources(context.Background())), 2; got != want {
+		t.Fatalf("registered resources = %d, want %d", got, want)
+	}
+	if got, want := len(p.DataSources(context.Background())), 2; got != want {
+		t.Fatalf("registered data sources = %d, want %d", got, want)
+	}
+}
+
 func TestAPIBaseURLValidator(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -73,6 +84,31 @@ func TestAPIBaseURLValidator(t *testing.T) {
 			response := validator.StringResponse{}
 			apiBaseURLValidator{}.ValidateString(context.Background(), validator.StringRequest{
 				Path:        path.Root("api_base_url"),
+				ConfigValue: types.StringValue(test.value),
+			}, &response)
+			if got := !response.Diagnostics.HasError(); got != test.valid {
+				t.Fatalf("valid = %v, want %v; diagnostics = %#v", got, test.valid, response.Diagnostics)
+			}
+		})
+	}
+}
+
+func TestFreeTierSensitivityValidator(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		valid bool
+	}{
+		{name: "non-sensitive", value: "non_sensitive", valid: true},
+		{name: "sensitive", value: "sensitive", valid: false},
+		{name: "highly sensitive", value: "highly_sensitive", valid: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response := validator.StringResponse{}
+			freeTierSensitivityValidator{}.ValidateString(context.Background(), validator.StringRequest{
+				Path:        path.Root("data_sensitivity"),
 				ConfigValue: types.StringValue(test.value),
 			}, &response)
 			if got := !response.Diagnostics.HasError(); got != test.valid {

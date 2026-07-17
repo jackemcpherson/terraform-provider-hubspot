@@ -90,26 +90,6 @@ jobs:
             shard: free_properties
             engine: terraform
             address: registry.terraform.io/jackemcpherson/hubspot
-          - case_id: deal_pipelines_terraform
-            shard: deal_pipelines
-            engine: terraform
-            address: registry.terraform.io/jackemcpherson/hubspot
-          - case_id: ticket_pipelines_tofu
-            shard: ticket_pipelines
-            engine: tofu
-            address: registry.opentofu.org/jackemcpherson/hubspot
-          - case_id: custom_schemas_terraform
-            shard: custom_schemas
-            engine: terraform
-            address: registry.terraform.io/jackemcpherson/hubspot
-          - case_id: sensitive_properties_tofu
-            shard: sensitive_properties
-            engine: tofu
-            address: registry.opentofu.org/jackemcpherson/hubspot
-          - case_id: custom_pipelines_terraform
-            shard: custom_pipelines
-            engine: terraform
-            address: registry.terraform.io/jackemcpherson/hubspot
     environment: ${{ matrix.shard }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -201,11 +181,6 @@ jobs:
               capabilities:[
                 {shard:"free_properties",engine:"terraform-1.15.8",status:$live},
                 {shard:"free_properties",engine:"tofu-1.12.3",status:$live},
-                {shard:"deal_pipelines",engine:"terraform-1.15.8",status:$live},
-                {shard:"ticket_pipelines",engine:"tofu-1.12.3",status:$live},
-                {shard:"custom_schemas",engine:"terraform-1.15.8",status:$live},
-                {shard:"sensitive_properties",engine:"tofu-1.12.3",status:$live},
-                {shard:"custom_pipelines",engine:"terraform-1.15.8",status:$live}
               ],
               state_migrations:[
                 {from:"registry.terraform.io",to:"registry.opentofu.org",status:$migration},

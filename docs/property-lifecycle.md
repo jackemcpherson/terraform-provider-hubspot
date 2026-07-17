@@ -14,12 +14,10 @@ whether a particular pair and its advanced fields are compatible. When
 Changing `type` or `field_type` updates the existing definition, emits a warning,
 and can change how HubSpot interprets record values. Review the plan and the
 affected data before applying. The provider does not inspect those values.
-Unique-value, external option ownership, sensitivity, referenced object type,
-object type, and internal name changes replace the resource.
-
-Planning `sensitive` or `highly_sensitive` emits a separate warning covering the
-Enterprise gate, object-specific write scope, immutable classification, and
-HubSpot's permanent deletion after 90 days in archive.
+Unique-value, sensitivity, referenced object type, object type, and internal name
+changes replace the resource. v0.1 accepts only
+`data_sensitivity = "non_sensitive"`; sensitive and highly-sensitive definitions
+are deferred.
 
 Destroy archives a property and removes it from state after a confirming read.
 The provider has no restore operation. HubSpot-defined and read-only definitions

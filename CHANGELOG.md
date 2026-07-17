@@ -10,10 +10,7 @@ All notable changes to this project are documented here.
 - Property-group transport/client boundary and full Terraform lifecycle tracer.
 - Read-only active/archived property-definition discovery data sources.
 - Ordinary scalar and enumeration property lifecycle resource.
-- Advanced calculation, currency, owner-reference, and sensitivity fields.
-- Deal pipeline resource with nested stage identity and probability validation.
-- Custom object schema core with continuously owned bootstrap properties.
-- Custom-schema deletion protection and split-ownership preflight.
+- Advanced non-sensitive calculation, currency, and owner-reference fields.
 - Deterministic, offline schema-version-0-to-1 state migration for every managed
   resource and documented registry-source portability.
 - Generated field references with reviewed import examples, consumer lifecycle
@@ -23,8 +20,9 @@ All notable changes to this project are documented here.
 - Black-box OpenTofu/Terraform acceptance coverage for Free CRM property
   lifecycles, including canonical mutation readback, import/drift checks,
   plan-time destructive-change warnings, and cleanup evidence.
-- Preserve deal-pipeline logical stage keys and generated IDs across complete-set
-  updates, canonical imports, append-order drift, archive/restore, and protected
-  reference failures, with paid capability and released-artifact acceptance gates.
-- Add offline ticket/custom pipeline metadata qualification plus fail-closed
-  Service Hub ticket live, janitor, engine-parity, and released-artifact scaffolds.
+
+### Changed
+
+- Limit the public v0.1.0 surface to property groups, ordinary non-sensitive
+  properties, and property-definition discovery on HubSpot Free. Pipelines,
+  custom schemas, and sensitive definitions are deferred.

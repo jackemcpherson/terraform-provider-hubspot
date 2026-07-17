@@ -44,7 +44,7 @@ resource "hubspot_property" "customer_tier" {
 
 - `calculation_formula` (String) HubSpot calculation formula; omitted when null.
 - `currency_property_name` (String) Internal name of the currency source property; omitted when null.
-- `data_sensitivity` (String) One of non_sensitive, sensitive, or highly_sensitive; defaults to non_sensitive and changes replace the definition.
+- `data_sensitivity` (String) Must be non_sensitive; sensitive property definitions are deferred from v0.1.
 - `description` (String) Property description; defaults to an empty string.
 - `display_order` (Number) HubSpot display order; defaults to -1.
 - `external_options` (Boolean) Delegates option ownership to HubSpot; defaults to false and changes replace the definition.

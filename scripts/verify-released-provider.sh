@@ -26,7 +26,13 @@ provider "hubspot" { access_token = "schema-only" }
 EOF
 
 "$engine" -chdir="$tmp" init -backend=false -input=false >/dev/null
-"$engine" -chdir="$tmp" providers schema -json | grep -q 'hubspot_custom_object_schema'
+schema=$("$engine" -chdir="$tmp" providers schema -json)
+printf '%s' "$schema" | grep -q 'hubspot_property_group'
+printf '%s' "$schema" | grep -q 'hubspot_property_definition'
+if printf '%s' "$schema" | grep -Eq 'hubspot_pipeline|hubspot_custom_object_schema'; then
+  echo "released provider exposes a deferred resource" >&2
+  exit 1
+fi
 grep -q "version = \"$release_version\"" "$tmp/.terraform.lock.hcl"
 grep -q 'zh:' "$tmp/.terraform.lock.hcl"
 

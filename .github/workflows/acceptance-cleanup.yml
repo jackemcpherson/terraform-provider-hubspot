@@ -7,7 +7,7 @@ on:
         description: Protected capability environment
         required: true
         type: choice
-        options: [free_properties, deal_pipelines, ticket_pipelines, custom_schemas, sensitive_properties, custom_pipelines]
+        options: [free_properties]
       prefix:
         description: Exact tf_acc_ prefix ending in underscore
         required: true

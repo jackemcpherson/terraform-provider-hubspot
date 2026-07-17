@@ -72,7 +72,7 @@ func (r *PropertyResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 		"form_field":             schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: "Whether the property can appear in forms; defaults to false."},
 		"hidden":                 schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: "Whether HubSpot hides the property; defaults to false."},
 		"has_unique_value":       schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: "Whether values must be unique; defaults to false and changes replace the definition.", PlanModifiers: []planmodifier.Bool{boolRequiresReplace{}}},
-		"data_sensitivity":       schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("non_sensitive"), Description: "One of non_sensitive, sensitive, or highly_sensitive; defaults to non_sensitive and changes replace the definition.", Validators: []validator.String{sensitivityValidator{}}, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
+		"data_sensitivity":       schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("non_sensitive"), Description: "Must be non_sensitive; sensitive property definitions are deferred from v0.1.", Validators: []validator.String{freeTierSensitivityValidator{}}, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
 		"external_options":       schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: "Delegates option ownership to HubSpot; defaults to false and changes replace the definition.", PlanModifiers: []planmodifier.Bool{boolRequiresReplace{}}},
 		"show_currency_symbol":   schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: "Whether HubSpot shows a currency symbol; defaults to false."},
 		"calculation_formula":    schema.StringAttribute{Optional: true, Computed: true, Description: "HubSpot calculation formula; omitted when null.", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
@@ -111,9 +111,6 @@ func (r *PropertyResource) ModifyPlan(ctx context.Context, request resource.Modi
 	response.Diagnostics.Append(request.Plan.Get(ctx, &plan)...)
 	if response.Diagnostics.HasError() {
 		return
-	}
-	if !plan.DataSensitivity.IsNull() && !plan.DataSensitivity.IsUnknown() && plan.DataSensitivity.ValueString() != "non_sensitive" {
-		response.Diagnostics.AddWarning("Sensitive property tier and retention risk", "Sensitive and highly_sensitive properties require Enterprise eligibility and object-specific sensitive write scopes. Classification is immutable, and archived sensitive properties are permanently deleted after 90 days; verify account tier, scopes, and cleanup before apply.")
 	}
 	if request.State.Raw.IsNull() {
 		return

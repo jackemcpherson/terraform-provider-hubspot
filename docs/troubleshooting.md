@@ -17,19 +17,13 @@ state nor remote configuration after a permission error.
 
 Do not immediately replay an uncertain create outside OpenTofu. Run `tofu plan`
 again after the diagnostic. Resources with an immutable recovery key perform a
-bounded read-back; pipeline creation remains failed when the response cannot be
-matched safely. Updates and deletes retain state until a read confirms the result.
+bounded read-back. Updates and deletes retain state until a read confirms the
+result.
 
 ## Destroy is blocked
 
 Read the diagnostic before changing state manually. Property groups may be
-nonempty, pipelines may have referenced stages, and custom schemas may have
-external properties or HubSpot-side references. Remove dependent configuration
-through its owner, apply, and retry.
-
-Custom schemas also require `deletion_protection = false` in an earlier apply.
-The destroy preflight refuses to start when it can already see an external
-property.
+nonempty. Remove dependent property configuration, apply, and retry.
 
 ## Drift returns after apply
 
