@@ -1,7 +1,7 @@
 # Expand and rehearse the Northstar Free-tier demo
 
 Type: task
-Status: open
+Status: claimed
 Blocked by: 03, 04
 
 ## Question
