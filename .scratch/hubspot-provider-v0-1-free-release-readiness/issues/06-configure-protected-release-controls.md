@@ -1,7 +1,7 @@
 # Configure the protected v0.1.0 release controls
 
 Type: task
-Status: open
+Status: claimed
 Blocked by: 02
 
 ## Question

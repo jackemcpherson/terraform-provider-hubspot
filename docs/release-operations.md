@@ -37,7 +37,7 @@ receives the GPG key, and it fetches commit metadata without checking out source
 The release workflow smoke-installs the first artifact set through filesystem
 mirrors under both full registry addresses, signs the checksum and tag, verifies
 the draft assets and attestations, then publishes. Enable GitHub immutable
-releases, require approval for the `release` environment, and register the same
+releases, require one approval for the `release` environment before signing, and register the same
 GPG public key with Terraform Registry and OpenTofu Registry before v0.1.0. Store
 `GPG_PRIVATE_KEY` and `GPG_FINGERPRINT` only in that environment; expose the
 armored public key as the non-secret `GPG_PUBLIC_KEY` repository variable.

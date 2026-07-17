@@ -41,5 +41,9 @@ if grep -q -- '--snapshot' .github/workflows/release.yml; then
 fi
 grep -q 'smoke-release-archive.sh' .github/workflows/release.yml
 grep -q -- '--draft=false' .github/workflows/release.yml
+test "$(grep -c '^    environment: release$' .github/workflows/release.yml)" = 1 || {
+  echo "release must require one protected-environment approval before signing" >&2
+  exit 1
+}
 grep -q 'verify-released-provider.sh' .github/workflows/verify-release.yml
 grep -q 'verify-state-migration.sh' .github/workflows/verify-release.yml

@@ -45,6 +45,7 @@ before publication and post-publication verification.
 - [Write the Free-only v0.1.0 public contract](issues/02-write-free-only-v0-1-contract.md) — Public v0.1.0 is the non-sensitive property/group and discovery surface only, bounded by one Free portal's ten-property lifecycle and full dual-engine/dual-registry readiness gates.
 - [Reduce the provider and documentation to the Free-only surface](issues/03-reduce-provider-to-free-surface.md) — Register and document only the Free property/group and discovery surface; defer paid/Enterprise tests and workflow shards without deleting their preserved source.
 - [Prove deterministic one-portal Free-tier lifecycle coverage](issues/04-prove-one-portal-free-lifecycle.md) — Serialize the shared portal, prove every Free lifecycle on both engines and standard objects, and use verified archive/active-absence semantics before rebuilding the Git-authored demo.
+- [Expand and rehearse the Northstar Free-tier demo](issues/05-expand-and-rehearse-the-free-demo.md) — Ten-property four-object demo passed the full shared-portal lifecycle and both local registry identities.
 
 ## Not yet specified
 
@@ -58,4 +59,3 @@ before publication and post-publication verification.
 - Paid deal/ticket/custom pipelines, custom object schemas, sensitive or
   highly-sensitive property definitions, and their account provisioning in v0.1.
 - Managing CRM records or persisting CRM record data in the provider or demo.
-- [Expand and rehearse the Northstar Free-tier demo](issues/05-expand-and-rehearse-the-free-demo.md) — Ten-property four-object demo passed the full shared-portal lifecycle and both local registry identities.
