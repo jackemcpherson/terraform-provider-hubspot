@@ -255,6 +255,35 @@ func TestAcc_free_properties_TerraformParity(t *testing.T) {
 	requireFreeOwnedConfigurationAbsent(t, prefix)
 }
 
+func TestAcc_free_properties_StandardObjectTypeCoverage(t *testing.T) {
+	requireAcceptanceEnabled(t)
+	prefix := requiredEnvironment(t, "HUBSPOT_ACCEPTANCE_PREFIX")
+	ledger := requiredEnvironment(t, "HUBSPOT_ACCEPTANCE_CLEANUP_LEDGER")
+
+	acceptance.Run(t, acceptance.Options{
+		Engine:     acceptance.OpenTofu,
+		Shard:      acceptance.FreeProperties,
+		Prefix:     prefix,
+		LedgerPath: ledger,
+	}, func(session *acceptance.Session) {
+		for _, objectType := range []string{"contacts", "companies", "deals", "tickets"} {
+			config := liveStandardObjectConfig(prefix, objectType)
+			session.Apply(config)
+			session.RequireEmptyPlan(config)
+			session.MutatePropertyLabel(objectType, prefix+objectType+"_property", "Out-of-band "+objectType+" property")
+			session.RequirePlanDiffAttributes(config, "hubspot_property.test", "label")
+			session.Apply(config)
+			session.RemoveState("hubspot_property.test")
+			session.Import("hubspot_property.test", objectType+"/"+prefix+objectType+"_property")
+			session.RequireEmptyPlan(config)
+			session.Destroy(config)
+			session.RequirePropertyAbsent(objectType, prefix+objectType+"_property")
+			session.RequirePropertyGroupAbsent(objectType, prefix+objectType+"_group")
+		}
+	})
+	requireFreeOwnedConfigurationAbsentForStandardObjectTypes(t, prefix)
+}
+
 func requireAcceptanceEnabled(t *testing.T) {
 	t.Helper()
 	if os.Getenv("HUBSPOT_ACCEPTANCE") != "1" {
@@ -294,6 +323,37 @@ resource "hubspot_property_group" "test" {
 %s
 }
 `, name, label, order)
+}
+
+func liveStandardObjectConfig(prefix, objectType string) string {
+	groupName := prefix + objectType + "_group"
+	propertyName := prefix + objectType + "_property"
+	return fmt.Sprintf(`
+terraform {
+  required_providers {
+    hubspot = {
+      source = "registry.opentofu.org/jackemcpherson/hubspot"
+    }
+  }
+}
+
+provider "hubspot" {}
+
+resource "hubspot_property_group" "test" {
+  object_type = %q
+  name        = %q
+  label       = %q
+}
+
+resource "hubspot_property" "test" {
+  object_type = %q
+  name        = %q
+  label       = %q
+  group_name  = hubspot_property_group.test.name
+  type        = "string"
+  field_type  = "text"
+}
+`, objectType, groupName, "Acceptance "+objectType+" properties", objectType, propertyName, "Acceptance "+objectType+" property")
 }
 
 func livePropertyConfig(prefix string, updated bool) string {

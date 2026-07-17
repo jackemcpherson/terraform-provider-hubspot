@@ -14,7 +14,7 @@ STATICCHECK_VERSION := v0.6.1
 SYFT_VERSION := v1.33.0
 STATICCHECK_BIN := $(TOOLS_BIN)/staticcheck
 
-.PHONY: tools check check-go check-docs check-workflows engine-smoke docs test test-race fuzz-seeds fmt release-snapshot
+.PHONY: tools check check-go check-docs check-workflows engine-smoke docs test test-race fuzz-seeds fmt release-snapshot one-portal-free-lifecycle
 
 tools:
 	@command -v go >/dev/null || { echo "go $(GO_VERSION) required; install tools before running checks"; exit 1; }
@@ -60,7 +60,11 @@ check-docs:
 	@./scripts/check-generated-docs.sh
 
 check-workflows:
+	@./scripts/one-portal-free-lifecycle_test.sh
 	@./scripts/check-workflows.sh
+
+one-portal-free-lifecycle:
+	@./scripts/one-portal-free-lifecycle.sh
 
 release-snapshot:
 	@"$(TOOLS_BIN)/goreleaser" release --snapshot --clean --skip=sign

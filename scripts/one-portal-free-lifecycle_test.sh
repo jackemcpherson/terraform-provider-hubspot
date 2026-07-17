@@ -1,0 +1,40 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT HUP INT TERM
+log="$tmp/calls"
+
+cat >"$tmp/demo" <<'EOF'
+#!/bin/sh
+printf 'demo:%s:%s\n' "$1" "$2" >>"$CALL_LOG"
+EOF
+cat >"$tmp/acceptance" <<'EOF'
+#!/bin/sh
+printf 'acceptance\n' >>"$CALL_LOG"
+test "${ACCEPTANCE_RESULT:-success}" = success
+EOF
+chmod +x "$tmp/demo" "$tmp/acceptance"
+
+run() {
+  CALL_LOG="$log" CAPABILITY_SHARD=free_properties HUBSPOT_DEMO_SCRIPT="$tmp/demo" HUBSPOT_ACCEPTANCE_SCRIPT="$tmp/acceptance" "$root/scripts/one-portal-free-lifecycle.sh"
+}
+
+run
+test "$(cat "$log")" = 'demo:local:destroy-plan
+demo:local:destroy-apply
+acceptance
+demo:local:plan
+demo:local:apply'
+
+: >"$log"
+if CALL_LOG="$log" CAPABILITY_SHARD=free_properties ACCEPTANCE_RESULT=failed HUBSPOT_DEMO_SCRIPT="$tmp/demo" HUBSPOT_ACCEPTANCE_SCRIPT="$tmp/acceptance" "$root/scripts/one-portal-free-lifecycle.sh"; then
+  echo "expected acceptance failure" >&2
+  exit 1
+fi
+test "$(cat "$log")" = 'demo:local:destroy-plan
+demo:local:destroy-apply
+acceptance
+demo:local:plan
+demo:local:apply'

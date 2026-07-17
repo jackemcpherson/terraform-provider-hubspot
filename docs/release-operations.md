@@ -6,6 +6,13 @@ quota, acceptance test, or cleanup result fails the run. Capability manifests
 contain feature and scope families only. They must not contain Hub IDs, app IDs,
 record IDs, configuration IDs, or credentials.
 
+v0.1 has one `free_properties` shard and one disposable portal shared with the
+Northstar demo. Run `make one-portal-free-lifecycle` only with the Free shard's
+protected token and a valid acceptance prefix. It saves no CRM records: it applies
+the demo's reviewed destroy plan, runs the owned Free acceptance suite, then always
+rebuilds the Git-authored demo through a fresh reviewed plan, including when
+acceptance fails.
+
 The scheduled janitor reports stale `tf_acc_` configuration. It never deletes.
 Manual cleanup requires a selected shard, an exact owned prefix ending in `_`,
 the protected shard environment, and the confirmation text shown by the workflow.

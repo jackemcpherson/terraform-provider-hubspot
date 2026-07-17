@@ -16,7 +16,14 @@ import (
 	"github.com/jackemcpherson/terraform-provider-hubspot/internal/hubspot"
 )
 
-const freePropertyHeadroom = 3
+const freePropertyOverallHeadroom = 3
+
+var freePropertyObjectHeadroom = map[string]int64{
+	"0-1": 3,
+	"0-2": 1,
+	"0-3": 1,
+	"0-5": 1,
+}
 
 func TestAcc_free_properties_QuotaPreflight(t *testing.T) {
 	requireAcceptanceEnabled(t)
@@ -48,16 +55,23 @@ func TestAcc_free_properties_QuotaPreflight(t *testing.T) {
 	}, nil, &limits); err != nil {
 		t.Fatalf("custom-property quota preflight failed: %s", acceptance.SanitizedHubSpotError(err))
 	}
-	if limits.OverallLimit-limits.OverallUsage < freePropertyHeadroom {
+	if limits.OverallLimit-limits.OverallUsage < freePropertyOverallHeadroom {
 		t.Fatal("custom-property quota preflight found insufficient overall headroom")
 	}
+	seen := make(map[string]bool, len(freePropertyObjectHeadroom))
 	for _, object := range limits.ByObjectType {
-		if object.ObjectTypeID == "0-1" {
-			if object.Limit-object.Usage < freePropertyHeadroom {
-				t.Fatal("custom-property quota preflight found insufficient contact headroom")
-			}
-			return
+		headroom, required := freePropertyObjectHeadroom[object.ObjectTypeID]
+		if !required {
+			continue
+		}
+		if object.Limit-object.Usage < headroom {
+			t.Fatalf("custom-property quota preflight found insufficient headroom for object type %s", object.ObjectTypeID)
+		}
+		seen[object.ObjectTypeID] = true
+	}
+	for objectTypeID := range freePropertyObjectHeadroom {
+		if !seen[objectTypeID] {
+			t.Fatalf("custom-property quota preflight did not return object type %s limits", objectTypeID)
 		}
 	}
-	t.Fatal("custom-property quota preflight did not return contact limits")
 }

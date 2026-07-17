@@ -1,1 +1,1 @@
-{"shard":"free_properties","tier":"free","object_types":["contacts"],"scope_families":["crm.schemas.contacts"],"quota_preflight":true}
+{"shard":"free_properties","tier":"free","object_types":["contacts","companies","deals","tickets"],"scope_families":["crm.schemas.contacts","crm.schemas.companies","crm.schemas.deals","tickets"],"quota_preflight":true}

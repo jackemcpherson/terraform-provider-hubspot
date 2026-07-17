@@ -161,6 +161,33 @@ func requireFreeOwnedConfigurationAbsent(t *testing.T, prefix string) {
 	}
 }
 
+func requireFreeOwnedConfigurationAbsentForStandardObjectTypes(t *testing.T, prefix string) {
+	t.Helper()
+	clients := freeJanitorClients(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	for _, objectType := range []string{"contacts", "companies", "deals", "tickets"} {
+		properties, err := clients.Properties.List(ctx, objectType, false, "non_sensitive", "")
+		if err != nil {
+			t.Fatalf("list %s property definitions for cleanup verification: %s", objectType, acceptance.SanitizedHubSpotError(err))
+		}
+		groups, err := clients.PropertyGroups.List(ctx, objectType)
+		if err != nil {
+			t.Fatalf("list %s property groups for cleanup verification: %s", objectType, acceptance.SanitizedHubSpotError(err))
+		}
+		for _, property := range properties {
+			if strings.HasPrefix(property.Name, prefix) {
+				t.Fatalf("cleanup left an active %s property definition: %s", objectType, property.Name)
+			}
+		}
+		for _, group := range groups {
+			if strings.HasPrefix(group.Name, prefix) {
+				t.Fatalf("cleanup left an active %s property group: %s", objectType, group.Name)
+			}
+		}
+	}
+}
+
 func countOwnedPipelines(t *testing.T, ctx context.Context, clients *hubspot.ClientSet, objectType, prefix string) int {
 	t.Helper()
 	pipelines, err := clients.Pipelines.List(ctx, objectType)
