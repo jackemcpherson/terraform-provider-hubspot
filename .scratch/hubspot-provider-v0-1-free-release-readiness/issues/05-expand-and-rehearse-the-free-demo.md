@@ -15,11 +15,10 @@ through both local filesystem-mirror registry identities?
 
 - 2026-07-17 — The deterministic local demo gate passes with the expanded
   ten-property model under both engines and their respective registry identities.
-  Live rehearsal is blocked: the available HubSpot CLI credential can read the
-  built-in contact property but returns `MISSING_SCOPES` for all property-group
-  creates, including tickets. The Free acceptance runner separately requires the
-  protected `HUBSPOT_ACCESS_TOKEN`, which is not present in this session. Its
-  teardown/rebuild wrapper left no demo configuration active after the failed
-  scope check. Resume only with the protected token that has all four required
-  Free schema-scope families; then run the one-portal lifecycle to rebuild and
-  verify the demo.
+  A live rehearsal with the supplied token confirmed contact, company, and deal
+  property creation but failed safely on ticket-property creation and the
+  custom-property limit preflight with `MISSING_SCOPES`. The recovery destroy
+  completed: all seven created properties and all four groups (including the
+  ticket group) are absent from the active portal. Resume only with a protected
+  token that grants the ticket-property and custom-property-limit permissions;
+  then run the one-portal lifecycle to rebuild and verify the demo.
