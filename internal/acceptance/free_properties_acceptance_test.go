@@ -63,24 +63,33 @@ func warningTransitionConfigs(prefix string) []string {
 }
 
 func TestAcc_free_properties_PropertyGroupLifecycle(t *testing.T) {
+	runFreePropertyGroupLifecycle(t, acceptance.OpenTofu)
+}
+
+func TestAcc_free_properties_PropertyGroupLifecycleTerraformParity(t *testing.T) {
+	runFreePropertyGroupLifecycle(t, acceptance.Terraform)
+}
+
+func runFreePropertyGroupLifecycle(t *testing.T, engine acceptance.Engine) {
+	t.Helper()
 	requireAcceptanceEnabled(t)
 	prefix := requiredEnvironment(t, "HUBSPOT_ACCEPTANCE_PREFIX")
 	ledger := requiredEnvironment(t, "HUBSPOT_ACCEPTANCE_CLEANUP_LEDGER")
 	name := prefix + "group_lifecycle"
 
 	acceptance.Run(t, acceptance.Options{
-		Engine:     acceptance.OpenTofu,
+		Engine:     engine,
 		Shard:      acceptance.FreeProperties,
 		Prefix:     prefix,
 		LedgerPath: ledger,
 	}, func(session *acceptance.Session) {
-		initial := livePropertyGroupConfig(name, "Acceptance property group", nil)
+		initial := configForEngine(livePropertyGroupConfig(name, "Acceptance property group", nil), engine)
 		session.Apply(initial)
 		session.RequireStateString("hubspot_property_group.test", "id", "contacts/"+name)
 		session.RequireEmptyPlan(initial)
 
 		updatedOrder := int64(110)
-		updated := livePropertyGroupConfig(name, "Updated acceptance property group", &updatedOrder)
+		updated := configForEngine(livePropertyGroupConfig(name, "Updated acceptance property group", &updatedOrder), engine)
 		session.Apply(updated)
 		session.RequireEmptyPlan(updated)
 		driftOrder := int64(120)
@@ -125,23 +134,32 @@ func TestAcc_free_properties_PropertyGroupBlockedDestroy(t *testing.T) {
 }
 
 func TestAcc_free_properties_PropertyLifecycleAndDiscovery(t *testing.T) {
+	runPropertyLifecycleAndDiscovery(t, acceptance.OpenTofu)
+}
+
+func TestAcc_free_properties_TerraformParity(t *testing.T) {
+	runPropertyLifecycleAndDiscovery(t, acceptance.Terraform)
+}
+
+func runPropertyLifecycleAndDiscovery(t *testing.T, engine acceptance.Engine) {
+	t.Helper()
 	requireAcceptanceEnabled(t)
 	prefix := requiredEnvironment(t, "HUBSPOT_ACCEPTANCE_PREFIX")
 	ledger := requiredEnvironment(t, "HUBSPOT_ACCEPTANCE_CLEANUP_LEDGER")
 
 	acceptance.Run(t, acceptance.Options{
-		Engine:     acceptance.OpenTofu,
+		Engine:     engine,
 		Shard:      acceptance.FreeProperties,
 		Prefix:     prefix,
 		LedgerPath: ledger,
 	}, func(session *acceptance.Session) {
-		initial := livePropertyConfig(prefix, false)
+		initial := configForEngine(livePropertyConfig(prefix, false), engine)
 		session.Apply(initial)
 		session.RequireStateString("hubspot_property.scalar", "label", "Acceptance scalar property")
 		session.RequireStateString("hubspot_property.scalar", "id", "contacts/"+prefix+"scalar")
 		session.RequireEmptyPlan(initial)
 
-		updated := livePropertyConfig(prefix, true)
+		updated := configForEngine(livePropertyConfig(prefix, true), engine)
 		session.Apply(updated)
 		session.RequireEmptyPlan(updated)
 		session.MutatePropertyLabel("contacts", prefix+"scalar", "Out-of-band scalar label")
@@ -172,40 +190,52 @@ data "hubspot_property_definition"`)[0]
 
 		session.ArchiveProperty("contacts", prefix+"scalar")
 		session.Refresh(managedOnly)
-		archivedDiscovery := liveArchivedDiscoveryConfig(prefix)
+		archivedDiscovery := configForEngine(liveArchivedDiscoveryConfig(prefix), engine)
 		session.Apply(archivedDiscovery)
 		session.RequireStateString("data.hubspot_property_definition.archived", "id", "contacts/"+prefix+"scalar")
 		session.RequireStateMapKey("data.hubspot_property_definitions.archived", "definitions", prefix+"scalar", true)
 		session.RequireStateMapKey("data.hubspot_property_definitions.active", "definitions", prefix+"scalar", false)
 		session.RequireEmptyPlan(archivedDiscovery)
-		session.RequireApplyFailure(liveActiveMissingDiscoveryConfig(prefix))
+		session.RequireApplyFailure(configForEngine(liveActiveMissingDiscoveryConfig(prefix), engine))
 
-		builtInDiscovery := liveBuiltInDiscoveryConfig(false)
+		builtInDiscovery := configForEngine(liveBuiltInDiscoveryConfig(false), engine)
 		session.Apply(builtInDiscovery)
 		session.RequireStateMapNestedStringOneOf("data.hubspot_property_definitions.built_in", "definitions", "date_display_hint", "absolute", "absolute_with_relative", "time_since", "time_until")
-		session.RequireValidationFailure(liveInvalidDateDisplayHintConfig(), "Unsupported argument")
+		session.RequireValidationFailure(configForEngine(liveInvalidDateDisplayHintConfig(), engine), "Unsupported argument")
 		session.Apply(builtInDiscovery)
-		session.RequireImportFailure(liveBuiltInDiscoveryConfig(true), "hubspot_property.readonly", "contacts/email", "Property is discovery-only")
+		session.RequireImportFailure(configForEngine(liveBuiltInDiscoveryConfig(true), engine), "hubspot_property.readonly", "contacts/email", "Property is discovery-only")
 	})
 	requireFreeOwnedConfigurationAbsent(t, prefix)
 }
 
 func TestAcc_free_properties_OptionAndTypeWarnings(t *testing.T) {
+	runOptionAndTypeWarnings(t, acceptance.OpenTofu)
+}
+
+func TestAcc_free_properties_OptionAndTypeWarningsTerraformParity(t *testing.T) {
+	runOptionAndTypeWarnings(t, acceptance.Terraform)
+}
+
+func runOptionAndTypeWarnings(t *testing.T, engine acceptance.Engine) {
+	t.Helper()
 	requireAcceptanceEnabled(t)
 	prefix := requiredEnvironment(t, "HUBSPOT_ACCEPTANCE_PREFIX")
 	ledger := requiredEnvironment(t, "HUBSPOT_ACCEPTANCE_CLEANUP_LEDGER")
 
 	acceptance.Run(t, acceptance.Options{
-		Engine:     acceptance.OpenTofu,
+		Engine:     engine,
 		Shard:      acceptance.FreeProperties,
 		Prefix:     prefix,
 		LedgerPath: ledger,
 	}, func(session *acceptance.Session) {
-		initial := livePropertyConfig(prefix, false)
+		initial := configForEngine(livePropertyConfig(prefix, false), engine)
 		session.Apply(initial)
 		session.RequireEmptyPlan(initial)
 
 		transitions := warningTransitionConfigs(prefix)
+		for index, transition := range transitions {
+			transitions[index] = configForEngine(transition, engine)
+		}
 		safe := transitions[0]
 		session.RequirePlanWithoutWarning(safe, acceptance.PropertyOptionValuesChanged)
 		session.Apply(safe)
@@ -231,28 +261,11 @@ func TestAcc_free_properties_OptionAndTypeWarnings(t *testing.T) {
 	requireFreeOwnedConfigurationAbsent(t, prefix)
 }
 
-func TestAcc_free_properties_TerraformParity(t *testing.T) {
-	requireAcceptanceEnabled(t)
-	prefix := requiredEnvironment(t, "HUBSPOT_ACCEPTANCE_PREFIX")
-	ledger := requiredEnvironment(t, "HUBSPOT_ACCEPTANCE_CLEANUP_LEDGER")
-
-	acceptance.Run(t, acceptance.Options{
-		Engine:     acceptance.Terraform,
-		Shard:      acceptance.FreeProperties,
-		Prefix:     prefix,
-		LedgerPath: ledger,
-	}, func(session *acceptance.Session) {
-		config := strings.Replace(livePropertyConfig(prefix, false), "registry.opentofu.org", "registry.terraform.io", 1)
-		session.Apply(config)
-		session.RequireEmptyPlan(config)
-		session.MutatePropertyLabel("contacts", prefix+"scalar", "Terraform out-of-band label")
-		session.RequirePlanDiffAttributes(config, "hubspot_property.scalar", "label")
-		session.Apply(config)
-		session.RemoveState("hubspot_property.scalar")
-		session.Import("hubspot_property.scalar", "contacts/"+prefix+"scalar")
-		session.RequireEmptyPlan(config)
-	})
-	requireFreeOwnedConfigurationAbsent(t, prefix)
+func configForEngine(config string, engine acceptance.Engine) string {
+	if engine == acceptance.Terraform {
+		return strings.Replace(config, "registry.opentofu.org", "registry.terraform.io", 1)
+	}
+	return config
 }
 
 func TestAcc_free_properties_StandardObjectTypeCoverage(t *testing.T) {
@@ -284,6 +297,11 @@ func runStandardObjectTypeCoverage(t *testing.T, engine acceptance.Engine, regis
 			session.Apply(config)
 			session.RemoveState("hubspot_property.test")
 			session.Import("hubspot_property.test", objectType+"/"+prefix+objectType+"_property")
+			session.RequireEmptyPlan(config)
+			session.ArchiveProperty(objectType, prefix+objectType+"_property")
+			session.Refresh(config)
+			session.RequireStateAbsent("hubspot_property.test")
+			session.Apply(config)
 			session.RequireEmptyPlan(config)
 			session.Destroy(config)
 			session.RequirePropertyAbsent(objectType, prefix+objectType+"_property")

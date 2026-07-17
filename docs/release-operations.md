@@ -11,7 +11,10 @@ Northstar demo. Run `make one-portal-free-lifecycle` only with the Free shard's
 protected token and a valid acceptance prefix. It saves no CRM records: it applies
 the demo's reviewed destroy plan, runs the owned Free acceptance suite, then always
 rebuilds the Git-authored demo through a fresh reviewed plan, including when
-acceptance fails.
+acceptance fails. The demo and the shard share a portal lock keyed by
+`HUBSPOT_PORTAL_LOCK_ID` (default `default`) across local checkouts; GitHub uses
+the non-cancelling `hubspot-account-free_properties` concurrency group across
+runners. Do not bypass either gate for this portal.
 
 The scheduled janitor reports stale `tf_acc_` configuration. It never deletes.
 Manual cleanup requires a selected shard, an exact owned prefix ending in `_`,

@@ -10,6 +10,8 @@ status=failed
 cleanup=passed
 ledger=
 binary_dir=
+lock_dir=${HUBSPOT_ONE_PORTAL_LOCK_DIR:-"${TMPDIR:-/tmp}/hubspot-free-portal-${HUBSPOT_PORTAL_LOCK_ID:-default}.lock"}
+lock_acquired=false
 commit=$(git rev-parse HEAD)
 manifest_sha=
 provider_sha=
@@ -30,12 +32,18 @@ finish() {
     "$commit" "$shard" "$manifest_sha" "$provider_sha" "$suite_sha" "$tofu_version" "$terraform_version" "$cleanup" "$status" >"$report_dir/$shard.json"
   if [ -n "$ledger" ]; then rm -f "$ledger"; fi
   if [ -n "$binary_dir" ]; then rm -rf "$binary_dir"; fi
+  if [ "$lock_acquired" = true ]; then rmdir "$lock_dir" || code=1; fi
   exit "$code"
 }
 trap finish EXIT
 trap 'exit 1' HUP INT TERM
 
 test "$shard" = free_properties || { echo "v0.1 supports only the free_properties capability shard" >&2; exit 1; }
+
+if [ "${HUBSPOT_PORTAL_LOCK_HELD:-}" != 1 ]; then
+  mkdir "$lock_dir" 2>/dev/null || { echo "HubSpot Free portal is already in use: $lock_dir" >&2; exit 1; }
+  lock_acquired=true
+fi
 
 printf '%s\n' "$prefix" | grep -Eq '^tf_acc_[A-Za-z0-9_]+_$' || { echo "acceptance prefix must use tf_acc_ and end with an underscore" >&2; exit 1; }
 
