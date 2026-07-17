@@ -58,3 +58,4 @@ before publication and post-publication verification.
 - Paid deal/ticket/custom pipelines, custom object schemas, sensitive or
   highly-sensitive property definitions, and their account provisioning in v0.1.
 - Managing CRM records or persisting CRM record data in the provider or demo.
+- [Expand and rehearse the Northstar Free-tier demo](issues/05-expand-and-rehearse-the-free-demo.md) — Ten-property four-object demo passed the full shared-portal lifecycle and both local registry identities.
