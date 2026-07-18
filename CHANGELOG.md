@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-18
+
 ### Added
 
 - Protocol-6 OpenTofu-first provider skeleton and deterministic local gate.
@@ -28,3 +30,11 @@ All notable changes to this project are documented here.
   custom schemas, and sensitive definitions are deferred.
 - Serialize the shared Free portal lifecycle, reserve full demo-rebuild capacity,
   and verify the rebuilt demo has no pending changes.
+
+### Fixed
+
+- Preserve property-to-group dependency edges during lifecycle acceptance and
+  clear stale enumeration options when a property changes to scalar storage.
+- Verify property-group cleanup through active absence and reusable names,
+  matching the live HubSpot recycling-bin behavior.
+- Preserve hyphenated provider diagnostic titles in sanitized acceptance errors.
