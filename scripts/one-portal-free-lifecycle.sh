@@ -3,7 +3,12 @@ set -eu
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 demo_script=${HUBSPOT_DEMO_SCRIPT:-"$root/../terraform-hubspot-demo/scripts/demo"}
-acceptance_script=${HUBSPOT_ACCEPTANCE_SCRIPT:-"$root/scripts/acceptance-shard.sh"}
+if [ "$#" -gt 0 ]; then
+  acceptance_script=$1
+  shift
+else
+  acceptance_script=${HUBSPOT_ACCEPTANCE_SCRIPT:-"$root/scripts/acceptance-shard.sh"}
+fi
 lock_dir=${HUBSPOT_ONE_PORTAL_LOCK_DIR:-"${TMPDIR:-/tmp}/hubspot-free-portal-${HUBSPOT_PORTAL_LOCK_ID:-default}.lock"}
 demo_torn_down=false
 lock_acquired=false
@@ -26,7 +31,9 @@ restore_demo() {
 }
 trap restore_demo EXIT HUP INT TERM
 
+HUBSPOT_PORTAL_LOCK_HELD=1 "$demo_script" local adopt
+HUBSPOT_PORTAL_LOCK_HELD=1 "$demo_script" local verify
 HUBSPOT_PORTAL_LOCK_HELD=1 "$demo_script" local destroy-plan
-HUBSPOT_PORTAL_LOCK_HELD=1 "$demo_script" local destroy-apply
 demo_torn_down=true
-HUBSPOT_PORTAL_LOCK_HELD=1 "$acceptance_script"
+HUBSPOT_PORTAL_LOCK_HELD=1 "$demo_script" local destroy-apply
+HUBSPOT_PORTAL_LOCK_HELD=1 "$acceptance_script" "$@"

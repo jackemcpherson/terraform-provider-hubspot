@@ -7,3 +7,4 @@ dist/
 bin/
 coverage.out
 acceptance-report/
+.release-demo/

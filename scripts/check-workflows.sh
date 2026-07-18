@@ -46,4 +46,6 @@ test "$(grep -c '^    environment: release$' .github/workflows/release.yml)" = 1
   exit 1
 }
 grep -q 'verify-released-provider.sh' .github/workflows/verify-release.yml
+grep -q 'CAPABILITY_SHARD: \${{ matrix.shard }}' .github/workflows/verify-release.yml
+grep -q 'one-portal-free-lifecycle.sh ./scripts/released-live-shard.sh' .github/workflows/verify-release.yml
 grep -q 'verify-state-migration.sh' .github/workflows/verify-release.yml

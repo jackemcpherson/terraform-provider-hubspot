@@ -100,7 +100,10 @@ jobs:
     permissions:
       contents: read
     env:
+      CAPABILITY_SHARD: ${{ matrix.shard }}
       ENGINE: ${{ matrix.engine }}
+      HUBSPOT_DEMO_SCRIPT: ${{ github.workspace }}/.release-demo/scripts/demo
+      HUBSPOT_PROVIDER_REPO: ${{ github.workspace }}
       HUBSPOT_ACCEPTANCE_PREFIX: tf_acc_release_${{ github.run_id }}_${{ github.run_attempt }}_
       HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
       PROVIDER_ADDRESS: ${{ matrix.address }}
@@ -109,6 +112,13 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          persist-credentials: false
+      - name: Check out exact Northstar demo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: jackemcpherson/terraform-hubspot-instance-demo
+          ref: 20efda68e25d703f73fd48da63bf7d4f20bb260b
+          path: .release-demo
           persist-credentials: false
       - if: matrix.engine == 'tofu'
         uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
@@ -120,7 +130,7 @@ jobs:
         with:
           terraform_version: '1.15.8'
           terraform_wrapper: false
-      - run: ./scripts/released-live-shard.sh "$SHARD" "$ENGINE" "$PROVIDER_ADDRESS" "$VERSION"
+      - run: ./scripts/one-portal-free-lifecycle.sh ./scripts/released-live-shard.sh "$SHARD" "$ENGINE" "$PROVIDER_ADDRESS" "$VERSION"
 
   state-migration:
     needs: install

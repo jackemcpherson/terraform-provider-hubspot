@@ -63,22 +63,23 @@ type Options struct {
 }
 
 type Session struct {
-	t          testing.TB
-	engine     Engine
-	workDir    string
-	env        []string
-	ledgerPath string
-	ledgerID   string
-	shard      Shard
-	prefix     string
-	probeURL   string
-	registered bool
-	config     string
+	t                   testing.TB
+	engine              Engine
+	workDir             string
+	env                 []string
+	ledgerPath          string
+	ledgerID            string
+	shard               Shard
+	prefix              string
+	probeURL            string
+	registered          bool
+	retainCleanupLedger bool
+	config              string
 }
 
 var acceptancePrefix = regexp.MustCompile(`^tf_acc_[A-Za-z0-9_]+_$`)
 var (
-	engineErrorTitle = regexp.MustCompile(`(?m)^Error: ([A-Za-z][A-Za-z ]+)$`)
+	engineErrorTitle = regexp.MustCompile(`(?m)^Error: ([A-Za-z][A-Za-z -]+)$`)
 	hubSpotStatus    = regexp.MustCompile(`HubSpot returned HTTP ([0-9]{3})(?: \(([A-Za-z0-9_.-]+)\))?(?:[\t\r\n ]+\[([A-Za-z0-9_.-]+)\])?`)
 	inconsistentPath = regexp.MustCompile(`unexpected new value for \.([A-Za-z0-9_.]+):`)
 	stateValuePath   = regexp.MustCompile(`\.([a-z][a-z0-9_]*): was cty\.`)
@@ -373,7 +374,7 @@ func (s *Session) Import(address, id string) {
 func (s *Session) RequireImportFailure(config, address, id, title string) {
 	s.t.Helper()
 	s.writeConfig(config)
-	err := s.command("import", "-input=false", "-no-color", address, id)
+	_, err := s.commandOutput("import", "-input=false", "-no-color", address, id)
 	var commandError engineCommandError
 	if err == nil || !errors.As(err, &commandError) {
 		s.t.Fatal("acceptance import unexpectedly succeeded")
@@ -594,6 +595,10 @@ func (s *Session) cleanup() {
 	}
 	if err := s.command("destroy", "-auto-approve", "-input=false", "-no-color"); err != nil {
 		s.t.Errorf("%s acceptance cleanup failed: %v", s.engine, err)
+		return
+	}
+	if s.retainCleanupLedger {
+		s.t.Errorf("acceptance cleanup ledger retained after unmanaged probe cleanup failed")
 		return
 	}
 	if err := removeLedger(s.ledgerPath, s.ledgerID); err != nil {
