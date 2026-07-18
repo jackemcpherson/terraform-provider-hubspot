@@ -41,6 +41,8 @@ All notable changes to this project are documented here.
 - Preserve hyphenated provider diagnostic titles in sanitized acceptance errors.
 - Compare repeated release SBOMs canonically while keeping provider archives,
   registry manifests, and their non-SBOM checksums byte-for-byte reproducible.
+- Normalize archived manifest timestamps to the source commit so release assets
+  reproduce across independent runner checkouts.
 - Run candidate and released-provider live gates inside the serialized Northstar
   demo teardown and reconstruction lifecycle.
 - Recover blocked property-group deletion tests through the original dependency

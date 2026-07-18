@@ -204,6 +204,7 @@ jobs:
           goreleaser release --snapshot --clean --parallelism=2 --skip=sign
           cp terraform-registry-manifest.json dist/
           mv dist "$FIRST_BUILD"
+          touch terraform-registry-manifest.json
           goreleaser release --snapshot --clean --parallelism=2 --skip=sign
           cp terraform-registry-manifest.json dist/
           ./scripts/compare-release-builds.sh "$FIRST_BUILD" dist

@@ -36,7 +36,9 @@ archives:
     formats: [zip]
     name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}'
     files:
-      - terraform-registry-manifest.json
+      - src: terraform-registry-manifest.json
+        info:
+          mtime: '{{ .CommitDate }}'
 
 sboms:
   - artifacts: archive
