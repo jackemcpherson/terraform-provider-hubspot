@@ -10,4 +10,7 @@ grep -q "^## \[$(printf '%s' "$version" | sed 's/^v//')\] - [0-9][0-9][0-9][0-9]
   echo "changelog has no dated section for $version" >&2
   exit 1
 }
-git tag --list "$version" | grep -q . && { echo "tag already exists" >&2; exit 1; }
+if git tag --list "$version" | grep -q .; then
+  echo "tag already exists" >&2
+  exit 1
+fi

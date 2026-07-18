@@ -22,7 +22,6 @@ for workflow in .github/workflows/*.yml; do
 done
 
 grep -q '^  pull_request:' .github/workflows/ci.yml
-grep -q '^  workflow_call:' .github/workflows/acceptance.yml
 grep -q '^  schedule:' .github/workflows/security.yml
 grep -q '^  workflow_dispatch:' .github/workflows/acceptance-cleanup.yml
 if grep -q '^  schedule:' .github/workflows/acceptance-cleanup.yml; then
@@ -30,6 +29,14 @@ if grep -q '^  schedule:' .github/workflows/acceptance-cleanup.yml; then
   exit 1
 fi
 grep -q 'verify-candidate-report.sh' .github/workflows/release.yml
+grep -q '^  capability:' .github/workflows/release-candidate.yml
+grep -q 'environment: \${{ matrix.shard }}' .github/workflows/release-candidate.yml
+grep -q 'HUBSPOT_ACCESS_TOKEN: \${{ secrets.HUBSPOT_ACCESS_TOKEN }}' .github/workflows/release-candidate.yml
+grep -q 'one-portal-free-lifecycle.sh' .github/workflows/release-candidate.yml
+if grep -q 'uses: ./.github/workflows/acceptance.yml' .github/workflows/release-candidate.yml; then
+  echo "release candidate must bind the capability environment directly" >&2
+  exit 1
+fi
 grep -q 'goreleaser release --clean --parallelism=2 --skip=announce,publish,sign' .github/workflows/release.yml
 grep -q '^[[:space:]]*@"$(TOOLS_BIN)/goreleaser" release --snapshot --clean --skip=sign$' Makefile || {
   echo "local release snapshots must not require signing credentials" >&2
