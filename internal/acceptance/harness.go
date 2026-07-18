@@ -63,17 +63,18 @@ type Options struct {
 }
 
 type Session struct {
-	t          testing.TB
-	engine     Engine
-	workDir    string
-	env        []string
-	ledgerPath string
-	ledgerID   string
-	shard      Shard
-	prefix     string
-	probeURL   string
-	registered bool
-	config     string
+	t                   testing.TB
+	engine              Engine
+	workDir             string
+	env                 []string
+	ledgerPath          string
+	ledgerID            string
+	shard               Shard
+	prefix              string
+	probeURL            string
+	registered          bool
+	retainCleanupLedger bool
+	config              string
 }
 
 var acceptancePrefix = regexp.MustCompile(`^tf_acc_[A-Za-z0-9_]+_$`)
@@ -594,6 +595,10 @@ func (s *Session) cleanup() {
 	}
 	if err := s.command("destroy", "-auto-approve", "-input=false", "-no-color"); err != nil {
 		s.t.Errorf("%s acceptance cleanup failed: %v", s.engine, err)
+		return
+	}
+	if s.retainCleanupLedger {
+		s.t.Errorf("acceptance cleanup ledger retained after unmanaged probe cleanup failed")
 		return
 	}
 	if err := removeLedger(s.ledgerPath, s.ledgerID); err != nil {

@@ -146,7 +146,7 @@ func TestAcc_free_properties_PropertyGroupBlockedDestroy(t *testing.T) {
 		session.Apply(initial)
 		session.RequireApplyFailureWithStatus(liveBlockedGroupConfig(prefix, false), acceptance.PropertyGroupHasActiveProperties)
 		session.RequireStateString("hubspot_property_group.blocked", "label", "Acceptance blocked property group")
-		session.Apply(liveProviderOnlyConfig())
+		session.Destroy(initial)
 	})
 	requireFreeOwnedConfigurationAbsent(t, prefix)
 }

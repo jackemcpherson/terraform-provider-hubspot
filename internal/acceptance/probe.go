@@ -232,20 +232,41 @@ func (s *Session) RequirePropertyGroupReusable(objectType, name string) {
 	if err != nil {
 		s.t.Fatalf("verify archived property group name reuse: %s", SanitizedHubSpotError(err))
 	}
+	probeActive := true
+	defer func() {
+		if !probeActive {
+			return
+		}
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cleanupCancel()
+		if err := archivePropertyGroupAndVerifyAbsent(cleanupCtx, clients, objectType, name); err != nil {
+			s.retainCleanupLedger = true
+			s.t.Errorf("cleanup property group name reuse probe: %s", SanitizedHubSpotError(err))
+		}
+	}()
 	if group.Name != name || group.Archived {
 		s.t.Fatal("property group name reuse probe did not create the canonical active identity")
 	}
-	if err := clients.PropertyGroups.Archive(ctx, objectType, name); err != nil {
+	if err := archivePropertyGroupAndVerifyAbsent(ctx, clients, objectType, name); err != nil {
 		s.t.Fatalf("archive property group name reuse probe: %s", SanitizedHubSpotError(err))
 	}
-	if _, err := clients.PropertyGroups.Get(ctx, objectType, name); err == nil {
-		s.t.Fatal("property group name reuse probe remained active after archive")
-	} else {
-		var apiError *hubspot.Error
-		if !errors.As(err, &apiError) || apiError.Status != 404 {
-			s.t.Fatalf("verify property group name reuse probe absence: %s", SanitizedHubSpotError(err))
-		}
+	probeActive = false
+}
+
+func archivePropertyGroupAndVerifyAbsent(ctx context.Context, clients *hubspot.ClientSet, objectType, name string) error {
+	archiveErr := clients.PropertyGroups.Archive(ctx, objectType, name)
+	_, getErr := clients.PropertyGroups.Get(ctx, objectType, name)
+	var apiError *hubspot.Error
+	if errors.As(getErr, &apiError) && apiError.Status == 404 {
+		return nil
 	}
+	if archiveErr != nil {
+		return archiveErr
+	}
+	if getErr != nil {
+		return getErr
+	}
+	return errors.New("property group name reuse probe remained active after archive")
 }
 
 func (s *Session) MutatePropertyLabel(objectType, name, label string) {
