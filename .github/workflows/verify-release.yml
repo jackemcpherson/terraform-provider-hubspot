@@ -100,6 +100,7 @@ jobs:
     permissions:
       contents: read
     env:
+      CAPABILITY_SHARD: ${{ matrix.shard }}
       ENGINE: ${{ matrix.engine }}
       HUBSPOT_DEMO_SCRIPT: ${{ github.workspace }}/.release-demo/scripts/demo
       HUBSPOT_PROVIDER_REPO: ${{ github.workspace }}

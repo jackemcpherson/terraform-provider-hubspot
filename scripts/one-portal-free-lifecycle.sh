@@ -34,6 +34,6 @@ trap restore_demo EXIT HUP INT TERM
 HUBSPOT_PORTAL_LOCK_HELD=1 "$demo_script" local adopt
 HUBSPOT_PORTAL_LOCK_HELD=1 "$demo_script" local verify
 HUBSPOT_PORTAL_LOCK_HELD=1 "$demo_script" local destroy-plan
-HUBSPOT_PORTAL_LOCK_HELD=1 "$demo_script" local destroy-apply
 demo_torn_down=true
+HUBSPOT_PORTAL_LOCK_HELD=1 "$demo_script" local destroy-apply
 HUBSPOT_PORTAL_LOCK_HELD=1 "$acceptance_script" "$@"

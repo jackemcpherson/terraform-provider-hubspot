@@ -230,6 +230,12 @@ func (s *Session) RequirePropertyGroupReusable(objectType, name string) {
 		DisplayOrder: -1,
 	})
 	if err != nil {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cleanupCancel()
+		if cleanupErr := archivePropertyGroupAndVerifyAbsent(cleanupCtx, clients, objectType, name); cleanupErr != nil {
+			s.retainCleanupLedger = true
+			s.t.Fatalf("verify ambiguous property group name reuse failure: create: %s; cleanup: %s", SanitizedHubSpotError(err), SanitizedHubSpotError(cleanupErr))
+		}
 		s.t.Fatalf("verify archived property group name reuse: %s", SanitizedHubSpotError(err))
 	}
 	probeActive := true
