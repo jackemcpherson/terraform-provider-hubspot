@@ -38,3 +38,7 @@ All notable changes to this project are documented here.
 - Verify property-group cleanup through active absence and reusable names,
   matching the live HubSpot recycling-bin behavior.
 - Preserve hyphenated provider diagnostic titles in sanitized acceptance errors.
+- Run candidate and released-provider live gates inside the serialized Northstar
+  demo teardown and reconstruction lifecycle.
+- Recover blocked property-group deletion tests through the original dependency
+  graph before cleanup.
