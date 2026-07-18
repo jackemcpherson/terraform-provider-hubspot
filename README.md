@@ -12,6 +12,10 @@ The provider does not read CRM records or record values. v0.1 supports only
 non-sensitive property definitions on HubSpot Free; pipelines, custom schemas, and
 sensitive definitions are deferred.
 
+HubSpot Free permits ten custom properties across the portal. Review
+[permissions, account tiers, and exclusions](docs/permissions-and-limits.md)
+before applying managed definitions.
+
 ## Configure
 
 Declare the OpenTofu registry source and keep the static app token outside HCL:

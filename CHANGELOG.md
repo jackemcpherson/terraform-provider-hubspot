@@ -26,8 +26,9 @@ All notable changes to this project are documented here.
 ### Changed
 
 - Limit the public v0.1.0 surface to property groups, ordinary non-sensitive
-  properties, and property-definition discovery on HubSpot Free. Pipelines,
-  custom schemas, and sensitive definitions are deferred.
+  properties, and property-definition discovery on HubSpot Free, including its
+  portal-wide limit of ten custom properties. Pipelines, custom schemas, and
+  sensitive definitions are deferred.
 - Serialize the shared Free portal lifecycle, reserve full demo-rebuild capacity,
   and verify the rebuilt demo has no pending changes.
 

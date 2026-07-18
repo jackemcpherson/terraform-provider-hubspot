@@ -9,9 +9,10 @@ record IDs, configuration IDs, or credentials.
 v0.1 has one `free_properties` shard and one disposable portal shared with the
 Northstar demo. Run `make one-portal-free-lifecycle` only with the Free shard's
 protected token and a valid acceptance prefix. It saves no CRM records: it applies
-the demo's reviewed destroy plan, runs the owned Free acceptance suite, then always
-rebuilds the Git-authored demo through a fresh reviewed plan, including when
-acceptance fails. The demo and the shard share a portal lock keyed by
+the demo's reviewed destroy plan after adopting and verifying its known identities,
+runs the owned Free acceptance suite, then always rebuilds the Git-authored demo
+through a fresh reviewed plan, including when acceptance fails. The demo and the
+shard share a portal lock keyed by
 `HUBSPOT_PORTAL_LOCK_ID` (default `default`) across local checkouts; GitHub uses
 the non-cancelling `hubspot-account-free_properties` concurrency group across
 runners. Do not bypass either gate for this portal.
@@ -20,8 +21,9 @@ HubSpot's property DELETE operations archive definitions and groups into its
 recycling bin rather than offering a permanent-purge endpoint. Free acceptance
 therefore treats verified archival plus active-name reuse as its terminal cleanup
 invariant: no active prefix-owned configuration may remain, each archive path is
-read back, and the same Git-authored names must recreate successfully before the
-demo rebuild is verified.
+verified through the strongest API-supported probe, and the same Git-authored names
+must recreate successfully before the demo rebuild is verified. Properties are
+read back from the archive; groups are proven absent from the active API and reusable.
 
 The scheduled janitor reports stale `tf_acc_` configuration. It never deletes.
 Manual cleanup requires a selected shard, an exact owned prefix ending in `_`,
@@ -38,9 +40,12 @@ The release workflow smoke-installs the first artifact set through filesystem
 mirrors under both full registry addresses, signs the checksum and tag, verifies
 the draft assets and attestations, then publishes. Enable GitHub immutable
 releases, require one approval for the `release` environment before signing, and register the same
-GPG public key with Terraform Registry and OpenTofu Registry before v0.1.0. Store
-`GPG_PRIVATE_KEY` and `GPG_FINGERPRINT` only in that environment; expose the
-armored public key as the non-secret `GPG_PUBLIC_KEY` repository variable.
+GPG public key with Terraform Registry before v0.1.0. OpenTofu's bootstrap requires
+the first signed release and accepted provider entry before its signing-key issue
+can be submitted; register that same key immediately after provider acceptance.
+This ordering does not permit an unsigned release. Store `GPG_PRIVATE_KEY` and
+`GPG_FINGERPRINT` only in the release environment; expose the armored public key
+as the non-secret `GPG_PUBLIC_KEY` repository variable.
 
 After publication, run `Verify release`. It polls both registries, installs the
 actual archives through Terraform and OpenTofu, runs protected released-artifact
