@@ -29,8 +29,9 @@ The scheduled janitor reports stale `tf_acc_` configuration. It never deletes.
 Manual cleanup requires a selected shard, an exact owned prefix ending in `_`,
 the protected shard environment, and the confirmation text shown by the workflow.
 
-A candidate names one full commit SHA. Its reusable acceptance run, full engine
-matrix, security gate, and deterministic gate produce a commit-bound report.
+A candidate names one full commit SHA. Its directly environment-bound acceptance
+run, full engine matrix, security gate, and deterministic gate produce a
+commit-bound report.
 Publication accepts a v-prefixed SemVer and only proceeds when it downloads a
 successful report for that exact SHA. The unsigned build and independent rebuild
 use an unpushed local version tag and run without secrets. Only the signing job
