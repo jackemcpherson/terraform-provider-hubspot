@@ -38,6 +38,14 @@ if grep -q 'uses: ./.github/workflows/acceptance.yml' .github/workflows/release-
   exit 1
 fi
 grep -q 'goreleaser release --clean --parallelism=2 --skip=announce,publish,sign' .github/workflows/release.yml
+grep -Fq "mtime: '{{ .CommitDate }}'" .goreleaser.yml || {
+  echo "release archive files must use the commit timestamp" >&2
+  exit 1
+}
+grep -q 'touch terraform-registry-manifest.json' .github/workflows/release-candidate.yml || {
+  echo "candidate reproducibility must perturb checkout file timestamps" >&2
+  exit 1
+}
 grep -q '^[[:space:]]*@"$(TOOLS_BIN)/goreleaser" release --snapshot --clean --skip=sign$' Makefile || {
   echo "local release snapshots must not require signing credentials" >&2
   exit 1
