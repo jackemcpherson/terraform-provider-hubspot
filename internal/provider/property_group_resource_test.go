@@ -112,3 +112,17 @@ func TestAppendOrderNormalizationExposesRemoteDrift(t *testing.T) {
 		t.Fatal("option append sentinels hid remote option-order drift")
 	}
 }
+
+func TestPropertyOptionsPlanClearsStaleEnumerationOptionsOnStorageChange(t *testing.T) {
+	prior := propertyOptionMap(map[string]propertyOptionModel{
+		"alpha": {Label: types.StringValue("Alpha"), Description: types.StringValue(""), DisplayOrder: types.Int64Value(-1), Hidden: types.BoolValue(false)},
+	})
+	cleared := propertyOptionsPlanValue(types.StringValue("string"), types.StringValue("enumeration"), prior)
+	if cleared.IsNull() || len(cleared.Elements()) != 0 {
+		t.Fatal("enumeration options remained planned after changing to scalar storage")
+	}
+	preserved := propertyOptionsPlanValue(types.StringValue("enumeration"), types.StringValue("enumeration"), prior)
+	if !preserved.Equal(prior) {
+		t.Fatal("unchanged enumeration options were not preserved for an unrelated update")
+	}
+}

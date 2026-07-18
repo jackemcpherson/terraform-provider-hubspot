@@ -78,7 +78,7 @@ type Session struct {
 
 var acceptancePrefix = regexp.MustCompile(`^tf_acc_[A-Za-z0-9_]+_$`)
 var (
-	engineErrorTitle = regexp.MustCompile(`(?m)^Error: ([A-Za-z][A-Za-z ]+)$`)
+	engineErrorTitle = regexp.MustCompile(`(?m)^Error: ([A-Za-z][A-Za-z -]+)$`)
 	hubSpotStatus    = regexp.MustCompile(`HubSpot returned HTTP ([0-9]{3})(?: \(([A-Za-z0-9_.-]+)\))?(?:[\t\r\n ]+\[([A-Za-z0-9_.-]+)\])?`)
 	inconsistentPath = regexp.MustCompile(`unexpected new value for \.([A-Za-z0-9_.]+):`)
 	stateValuePath   = regexp.MustCompile(`\.([a-z][a-z0-9_]*): was cty\.`)
@@ -373,7 +373,7 @@ func (s *Session) Import(address, id string) {
 func (s *Session) RequireImportFailure(config, address, id, title string) {
 	s.t.Helper()
 	s.writeConfig(config)
-	err := s.command("import", "-input=false", "-no-color", address, id)
+	_, err := s.commandOutput("import", "-input=false", "-no-color", address, id)
 	var commandError engineCommandError
 	if err == nil || !errors.As(err, &commandError) {
 		s.t.Fatal("acceptance import unexpectedly succeeded")

@@ -12,7 +12,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -80,7 +79,7 @@ func (r *PropertyResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 		"number_display_hint":    schema.StringAttribute{Optional: true, Computed: true, Description: "HubSpot number display hint; omitted when null.", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"text_display_hint":      schema.StringAttribute{Optional: true, Computed: true, Description: "HubSpot text display hint; omitted when null.", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"referenced_object_type": schema.StringAttribute{Optional: true, Computed: true, Description: "Referenced CRM object type; changes replace the definition.", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown(), stringplanmodifier.RequiresReplace()}},
-		"options": schema.MapNestedAttribute{Optional: true, Computed: true, Description: "Complete option set keyed by immutable CRM record value.", PlanModifiers: []planmodifier.Map{mapplanmodifier.UseStateForUnknown()}, NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
+		"options": schema.MapNestedAttribute{Optional: true, Computed: true, Description: "Complete option set keyed by immutable CRM record value.", PlanModifiers: []planmodifier.Map{propertyOptionsPlanModifier{}}, NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
 			"label":         schema.StringAttribute{Required: true, Description: "Option display label."},
 			"description":   schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString(""), Description: "Option description; defaults to an empty string."},
 			"display_order": schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(-1), Description: "HubSpot display order; defaults to -1."},
@@ -524,6 +523,40 @@ func optionKeysChanged(a, b types.Map) bool {
 
 func knownStringChanged(a, b types.String) bool {
 	return !a.IsNull() && !a.IsUnknown() && !b.IsNull() && !b.IsUnknown() && a.ValueString() != b.ValueString()
+}
+
+type propertyOptionsPlanModifier struct{}
+
+func (propertyOptionsPlanModifier) Description(context.Context) string {
+	return "preserves option state unless a property leaves the enumeration storage type"
+}
+
+func (modifier propertyOptionsPlanModifier) MarkdownDescription(ctx context.Context) string {
+	return modifier.Description(ctx)
+}
+
+func (propertyOptionsPlanModifier) PlanModifyMap(ctx context.Context, request planmodifier.MapRequest, response *planmodifier.MapResponse) {
+	if !request.PlanValue.IsUnknown() {
+		return
+	}
+	if request.State.Raw.IsNull() {
+		return
+	}
+	var plannedType types.String
+	response.Diagnostics.Append(request.Plan.GetAttribute(ctx, path.Root("type"), &plannedType)...)
+	var priorType types.String
+	response.Diagnostics.Append(request.State.GetAttribute(ctx, path.Root("type"), &priorType)...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+	response.PlanValue = propertyOptionsPlanValue(plannedType, priorType, request.StateValue)
+}
+
+func propertyOptionsPlanValue(plannedType, priorType types.String, prior types.Map) types.Map {
+	if knownStringChanged(plannedType, priorType) && plannedType.ValueString() != "enumeration" {
+		return propertyOptionMap(nil)
+	}
+	return prior
 }
 
 type propertyTypeValidator struct{}

@@ -46,6 +46,23 @@ func TestFreePropertiesAcceptanceConfigurationSyntax(t *testing.T) {
 	}
 }
 
+func TestLivePropertyConfigPreservesGroupDependencies(t *testing.T) {
+	tests := []struct {
+		updated bool
+		group   string
+	}{
+		{updated: false, group: "hubspot_property_group.test.name"},
+		{updated: true, group: "hubspot_property_group.secondary.name"},
+	}
+	for _, test := range tests {
+		config := livePropertyConfig("tf_acc_dependency_", test.updated)
+		scalarBlock := strings.Split(strings.Split(config, `resource "hubspot_property" "scalar" {`)[1], `resource "hubspot_property" "enumeration"`)[0]
+		if !strings.Contains(scalarBlock, "group_name  = "+test.group) {
+			t.Fatalf("updated=%t scalar property does not retain its property-group dependency", test.updated)
+		}
+	}
+}
+
 func warningTransitionConfigs(prefix string) []string {
 	safe := livePropertyConfig(prefix, true)
 	typeTransition := strings.Replace(safe, `field_type  = "text"`, `field_type  = "textarea"`, 1)
@@ -102,7 +119,7 @@ func runFreePropertyGroupLifecycle(t *testing.T, engine acceptance.Engine) {
 		session.RequireEmptyPlan(updated)
 		session.Destroy(updated)
 		session.RequirePropertyGroupAbsent("contacts", name)
-		session.RequirePropertyGroupArchived("contacts", name)
+		session.RequirePropertyGroupReusable("contacts", name)
 		session.Apply(updated)
 		session.RequireEmptyPlan(updated)
 		session.ArchivePropertyGroup("contacts", name)
@@ -136,6 +153,21 @@ func TestAcc_free_properties_PropertyGroupBlockedDestroy(t *testing.T) {
 
 func TestAcc_free_properties_PropertyLifecycleAndDiscovery(t *testing.T) {
 	runPropertyLifecycleAndDiscovery(t, acceptance.OpenTofu)
+}
+
+func TestAcc_free_properties_BuiltInPropertyImportRejected(t *testing.T) {
+	requireAcceptanceEnabled(t)
+	prefix := requiredEnvironment(t, "HUBSPOT_ACCEPTANCE_PREFIX")
+	ledger := requiredEnvironment(t, "HUBSPOT_ACCEPTANCE_CLEANUP_LEDGER")
+	acceptance.Run(t, acceptance.Options{
+		Engine:     acceptance.OpenTofu,
+		Shard:      acceptance.FreeProperties,
+		Prefix:     prefix,
+		LedgerPath: ledger,
+	}, func(session *acceptance.Session) {
+		session.Apply(liveBuiltInDiscoveryConfig(false))
+		session.RequireImportFailure(liveBuiltInDiscoveryConfig(true), "hubspot_property.readonly", "contacts/email", "Property is discovery-only")
+	})
 }
 
 func TestAcc_free_properties_TerraformParity(t *testing.T) {
@@ -180,7 +212,7 @@ func runPropertyLifecycleAndDiscovery(t *testing.T, engine acceptance.Engine) {
 		session.RequirePropertyGroupAbsent("contacts", prefix+"property_group")
 		session.RequirePropertyArchived("contacts", prefix+"scalar")
 		session.RequirePropertyArchived("contacts", prefix+"enumeration")
-		session.RequirePropertyGroupArchived("contacts", prefix+"property_group")
+		session.RequirePropertyGroupReusable("contacts", prefix+"property_group")
 		session.Apply(updated)
 		session.RequireEmptyPlan(updated)
 		managedOnly := strings.Split(updated, `
@@ -311,7 +343,7 @@ func runStandardObjectTypeCoverage(t *testing.T, engine acceptance.Engine, regis
 			session.RequirePropertyAbsent(objectType, prefix+objectType+"_property")
 			session.RequirePropertyGroupAbsent(objectType, prefix+objectType+"_group")
 			session.RequirePropertyArchived(objectType, prefix+objectType+"_property")
-			session.RequirePropertyGroupArchived(objectType, prefix+objectType+"_group")
+			session.RequirePropertyGroupReusable(objectType, prefix+objectType+"_group")
 		}
 	})
 	requireFreeOwnedConfigurationAbsentForStandardObjectTypes(t, prefix)
@@ -394,7 +426,7 @@ func livePropertyConfig(prefix string, updated bool) string {
 	scalarLabel := "Acceptance scalar property"
 	scalarDescription := ""
 	alphaLabel := "Alpha"
-	scalarGroup := prefix + "property_group"
+	scalarGroup := "hubspot_property_group.test.name"
 	scalarOrder := int64(220)
 	scalarHidden := false
 	alphaOrder := int64(260)
@@ -403,7 +435,7 @@ func livePropertyConfig(prefix string, updated bool) string {
 		scalarLabel = "Updated acceptance scalar property"
 		scalarDescription = "Updated through the provider acceptance lifecycle"
 		alphaLabel = "Alpha updated"
-		scalarGroup = prefix + "secondary_group"
+		scalarGroup = "hubspot_property_group.secondary.name"
 		scalarOrder = 230
 		scalarHidden = true
 		alphaOrder = 250
@@ -437,7 +469,7 @@ resource "hubspot_property" "scalar" {
   object_type = "contacts"
   name        = %q
   label       = %q
-  group_name  = %q
+  group_name  = %s
   type        = "string"
   field_type  = "text"
   description = %q

@@ -216,7 +216,7 @@ func (s *Session) RequirePropertyGroupAbsent(objectType, name string) {
 	}
 }
 
-func (s *Session) RequirePropertyGroupArchived(objectType, name string) {
+func (s *Session) RequirePropertyGroupReusable(objectType, name string) {
 	s.t.Helper()
 	clients, err := s.probeClients()
 	if err != nil {
@@ -224,12 +224,27 @@ func (s *Session) RequirePropertyGroupArchived(objectType, name string) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	group, err := clients.PropertyGroups.Get(ctx, objectType, name)
+	group, err := clients.PropertyGroups.Create(ctx, objectType, hubspot.PropertyGroupCreate{
+		Name:         name,
+		Label:        "Acceptance archive reuse probe",
+		DisplayOrder: -1,
+	})
 	if err != nil {
-		s.t.Fatalf("verify archived property group: %s", SanitizedHubSpotError(err))
+		s.t.Fatalf("verify archived property group name reuse: %s", SanitizedHubSpotError(err))
 	}
-	if !group.Archived {
-		s.t.Fatal("property group terminal probe did not verify archived CRM configuration")
+	if group.Name != name || group.Archived {
+		s.t.Fatal("property group name reuse probe did not create the canonical active identity")
+	}
+	if err := clients.PropertyGroups.Archive(ctx, objectType, name); err != nil {
+		s.t.Fatalf("archive property group name reuse probe: %s", SanitizedHubSpotError(err))
+	}
+	if _, err := clients.PropertyGroups.Get(ctx, objectType, name); err == nil {
+		s.t.Fatal("property group name reuse probe remained active after archive")
+	} else {
+		var apiError *hubspot.Error
+		if !errors.As(err, &apiError) || apiError.Status != 404 {
+			s.t.Fatalf("verify property group name reuse probe absence: %s", SanitizedHubSpotError(err))
+		}
 	}
 }
 
