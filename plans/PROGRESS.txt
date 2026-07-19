@@ -224,3 +224,57 @@
 (No issues found)
 
 ---
+
+[Diagnosis] 2026-07-19 02:40 UTC - Terraform Registry manifest asset naming
+
+### Reproduction
+
+`curl -fsSL https://registry.terraform.io/v1/providers/jackemcpherson/hubspot/versions | jq -e '.versions | map(.version) | index("0.1.1") != null'` returned `false` after a manual resync.
+
+### Root cause
+
+The immutable v0.1.1 GitHub release published the repository source filename
+`terraform-registry-manifest.json`. Terraform Registry requires
+`terraform-provider-hubspot_0.1.1_manifest.json`, and the checksum inventory must
+reference that same release filename. HashiCorp's canonical GoReleaser
+configuration applies the versioned `name_template` in both `checksum.extra_files`
+and `release.extra_files`.
+
+### Correction
+
+Prepare v0.1.2 without altering v0.1.1. Enforce the versioned manifest name in
+release-bundle verification, reproducibility comparison, the no-checkout signing
+gate, draft verification, GoReleaser configuration, and release documentation.
+
+---
+
+[Review] 2026-07-19 02:51 UTC - github-actions (warning)
+
+### Verdict: PASSED
+
+### Workflow Coverage
+
+| Workflow Type | Present | File |
+|---------------|---------|------|
+| Lint/Format | ✅ | ci.yml |
+| Unit Tests | ✅ | ci.yml |
+| Build Check | ✅ | ci.yml |
+| Integration Tests | ✅ | acceptance.yml, release-candidate.yml |
+| Dependabot | ✅ | dependabot.yml |
+| Security Scan | ✅ | security.yml |
+
+### Findings
+
+(No issues found)
+
+---
+
+[Review] 2026-07-19 02:51 UTC - release (blocking)
+
+### Verdict: PASSED
+
+### Findings
+
+(No issues found)
+
+---

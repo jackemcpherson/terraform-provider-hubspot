@@ -23,7 +23,7 @@ write_checksums() {
 		cd "$directory"
 		shasum -a 256 \
 			terraform-provider-hubspot_0.1.0_*.zip \
-			terraform-registry-manifest.json \
+			terraform-provider-hubspot_0.1.0_manifest.json \
 			>terraform-provider-hubspot_0.1.0_SHA256SUMS
 	)
 }
@@ -41,11 +41,11 @@ for platform in $platforms; do
 	printf '%s\n' "provider archive $platform" >"$first/terraform-provider-hubspot_0.1.0_${platform}.zip"
 	cp "$first/terraform-provider-hubspot_0.1.0_${platform}.zip" "$second/"
 done
-printf '%s\n' '{"format_version":1,"protocol_versions":["6.0"]}' >"$first/terraform-registry-manifest.json"
+printf '%s\n' '{"format_version":1,"protocol_versions":["6.0"]}' >"$first/terraform-provider-hubspot_0.1.0_manifest.json"
 write_sbom "$first/terraform-provider-hubspot_0.1.0_linux_amd64.zip.spdx.sbom" \
 	'https://spdx.org/spdxdocs/provider-first' '2026-07-18T00:00:00Z' '0.1.0'
 
-cp "$first/terraform-registry-manifest.json" "$second/"
+cp "$first/terraform-provider-hubspot_0.1.0_manifest.json" "$second/"
 write_sbom "$second/terraform-provider-hubspot_0.1.0_linux_amd64.zip.spdx.sbom" \
 	'https://spdx.org/spdxdocs/provider-second' '2026-07-18T00:01:00Z' '0.1.0'
 write_checksums "$first"

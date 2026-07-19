@@ -11,6 +11,9 @@ printf '%s' "$public_key" | gpg --batch --import
 gpg --batch --verify "$checksum.sig" "$checksum"
 "$root/scripts/verify-registry-checksums.sh" "$dir"
 find "$dir" -name '*.spdx.sbom' -type f -print -quit | grep -q .
-test -f "$dir/terraform-registry-manifest.json"
+checksum_name=$(basename "$checksum")
+release_prefix=${checksum_name%_SHA256SUMS}
+manifest="$dir/${release_prefix}_manifest.json"
+test -f "$manifest"
 find "$dir" -name '*.zip' -type f -print -quit | grep -q .
-grep -q '"protocol_versions": \["6.0"\]' "$dir/terraform-registry-manifest.json"
+grep -q '"protocol_versions": \["6.0"\]' "$manifest"

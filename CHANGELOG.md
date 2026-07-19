@@ -4,6 +4,13 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-07-19
+
+### Fixed
+
+- Publish the Registry manifest under the required versioned provider asset name
+  and checksum that exact filename so Terraform Registry can ingest releases.
+
 ## [0.1.1] - 2026-07-19
 
 ### Fixed

@@ -21,6 +21,7 @@ terraform-provider-hubspot_*_SHA256SUMS)
 	exit 1
 	;;
 esac
+manifest_name=${release_prefix}_manifest.json
 
 (
 	for platform in \
@@ -42,12 +43,12 @@ esac
 	do
 		printf '%s_%s.zip\n' "$release_prefix" "$platform"
 	done
-	printf '%s\n' terraform-registry-manifest.json
-) >"$tmp/expected"
+	printf '%s\n' "$manifest_name"
+) | LC_ALL=C sort >"$tmp/expected"
 
 (
 	cd "$directory"
-	find . -maxdepth 1 -type f \( -name '*.zip' -o -name 'terraform-registry-manifest.json' \) -print |
+	find . -maxdepth 1 -type f \( -name '*.zip' -o -name "$manifest_name" \) -print |
 		sed 's|^[.]/||' | LC_ALL=C sort
 ) >"$tmp/package-assets"
 if ! diff -u "$tmp/expected" "$tmp/package-assets"; then
