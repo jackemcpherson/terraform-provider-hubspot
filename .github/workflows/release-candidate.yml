@@ -200,13 +200,19 @@ jobs:
         env:
           FIRST_BUILD: ${{ runner.temp }}/first-candidate-build
         run: |
+          stage_registry_manifest() {
+            checksum=$(find dist -maxdepth 1 -type f -name '*_SHA256SUMS' -print -quit)
+            release_prefix=$(basename "${checksum%_SHA256SUMS}")
+            manifest_asset=${release_prefix}_manifest.json
+            cp terraform-registry-manifest.json "dist/$manifest_asset"
+          }
           make tools
           goreleaser release --snapshot --clean --parallelism=2 --skip=sign
-          cp terraform-registry-manifest.json dist/
+          stage_registry_manifest
           mv dist "$FIRST_BUILD"
           touch terraform-registry-manifest.json
           goreleaser release --snapshot --clean --parallelism=2 --skip=sign
-          cp terraform-registry-manifest.json dist/
+          stage_registry_manifest
           ./scripts/compare-release-builds.sh "$FIRST_BUILD" dist
 
   qualified:

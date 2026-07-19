@@ -70,9 +70,10 @@ jobs:
           git tag "$VERSION"
           make tools
           goreleaser release --clean --parallelism=2 --skip=announce,publish,sign
-          cp terraform-registry-manifest.json dist/
+          manifest_asset="terraform-provider-hubspot_${VERSION#v}_manifest.json"
+          cp terraform-registry-manifest.json "dist/$manifest_asset"
           mkdir -p bundle/assets bundle/metadata
-          find dist -maxdepth 1 -type f \( -name '*.zip' -o -name '*.spdx.sbom' -o -name '*_SHA256SUMS' -o -name 'terraform-registry-manifest.json' \) -exec mv {} bundle/assets/ \;
+          find dist -maxdepth 1 -type f \( -name '*.zip' -o -name '*.spdx.sbom' -o -name '*_SHA256SUMS' -o -name '*_manifest.json' \) -exec mv {} bundle/assets/ \;
           syft scan dir:bundle/assets --output spdx-json=bundle/metadata/release.spdx.json
           ./scripts/release-notes.sh "$VERSION" >bundle/metadata/release-notes.md
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -119,7 +120,8 @@ jobs:
           git tag "$VERSION"
           make tools
           goreleaser release --clean --parallelism=2 --skip=announce,publish,sign
-          cp terraform-registry-manifest.json dist/
+          manifest_asset="terraform-provider-hubspot_${VERSION#v}_manifest.json"
+          cp terraform-registry-manifest.json "dist/$manifest_asset"
           ./scripts/compare-release-builds.sh "$FIRST_BUILD/assets" dist
 
   sign:
@@ -146,15 +148,19 @@ jobs:
           test "$(wc -l <"$RUNNER_TEMP/checksum-files" | tr -d ' ')" -eq 1
           checksum=$(sed -n '1p' "$RUNNER_TEMP/checksum-files")
           checksum_name=$(basename "$checksum")
-          case "$checksum_name" in
-            terraform-provider-hubspot_*_SHA256SUMS) release_prefix=${checksum_name%_SHA256SUMS} ;;
-            *) echo 'checksum filename does not identify a HubSpot provider release' >&2; exit 1 ;;
-          esac
+          release_prefix=terraform-provider-hubspot_${VERSION#v}
+          expected_checksum=${release_prefix}_SHA256SUMS
+          test "$checksum_name" = "$expected_checksum" || {
+            echo 'checksum filename does not match the requested HubSpot provider version' >&2
+            exit 1
+          }
           for platform in darwin_amd64 darwin_arm64 freebsd_386 freebsd_amd64 freebsd_arm64 freebsd_armv6 freebsd_armv7 linux_386 linux_amd64 linux_arm64 linux_armv6 linux_armv7 windows_386 windows_amd64 windows_arm64; do
             printf '%s_%s.zip\n' "$release_prefix" "$platform"
           done >"$RUNNER_TEMP/registry-expected"
-          printf '%s\n' terraform-registry-manifest.json >>"$RUNNER_TEMP/registry-expected"
-          find bundle/assets -maxdepth 1 -type f \( -name '*.zip' -o -name 'terraform-registry-manifest.json' \) -exec basename {} \; | sort >"$RUNNER_TEMP/registry-packages"
+          manifest_name=${release_prefix}_manifest.json
+          printf '%s\n' "$manifest_name" >>"$RUNNER_TEMP/registry-expected"
+          sort -o "$RUNNER_TEMP/registry-expected" "$RUNNER_TEMP/registry-expected"
+          find bundle/assets -maxdepth 1 -type f \( -name '*.zip' -o -name "$manifest_name" \) -exec basename {} \; | sort >"$RUNNER_TEMP/registry-packages"
           diff -u "$RUNNER_TEMP/registry-expected" "$RUNNER_TEMP/registry-packages"
           awk '{print $2}' "$checksum" | sort >"$RUNNER_TEMP/registry-actual"
           if ! diff -u "$RUNNER_TEMP/registry-expected" "$RUNNER_TEMP/registry-actual"; then

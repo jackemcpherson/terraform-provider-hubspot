@@ -58,6 +58,9 @@ checksum, signature, manifest, SBOM, or provenance record requires a new patch
 release; maintainers must not move the tag or replace an asset.
 
 The signed checksum inventory must contain exactly the provider archives and one
-Registry manifest. Standalone SPDX SBOM files remain published release assets but
+Registry manifest. Keep `terraform-registry-manifest.json` as the repository source,
+but publish and checksum it as
+`terraform-provider-hubspot_<VERSION>_manifest.json`, matching the Terraform
+Registry release contract. Standalone SPDX SBOM files remain published release assets but
 must not appear in the Registry checksum file because Registry ingestion does not
 include them in its package request.

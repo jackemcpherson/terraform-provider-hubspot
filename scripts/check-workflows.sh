@@ -46,8 +46,28 @@ grep -Fq "mtime: '{{ .CommitDate }}'" .goreleaser.yml || {
   echo "release archive files must use the commit timestamp" >&2
   exit 1
 }
+test "$(grep -Fc "name_template: '{{ .ProjectName }}_{{ .Version }}_manifest.json'" .goreleaser.yml)" = 2 || {
+  echo "Registry manifest must use its versioned release asset name in checksums and publication" >&2
+  exit 1
+}
 grep -q 'touch terraform-registry-manifest.json' .github/workflows/release-candidate.yml || {
   echo "candidate reproducibility must perturb checkout file timestamps" >&2
+  exit 1
+}
+grep -q '^          stage_registry_manifest() {' .github/workflows/release-candidate.yml || {
+  echo "candidate reproducibility must centralize versioned Registry manifest staging" >&2
+  exit 1
+}
+test "$(grep -c '^          stage_registry_manifest$' .github/workflows/release-candidate.yml)" = 2 || {
+  echo "candidate reproducibility must stage the checksum-derived versioned Registry manifest" >&2
+  exit 1
+}
+if grep -R -q 'cp terraform-registry-manifest.json dist/' .github/workflows; then
+  echo "release workflows must not stage the unversioned Registry manifest asset" >&2
+  exit 1
+fi
+grep -Fq 'release_prefix=terraform-provider-hubspot_${VERSION#v}' .github/workflows/release.yml || {
+  echo "release signing must bind the checksum filename to the requested version" >&2
   exit 1
 }
 grep -q '^[[:space:]]*@"$(TOOLS_BIN)/goreleaser" release --snapshot --clean --skip=sign$' Makefile || {

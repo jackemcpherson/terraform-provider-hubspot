@@ -20,7 +20,7 @@ list_files() {
 
 	case "$kind" in
 	release)
-		(cd "$directory" && find . -type f \( -name '*.zip' -o -name 'terraform-registry-manifest.json' \) -print | LC_ALL=C sort) >"$output"
+		(cd "$directory" && find . -type f \( -name '*.zip' -o -name '*_manifest.json' \) -print | LC_ALL=C sort) >"$output"
 		;;
 	checksums)
 		(cd "$directory" && find . -type f -name '*_SHA256SUMS' -print | LC_ALL=C sort) >"$output"
@@ -60,7 +60,7 @@ require_expected_files() {
 			echo "release build contains no provider archives" >&2
 			exit 1
 		}
-		grep -q '/terraform-registry-manifest[.]json$' "$file_list" || {
+		grep -q '/terraform-provider-hubspot_.*_manifest[.]json$' "$file_list" || {
 			echo "release build contains no registry manifest" >&2
 			exit 1
 		}
