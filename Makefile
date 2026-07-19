@@ -62,6 +62,7 @@ check-docs:
 check-workflows:
 	@./scripts/one-portal-free-lifecycle_test.sh
 	@./scripts/compare-release-builds_test.sh
+	@./scripts/verify-registry-checksums_test.sh
 	@./scripts/check-workflows.sh
 
 one-portal-free-lifecycle:

@@ -4,6 +4,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-07-19
+
+### Fixed
+
+- Restrict signed Registry checksums to provider archives and the Registry
+  manifest while continuing to publish standalone SPDX SBOM assets.
+- Enforce the Registry checksum membership contract before signing and after
+  draft upload so unsupported artifacts cannot block version ingestion again.
+
 ## [0.1.0] - 2026-07-18
 
 ### Added

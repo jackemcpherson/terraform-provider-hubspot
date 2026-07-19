@@ -38,6 +38,10 @@ if grep -q 'uses: ./.github/workflows/acceptance.yml' .github/workflows/release-
   exit 1
 fi
 grep -q 'goreleaser release --clean --parallelism=2 --skip=announce,publish,sign' .github/workflows/release.yml
+grep -q 'checksum inventory contains files outside the Terraform Registry contract' .github/workflows/release.yml || {
+  echo "release signing must enforce the Terraform Registry checksum contract" >&2
+  exit 1
+}
 grep -Fq "mtime: '{{ .CommitDate }}'" .goreleaser.yml || {
   echo "release archive files must use the commit timestamp" >&2
   exit 1

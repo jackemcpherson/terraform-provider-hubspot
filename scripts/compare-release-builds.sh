@@ -3,6 +3,7 @@ set -eu
 
 first=${1:?first build directory is required}
 second=${2:?second build directory is required}
+root=$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)
 
 command -v jq >/dev/null 2>&1 || {
 	echo "jq is required to compare SPDX SBOMs" >&2
@@ -82,18 +83,16 @@ hash_checksum_inventory() {
 	directory=$1
 	file_list=$2
 	output=$3
-	prefix=$4
-	index=0
 
 	: >"$output"
 	while IFS= read -r artifact; do
-		index=$((index + 1))
-		normalized="$tmp/$prefix-checksums-$index"
-		awk '$NF !~ /[.]spdx[.]sbom$/ { print }' "$directory/$artifact" | LC_ALL=C sort >"$normalized"
-		hash=$(shasum -a 256 "$normalized" | awk '{print $1}')
+		hash=$(shasum -a 256 "$directory/$artifact" | awk '{print $1}')
 		printf '%s  %s\n' "$hash" "$artifact" >>"$output"
 	done <"$file_list"
 }
+
+"$root/scripts/verify-registry-checksums.sh" "$first"
+"$root/scripts/verify-registry-checksums.sh" "$second"
 
 hash_normalized_sboms() {
 	directory=$1
@@ -135,13 +134,12 @@ hash_release_files "$first" "$tmp/first-release-files" "$tmp/first-release-hashe
 hash_release_files "$second" "$tmp/second-release-files" "$tmp/second-release-hashes"
 compare_hashes "release archives or manifest" "$tmp/first-release-hashes" "$tmp/second-release-hashes"
 
-# Syft emits a random SPDX document namespace and the current creation time. The
-# checksum entries for raw SBOM files therefore vary even when their inventories
-# are identical. Compare all other checksum entries exactly, then compare the
-# SBOM documents separately after removing only those two document-level fields.
-hash_checksum_inventory "$first" "$tmp/first-checksums-files" "$tmp/first-checksum-hashes" first
-hash_checksum_inventory "$second" "$tmp/second-checksums-files" "$tmp/second-checksum-hashes" second
-compare_hashes "non-SBOM checksum inventories" "$tmp/first-checksum-hashes" "$tmp/second-checksum-hashes"
+# Terraform Registry checksums cover only archives and the manifest, so they are
+# reproducible byte-for-byte. Standalone SBOM documents remain release assets and
+# are compared separately after removing only Syft's volatile document metadata.
+hash_checksum_inventory "$first" "$tmp/first-checksums-files" "$tmp/first-checksum-hashes"
+hash_checksum_inventory "$second" "$tmp/second-checksums-files" "$tmp/second-checksum-hashes"
+compare_hashes "Registry checksum inventories" "$tmp/first-checksum-hashes" "$tmp/second-checksum-hashes"
 
 hash_normalized_sboms "$first" "$tmp/first-sboms-files" "$tmp/first-sbom-hashes" first
 hash_normalized_sboms "$second" "$tmp/second-sboms-files" "$tmp/second-sbom-hashes" second

@@ -47,6 +47,8 @@ sboms:
 
 checksum:
   name_template: '{{ .ProjectName }}_{{ .Version }}_SHA256SUMS'
+  ids:
+    - provider
   extra_files:
     - glob: terraform-registry-manifest.json
 
