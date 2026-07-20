@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-required='archive-crm-configuration.yml provider-lifecycle.yml quality.yml'
-legacy='acceptance-cleanup.yml acceptance.yml ci.yml release-candidate.yml release.yml security.yml verify-release.yml'
+required='archive-crm-configuration.yml run-provider-lifecycle.yml validate-provider.yml'
+legacy='acceptance-cleanup.yml acceptance.yml ci.yml provider-lifecycle.yml quality.yml release-candidate.yml release.yml security.yml verify-release.yml'
 
 actual=$(find .github/workflows -maxdepth 1 -type f -name '*.yml' -exec basename {} \; | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')
 # Split the fixed repository-owned filename list into one name per line.
@@ -50,19 +50,26 @@ for action in .github/actions/*/action.yml; do
 	! grep -q 'ubuntu-latest' "$action" || { echo "action $action must not name an unpinned runner" >&2; exit 1; }
 done
 
-quality=.github/workflows/quality.yml
+quality=.github/workflows/validate-provider.yml
 grep -q '^  pull_request:' "$quality"
 grep -q '^  push:' "$quality"
 grep -q '^  schedule:' "$quality"
 grep -q '^    name: Required$' "$quality"
 grep -q 'make release-preflight' "$quality"
-grep -q 'govulncheck@v1.1.4' "$quality"
 grep -q 'ossf/scorecard-action@' "$quality"
+grep -q '^check:.*check-security' Makefile
+grep -q 'govulncheck@v1.1.4' Makefile
+grep -q 'actionlint@v1.7.12' Makefile
+grep -q '^ZIZMOR_VERSION := 1.27.0$' Makefile
+grep -q 'install-zizmor.sh' Makefile
+# Match the literal Make variable expression.
+# shellcheck disable=SC2016
+grep -q '^[[:space:]]*@"$(TOOLS_BIN)/zizmor" \.$' Makefile
 for version in 1.8.8 1.10.10 1.11.11 1.12.3 1.8.5 1.15.8; do
 	grep -q "version: $version" "$quality" || { echo "quality engine matrix is missing $version" >&2; exit 1; }
 done
 
-lifecycle=.github/workflows/provider-lifecycle.yml
+lifecycle=.github/workflows/run-provider-lifecycle.yml
 grep -q '^  schedule:' "$lifecycle"
 grep -q '^  workflow_dispatch:' "$lifecycle"
 test "$(grep -c '^      [a-z-]*:$' "$lifecycle" || true)" -ge 1

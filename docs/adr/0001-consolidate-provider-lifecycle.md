@@ -22,15 +22,15 @@ archives under both registry identities through filesystem mirrors.
 
 Keep three workflows, aligned to distinct trust boundaries:
 
-1. `quality.yml` handles pull requests, pushes to `main`, and scheduled security
+1. `validate-provider.yml` handles pull requests, pushes to `main`, and scheduled security
    analysis. It runs the repository's local aggregate and release pre-flight,
    the complete supported Terraform/OpenTofu engine matrix, vulnerability and
    workflow scans, CodeQL, scheduled Scorecard analysis, and preserves the single
    branch-protection context named `Required`.
-2. `provider-lifecycle.yml` handles scheduled live source health and an explicitly
+2. `run-provider-lifecycle.yml` handles scheduled live source health and an explicitly
    dispatched release version. A release is bound to the workflow commit at the
    head of `main` and its successful `Required` check. New releases qualify live
-   source, build the same real-version bundle twice, compare it, wait for the
+   source, build the same real-version asset set twice, compare it, wait for the
    protected `release` environment before exposing signing credentials, attest,
    and publish. The same version may be rerun: verified drafts resume publication
    and verified published releases resume registry and live verification.
@@ -39,9 +39,11 @@ Keep three workflows, aligned to distinct trust boundaries:
    confirmation `archive-prefixed-crm-configuration`.
 
 The local `scripts/build-release-bundle.sh` is the sole release-bundle builder for
-developer pre-flight and both CI builds. The pipeline builds once for publication;
+developer pre-flight and both CI builds. The release assets are independently
+reproduced and compared. The pipeline builds one bundle for publication;
 downstream signing and publishing promote that artifact rather than rebuilding it.
-The independent second build is comparison evidence only.
+The independent second bundle is comparison evidence only; its volatile attestation
+metadata is not promoted.
 
 Release permissions are job-scoped. The private GPG key exists only in the
 protected signing step, OIDC write permission exists only in attestation, and

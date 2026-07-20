@@ -36,7 +36,7 @@ v-prefixed SemVer. The workflow binds the release to the dispatch commit, requir
 that commit to be the current head of `main` with a successful `Required` quality
 check, and observes whether the version is new, a verified draft, or already
 published. A new release runs protected source acceptance, constructs the same
-real-version bundle twice without secrets, and compares the builds. The signing
+real-version asset set twice without secrets, and compares it. The signing
 job then waits for one approval on the `release` environment before it receives
 the GPG key. Attestation and publication promote the first build; they do not
 rebuild it.

@@ -90,12 +90,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
-      actions: read
+      attestations: read
       checks: read
       contents: read
     outputs:
       state: ${{ steps.release-state.outputs.state }}
-      commit: ${{ steps.release-commit.outputs.commit }}
+      commit: ${{ steps.release-state.outputs.commit }}
     env:
       GH_TOKEN: ${{ github.token }}
       GPG_PUBLIC_KEY: ${{ vars.GPG_PUBLIC_KEY }}
@@ -108,6 +108,11 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Set up release verification toolchain
+        uses: ./.github/actions/setup-provider-toolchain
+        with:
+          tofu-version: '1.12.3'
+          terraform-version: '1.15.8'
       - name: Bind release to the default branch commit
         id: release-commit
         env:
@@ -123,8 +128,14 @@ jobs:
         env:
           COMMIT: ${{ steps.release-commit.outputs.commit }}
         run: |
-          state=$(./scripts/observe-release.sh "$VERSION" "$COMMIT" "$REPOSITORY")
+          observation=$(./scripts/observe-release.sh "$VERSION" "$COMMIT" "$REPOSITORY")
+          state=${observation%% *}
+          commit=${observation#* }
+          test "$commit" != "$observation"
+          printf '%s\n' "$state" | grep -Eq '^(new|draft|published)$'
+          printf '%s\n' "$commit" | grep -Eq '^[0-9a-f]{40}$'
           echo "state=$state" >>"$GITHUB_OUTPUT"
+          echo "commit=$commit" >>"$GITHUB_OUTPUT"
 
   qualify-source:
     name: Qualify live source

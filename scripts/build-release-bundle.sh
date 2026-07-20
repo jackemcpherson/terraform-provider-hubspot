@@ -10,10 +10,7 @@ case "$output" in
 	*) output="$(pwd)/$output" ;;
 esac
 
-printf '%s\n' "$version" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$' || {
-	echo 'version must be v-prefixed SemVer' >&2
-	exit 1
-}
+"$root/scripts/validate-release-version.sh" "$version"
 
 for tool in goreleaser jq syft; do
 	command -v "$tool" >/dev/null 2>&1 || {
