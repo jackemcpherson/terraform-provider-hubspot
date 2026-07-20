@@ -69,6 +69,7 @@ check-workflows:
 	@./scripts/one-portal-free-lifecycle_test.sh
 	@./scripts/acceptance-cleanup_test.sh
 	@./scripts/released-provider-journey_test.sh
+	@./scripts/verify-released-provider_test.sh
 	@./scripts/observe-release_test.sh
 	@./scripts/compare-release-builds_test.sh
 	@./scripts/verify-registry-checksums_test.sh
