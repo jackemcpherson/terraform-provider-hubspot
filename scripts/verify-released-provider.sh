@@ -33,7 +33,11 @@ if printf '%s' "$schema" | grep -Eq 'hubspot_pipeline|hubspot_custom_object_sche
   echo "released provider exposes a deferred resource" >&2
   exit 1
 fi
-grep -q "version = \"$release_version\"" "$tmp/.terraform.lock.hcl"
+lock_version=$(awk '$1 == "version" && $2 == "=" { gsub(/"/, "", $3); print $3; exit }' "$tmp/.terraform.lock.hcl")
+test "$lock_version" = "$release_version" || {
+  echo "registry lock selected $lock_version instead of $release_version" >&2
+  exit 1
+}
 grep -q 'zh:' "$tmp/.terraform.lock.hcl"
 
 os=$(uname -s | tr '[:upper:]' '[:lower:]')
