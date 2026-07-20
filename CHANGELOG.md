@@ -4,6 +4,22 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-07-20
+
+### Changed
+
+- Publish 32-bit ARM provider builds under the standard `arm` architecture name
+  so the same release target is discoverable by OpenTofu and Terraform.
+- Run the full Registry artifact pre-flight locally, in ordinary CI, and before
+  release artifacts enter the protected signing path.
+
+### Fixed
+
+- Declare Registry manifest format `version` 1 instead of the unsupported
+  `format_version` field that Terraform Registry interpreted as version 0.
+- Validate the manifest schema, GoReleaser artifact catalog, checksum closure,
+  archive contents, SPDX SBOMs, and dual-engine installation before publication.
+
 ## [0.1.2] - 2026-07-19
 
 ### Fixed

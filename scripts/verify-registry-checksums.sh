@@ -2,6 +2,7 @@
 set -eu
 
 directory=${1:?release asset directory is required}
+root=$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 
@@ -29,14 +30,12 @@ manifest_name=${release_prefix}_manifest.json
 		darwin_arm64 \
 		freebsd_386 \
 		freebsd_amd64 \
+		freebsd_arm \
 		freebsd_arm64 \
-		freebsd_armv6 \
-		freebsd_armv7 \
 		linux_386 \
 		linux_amd64 \
+		linux_arm \
 		linux_arm64 \
-		linux_armv6 \
-		linux_armv7 \
 		windows_386 \
 		windows_amd64 \
 		windows_arm64
@@ -71,3 +70,4 @@ if ! diff -u "$tmp/expected" "$tmp/actual"; then
 fi
 
 (cd "$directory" && shasum -a 256 -c "$(basename "$checksum")")
+"$root/scripts/verify-registry-manifest.sh" "$directory/$manifest_name"

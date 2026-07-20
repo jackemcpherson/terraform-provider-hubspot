@@ -38,6 +38,8 @@ jobs:
         run: make tools
       - name: Run aggregate gate
         run: make check
+      - name: Run Registry release pre-flight
+        run: make release-preflight
       - name: Verify generated documentation
         run: make docs && git diff --exit-code -- docs
 

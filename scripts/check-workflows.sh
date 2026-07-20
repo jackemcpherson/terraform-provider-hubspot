@@ -70,6 +70,18 @@ grep -Fq 'release_prefix=terraform-provider-hubspot_${VERSION#v}' .github/workfl
   echo "release signing must bind the checksum filename to the requested version" >&2
   exit 1
 }
+grep -q 'goreleaser" check' Makefile || {
+  echo "local checks must validate the GoReleaser configuration" >&2
+  exit 1
+}
+grep -q 'goreleaser" healthcheck' Makefile || {
+  echo "local checks must validate the GoReleaser toolchain" >&2
+  exit 1
+}
+grep -q 'make release-preflight' .github/workflows/ci.yml || {
+  echo "CI must run the local Registry release pre-flight" >&2
+  exit 1
+}
 grep -q '^[[:space:]]*@"$(TOOLS_BIN)/goreleaser" release --snapshot --clean --skip=sign$' Makefile || {
   echo "local release snapshots must not require signing credentials" >&2
   exit 1

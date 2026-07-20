@@ -36,12 +36,12 @@ expect_failure() {
 	fi
 }
 
-platforms='darwin_amd64 darwin_arm64 freebsd_386 freebsd_amd64 freebsd_arm64 freebsd_armv6 freebsd_armv7 linux_386 linux_amd64 linux_arm64 linux_armv6 linux_armv7 windows_386 windows_amd64 windows_arm64'
+platforms='darwin_amd64 darwin_arm64 freebsd_386 freebsd_amd64 freebsd_arm freebsd_arm64 linux_386 linux_amd64 linux_arm linux_arm64 windows_386 windows_amd64 windows_arm64'
 for platform in $platforms; do
 	printf '%s\n' "provider archive $platform" >"$first/terraform-provider-hubspot_0.1.0_${platform}.zip"
 	cp "$first/terraform-provider-hubspot_0.1.0_${platform}.zip" "$second/"
 done
-printf '%s\n' '{"format_version":1,"protocol_versions":["6.0"]}' >"$first/terraform-provider-hubspot_0.1.0_manifest.json"
+printf '%s\n' '{"version":1,"metadata":{"protocol_versions":["6.0"]}}' >"$first/terraform-provider-hubspot_0.1.0_manifest.json"
 write_sbom "$first/terraform-provider-hubspot_0.1.0_linux_amd64.zip.spdx.sbom" \
 	'https://spdx.org/spdxdocs/provider-first' '2026-07-18T00:00:00Z' '0.1.0'
 

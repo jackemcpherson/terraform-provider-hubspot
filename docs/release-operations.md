@@ -64,3 +64,18 @@ but publish and checksum it as
 Registry release contract. Standalone SPDX SBOM files remain published release assets but
 must not appear in the Registry checksum file because Registry ingestion does not
 include them in its package request.
+
+Run `make release-preflight` before qualifying a release, or pass the intended
+version with `make release-preflight VERSION=vX.Y.Z`. The target runs GoReleaser's
+configuration and tool health checks, builds the full release without publishing,
+validates the Registry manifest schema, exact archive/manifest/checksum closure,
+archive binary names, and SPDX documents, then installs the built archive through
+filesystem mirrors with both OpenTofu and Terraform. The public registries expose
+no pre-publication dry-run API, so this local/CI gate is the publication-contract
+test; the protected release job still verifies the real GPG signature before the
+draft becomes immutable.
+
+The shared registry platform set uses standard `{OS}_{ARCH}` names. In particular,
+the 32-bit ARM build is GOARM=6 and is published as `*_arm.zip`; do not suffix the
+archive as `armv6` or `armv7`, because OpenTofu Registry target discovery ignores
+those nonstandard architecture names.
