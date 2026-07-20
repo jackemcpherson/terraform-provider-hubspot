@@ -8,11 +8,11 @@ trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 assets="$tmp/assets"
 mkdir -p "$assets"
 
-platforms='darwin_amd64 darwin_arm64 freebsd_386 freebsd_amd64 freebsd_arm64 freebsd_armv6 freebsd_armv7 linux_386 linux_amd64 linux_arm64 linux_armv6 linux_armv7 windows_386 windows_amd64 windows_arm64'
+platforms='darwin_amd64 darwin_arm64 freebsd_386 freebsd_amd64 freebsd_arm freebsd_arm64 linux_386 linux_amd64 linux_arm linux_arm64 windows_386 windows_amd64 windows_arm64'
 for platform in $platforms; do
 	printf '%s\n' "provider archive $platform" >"$assets/terraform-provider-hubspot_0.1.1_${platform}.zip"
 done
-printf '%s\n' '{"format_version":1,"protocol_versions":["6.0"]}' >"$assets/terraform-provider-hubspot_0.1.1_manifest.json"
+printf '%s\n' '{"version":1,"metadata":{"protocol_versions":["6.0"]}}' >"$assets/terraform-provider-hubspot_0.1.1_manifest.json"
 printf '%s\n' '{"spdxVersion":"SPDX-2.3"}' >"$assets/terraform-provider-hubspot_0.1.1_linux_amd64.zip.spdx.sbom"
 
 (
@@ -75,7 +75,7 @@ mkdir -p "$canonical"
 for platform in $platforms; do
 	printf '%s\n' "provider archive $platform" >"$canonical/terraform-provider-hubspot_0.1.2_${platform}.zip"
 done
-printf '%s\n' '{"format_version":1,"protocol_versions":["6.0"]}' >"$canonical/terraform-provider-hubspot_0.1.2_manifest.json"
+printf '%s\n' '{"version":1,"metadata":{"protocol_versions":["6.0"]}}' >"$canonical/terraform-provider-hubspot_0.1.2_manifest.json"
 (
 	cd "$canonical"
 	shasum -a 256 \

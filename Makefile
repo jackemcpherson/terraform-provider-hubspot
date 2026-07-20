@@ -14,7 +14,7 @@ STATICCHECK_VERSION := v0.6.1
 SYFT_VERSION := v1.33.0
 STATICCHECK_BIN := $(TOOLS_BIN)/staticcheck
 
-.PHONY: tools check check-go check-docs check-workflows engine-smoke docs test test-race fuzz-seeds fmt release-snapshot one-portal-free-lifecycle
+.PHONY: tools check check-go check-docs check-release-tools check-workflows engine-smoke docs test test-race fuzz-seeds fmt release-preflight release-snapshot one-portal-free-lifecycle
 
 tools:
 	@command -v go >/dev/null || { echo "go $(GO_VERSION) required; install tools before running checks"; exit 1; }
@@ -31,7 +31,7 @@ tools:
 	@"$(TOOLS_BIN)/goreleaser" --version | grep -F 'v2.17.0' >/dev/null
 	@go version -m "$(TOOLS_BIN)/syft" | grep -E 'github.com/anchore/syft[[:space:]]+v1.33.0' >/dev/null
 
-check: check-go check-docs check-workflows engine-smoke
+check: check-go check-docs check-release-tools check-workflows engine-smoke
 
 engine-smoke:
 	@./scripts/engine-smoke.sh
@@ -55,18 +55,25 @@ check-docs:
 	@test -f terraform-registry-manifest.json || { echo "protocol manifest missing"; exit 1; }
 	@test -f registry-addresses.txt || { echo "registry address inventory missing"; exit 1; }
 	@test "$$(wc -l < registry-addresses.txt | tr -d ' ')" = 2
-	@grep -q '"format_version": 1' terraform-registry-manifest.json
-	@grep -q '"protocol_versions": \["6.0"\]' terraform-registry-manifest.json
+	@./scripts/verify-registry-manifest.sh terraform-registry-manifest.json
 	@./scripts/check-generated-docs.sh
+
+check-release-tools:
+	@"$(TOOLS_BIN)/goreleaser" check
+	@"$(TOOLS_BIN)/goreleaser" healthcheck
 
 check-workflows:
 	@./scripts/one-portal-free-lifecycle_test.sh
 	@./scripts/compare-release-builds_test.sh
 	@./scripts/verify-registry-checksums_test.sh
+	@./scripts/verify-registry-manifest_test.sh
 	@./scripts/check-workflows.sh
 
 one-portal-free-lifecycle:
 	@./scripts/one-portal-free-lifecycle.sh
+
+release-preflight:
+	@./scripts/registry-release-preflight.sh "$(or $(VERSION),v0.0.0-preflight)"
 
 release-snapshot:
 	@"$(TOOLS_BIN)/goreleaser" release --snapshot --clean --skip=sign

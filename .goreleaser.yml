@@ -29,12 +29,11 @@ builds:
       - arm64
     goarm:
       - '6'
-      - '7'
 
 archives:
   - id: provider
     formats: [zip]
-    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}'
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
     files:
       - src: terraform-registry-manifest.json
         info:

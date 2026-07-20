@@ -74,6 +74,7 @@ jobs:
           cp terraform-registry-manifest.json "dist/$manifest_asset"
           mkdir -p bundle/assets bundle/metadata
           find dist -maxdepth 1 -type f \( -name '*.zip' -o -name '*.spdx.sbom' -o -name '*_SHA256SUMS' -o -name '*_manifest.json' \) -exec mv {} bundle/assets/ \;
+          ./scripts/verify-release-bundle.sh bundle/assets "$VERSION"
           syft scan dir:bundle/assets --output spdx-json=bundle/metadata/release.spdx.json
           ./scripts/release-notes.sh "$VERSION" >bundle/metadata/release-notes.md
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -154,7 +155,7 @@ jobs:
             echo 'checksum filename does not match the requested HubSpot provider version' >&2
             exit 1
           }
-          for platform in darwin_amd64 darwin_arm64 freebsd_386 freebsd_amd64 freebsd_arm64 freebsd_armv6 freebsd_armv7 linux_386 linux_amd64 linux_arm64 linux_armv6 linux_armv7 windows_386 windows_amd64 windows_arm64; do
+          for platform in darwin_amd64 darwin_arm64 freebsd_386 freebsd_amd64 freebsd_arm freebsd_arm64 linux_386 linux_amd64 linux_arm linux_arm64 windows_386 windows_amd64 windows_arm64; do
             printf '%s_%s.zip\n' "$release_prefix" "$platform"
           done >"$RUNNER_TEMP/registry-expected"
           manifest_name=${release_prefix}_manifest.json
