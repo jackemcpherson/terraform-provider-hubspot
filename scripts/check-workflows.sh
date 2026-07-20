@@ -1,102 +1,137 @@
 #!/bin/sh
 set -eu
 
-required="ci.yml security.yml acceptance.yml acceptance-cleanup.yml release-candidate.yml release.yml verify-release.yml"
+required='archive-crm-configuration.yml run-provider-lifecycle.yml validate-provider.yml'
+legacy='acceptance-cleanup.yml acceptance.yml ci.yml provider-lifecycle.yml quality.yml release-candidate.yml release.yml security.yml verify-release.yml'
 
-for name in $required; do
-  test -f ".github/workflows/$name" || { echo "missing required workflow: $name" >&2; exit 1; }
+actual=$(find .github/workflows -maxdepth 1 -type f -name '*.yml' -exec basename {} \; | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')
+# Split the fixed repository-owned filename list into one name per line.
+# shellcheck disable=SC2086
+expected=$(printf '%s\n' $required | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')
+test "$actual" = "$expected" || {
+	echo "workflow surface must contain exactly: $expected" >&2
+	exit 1
+}
+for name in $legacy; do
+	test ! -e ".github/workflows/$name" || {
+		echo "legacy workflow must be removed: $name" >&2
+		exit 1
+	}
 done
 
 for workflow in .github/workflows/*.yml; do
-  grep -q '^permissions: {}' "$workflow" || { echo "workflow $workflow must start with empty permissions" >&2; exit 1; }
-  if grep -E 'uses: [^.]' "$workflow" | grep -Ev 'uses: [^@]+@[0-9a-f]{40}([[:space:]]+#.*)?$' >/dev/null; then
-    echo "external action is not pinned to a full commit in $workflow" >&2
-    exit 1
-  fi
-  ! grep -Eq 'pull_request_target|workflow_run|secrets:[[:space:]]*inherit|self-hosted|vars\.RUNNER_LABEL' "$workflow" || { echo "unsafe workflow boundary in $workflow" >&2; exit 1; }
-  ! grep -Eq 'run:.*\$\{\{[[:space:]]*github\.' "$workflow" || { echo "untrusted event interpolation in $workflow" >&2; exit 1; }
-  grep -q 'timeout-minutes:' "$workflow" || { echo "workflow $workflow has no finite timeout" >&2; exit 1; }
-  false_count=$(grep -c 'cancel-in-progress: false' "$workflow" || true)
-  queue_count=$(grep -c 'queue: max' "$workflow" || true)
-  test "$false_count" -eq "$queue_count" || { echo "non-canceling concurrency must use queue: max in $workflow" >&2; exit 1; }
+	grep -q '^permissions: {}' "$workflow" || { echo "workflow $workflow must start with empty permissions" >&2; exit 1; }
+	grep -q 'timeout-minutes:' "$workflow" || { echo "workflow $workflow has no finite timeout" >&2; exit 1; }
+	grep -q 'runs-on: ubuntu-24.04' "$workflow" || { echo "workflow $workflow must pin the hosted runner image" >&2; exit 1; }
+	! grep -q 'ubuntu-latest' "$workflow" || { echo "workflow $workflow must not use ubuntu-latest" >&2; exit 1; }
+	if grep -E 'uses: [^.]' "$workflow" | grep -Ev 'uses: [^@]+@[0-9a-f]{40}([[:space:]]+#.*)?$' >/dev/null; then
+		echo "external action is not pinned to a full commit in $workflow" >&2
+		exit 1
+	fi
+	! grep -Eq 'pull_request_target|workflow_run|secrets:[[:space:]]*inherit|self-hosted|vars\.RUNNER_LABEL' "$workflow" || {
+		echo "unsafe workflow boundary in $workflow" >&2
+		exit 1
+	}
+	! grep -Eq 'run:.*\$\{\{[[:space:]]*github\.' "$workflow" || {
+		echo "untrusted event interpolation in $workflow" >&2
+		exit 1
+	}
+	if grep -Eq '^[[:space:]]+- uses:' "$workflow"; then
+		echo "every action step must have a descriptive name in $workflow" >&2
+		exit 1
+	fi
 done
 
-grep -q '^  pull_request:' .github/workflows/ci.yml
-grep -q '^  schedule:' .github/workflows/security.yml
-grep -q '^  workflow_dispatch:' .github/workflows/acceptance-cleanup.yml
-if grep -q '^  schedule:' .github/workflows/acceptance-cleanup.yml; then
-  echo "acceptance cleanup must be manual only" >&2
-  exit 1
-fi
-grep -q 'verify-candidate-report.sh' .github/workflows/release.yml
-grep -q '^  capability:' .github/workflows/release-candidate.yml
-grep -q 'environment: \${{ matrix.shard }}' .github/workflows/release-candidate.yml
-grep -q 'HUBSPOT_ACCESS_TOKEN: \${{ secrets.HUBSPOT_ACCESS_TOKEN }}' .github/workflows/release-candidate.yml
-grep -q 'one-portal-free-lifecycle.sh' .github/workflows/release-candidate.yml
-if grep -q 'uses: ./.github/workflows/acceptance.yml' .github/workflows/release-candidate.yml; then
-  echo "release candidate must bind the capability environment directly" >&2
-  exit 1
-fi
-grep -q 'goreleaser release --clean --parallelism=2 --skip=announce,publish,sign' .github/workflows/release.yml
-grep -q 'checksum inventory contains files outside the Terraform Registry contract' .github/workflows/release.yml || {
-  echo "release signing must enforce the Terraform Registry checksum contract" >&2
-  exit 1
+for action in .github/actions/*/action.yml; do
+	if grep -E 'uses: [^.]' "$action" | grep -Ev 'uses: [^@]+@[0-9a-f]{40}([[:space:]]+#.*)?$' >/dev/null; then
+		echo "external action is not pinned to a full commit in $action" >&2
+		exit 1
+	fi
+	! grep -q 'ubuntu-latest' "$action" || { echo "action $action must not name an unpinned runner" >&2; exit 1; }
+done
+
+quality=.github/workflows/validate-provider.yml
+grep -q '^  pull_request:' "$quality"
+grep -q '^  push:' "$quality"
+grep -q '^  schedule:' "$quality"
+grep -q '^    name: Required$' "$quality"
+grep -q 'make release-preflight' "$quality"
+grep -q 'ossf/scorecard-action@' "$quality"
+grep -q '^check:.*check-security' Makefile
+grep -q 'govulncheck@v1.1.4' Makefile
+grep -q 'actionlint@v1.7.12' Makefile
+grep -q '^ZIZMOR_VERSION := 1.27.0$' Makefile
+grep -q 'install-zizmor.sh' Makefile
+# Match the literal Make variable expression.
+# shellcheck disable=SC2016
+grep -q '^[[:space:]]*@"$(TOOLS_BIN)/zizmor" \.$' Makefile
+for version in 1.8.8 1.10.10 1.11.11 1.12.3 1.8.5 1.15.8; do
+	grep -q "version: $version" "$quality" || { echo "quality engine matrix is missing $version" >&2; exit 1; }
+done
+
+lifecycle=.github/workflows/run-provider-lifecycle.yml
+grep -q '^  schedule:' "$lifecycle"
+grep -q '^  workflow_dispatch:' "$lifecycle"
+test "$(grep -c '^      [a-z-]*:$' "$lifecycle" || true)" -ge 1
+grep -q 'observe-release.sh' "$lifecycle"
+grep -q 'build-release-bundle.sh' "$lifecycle"
+test "$(grep -c 'build-release-bundle.sh' "$lifecycle")" -eq 2 || { echo 'release must use one builder for both builds' >&2; exit 1; }
+grep -q 'compare-release-builds.sh' "$lifecycle"
+grep -q 'verify-registry-ingestion.sh' "$lifecycle"
+grep -q 'verify-released-provider.sh' "$lifecycle"
+grep -q 'one-portal-free-lifecycle.sh ./scripts/released-provider-journey.sh' "$lifecycle"
+grep -q "needs.observe.outputs.state == 'published'" "$lifecycle"
+test "$(grep -c '^    environment: release$' "$lifecycle")" -eq 1 || {
+	echo 'release must require one protected-environment approval before signing' >&2
+	exit 1
 }
+test "$(grep -c 'GPG_PRIVATE_KEY:.*secrets.GPG_PRIVATE_KEY' "$lifecycle")" -eq 1 || {
+	echo 'the private signing key must be exposed only to the signing step' >&2
+	exit 1
+}
+test "$(grep -c 'id-token: write' "$lifecycle")" -eq 1 || { echo 'OIDC write permission must be isolated to attestation' >&2; exit 1; }
+test "$(grep -c 'contents: write' "$lifecycle")" -eq 2 || { echo 'contents write must be isolated to new and resumed publication' >&2; exit 1; }
+grep -A4 '^  attest:$' "$lifecycle" | grep -q 'needs: \[observe, rebuild, sign\]' || {
+	echo 'attestation must remain behind protected release approval' >&2
+	exit 1
+}
+test "$(grep -c 'observe-release.sh' "$lifecycle")" -eq 2 || {
+	echo 'a resumed draft must be reverified immediately before publication' >&2
+	exit 1
+}
+if grep -q -- '--snapshot' "$lifecycle"; then
+	echo 'production release must not use snapshot assets' >&2
+	exit 1
+fi
+! grep -Eq 'candidate-report|verify-candidate-report|release-candidate' "$lifecycle" || {
+	echo 'release lifecycle must not depend on a candidate-report handoff' >&2
+	exit 1
+}
+
+archive=.github/workflows/archive-crm-configuration.yml
+grep -q '^  workflow_dispatch:' "$archive"
+if grep -q '^  schedule:' "$archive"; then
+	echo 'CRM configuration archival must be manual only' >&2
+	exit 1
+fi
+grep -q '^    environment: free_properties$' "$archive"
+grep -q 'archive-prefixed-crm-configuration' "$archive"
+grep -q 'acceptance-cleanup.sh archive free_properties' "$archive"
+! grep -q '^      shard:' "$archive" || { echo 'the only supported shard must not be operator-selectable' >&2; exit 1; }
+
 grep -Fq "mtime: '{{ .CommitDate }}'" .goreleaser.yml || {
-  echo "release archive files must use the commit timestamp" >&2
-  exit 1
+	echo 'release archive files must use the commit timestamp' >&2
+	exit 1
 }
 test "$(grep -Fc "name_template: '{{ .ProjectName }}_{{ .Version }}_manifest.json'" .goreleaser.yml)" = 2 || {
-  echo "Registry manifest must use its versioned release asset name in checksums and publication" >&2
-  exit 1
+	echo 'Registry manifest must use its versioned release asset name in checksums and publication' >&2
+	exit 1
 }
-grep -q 'touch terraform-registry-manifest.json' .github/workflows/release-candidate.yml || {
-  echo "candidate reproducibility must perturb checkout file timestamps" >&2
-  exit 1
-}
-grep -q '^          stage_registry_manifest() {' .github/workflows/release-candidate.yml || {
-  echo "candidate reproducibility must centralize versioned Registry manifest staging" >&2
-  exit 1
-}
-test "$(grep -c '^          stage_registry_manifest$' .github/workflows/release-candidate.yml)" = 2 || {
-  echo "candidate reproducibility must stage the checksum-derived versioned Registry manifest" >&2
-  exit 1
-}
-if grep -R -q 'cp terraform-registry-manifest.json dist/' .github/workflows; then
-  echo "release workflows must not stage the unversioned Registry manifest asset" >&2
-  exit 1
-fi
-grep -Fq 'release_prefix=terraform-provider-hubspot_${VERSION#v}' .github/workflows/release.yml || {
-  echo "release signing must bind the checksum filename to the requested version" >&2
-  exit 1
-}
-grep -q 'goreleaser" check' Makefile || {
-  echo "local checks must validate the GoReleaser configuration" >&2
-  exit 1
-}
-grep -q 'goreleaser" healthcheck' Makefile || {
-  echo "local checks must validate the GoReleaser toolchain" >&2
-  exit 1
-}
-grep -q 'make release-preflight' .github/workflows/ci.yml || {
-  echo "CI must run the local Registry release pre-flight" >&2
-  exit 1
-}
-grep -q '^[[:space:]]*@"$(TOOLS_BIN)/goreleaser" release --snapshot --clean --skip=sign$' Makefile || {
-  echo "local release snapshots must not require signing credentials" >&2
-  exit 1
-}
-if grep -q -- '--snapshot' .github/workflows/release.yml; then
-  echo "production release must not use snapshot assets" >&2
-  exit 1
-fi
-grep -q 'smoke-release-archive.sh' .github/workflows/release.yml
-grep -q -- '--draft=false' .github/workflows/release.yml
-test "$(grep -c '^    environment: release$' .github/workflows/release.yml)" = 1 || {
-  echo "release must require one protected-environment approval before signing" >&2
-  exit 1
-}
-grep -q 'verify-released-provider.sh' .github/workflows/verify-release.yml
-grep -q 'CAPABILITY_SHARD: \${{ matrix.shard }}' .github/workflows/verify-release.yml
-grep -q 'one-portal-free-lifecycle.sh ./scripts/released-live-shard.sh' .github/workflows/verify-release.yml
-grep -q 'verify-state-migration.sh' .github/workflows/verify-release.yml
+grep -q 'GORELEASER_CURRENT_TAG=' scripts/build-release-bundle.sh
+grep -q -- '--skip=announce,publish,sign,validate' scripts/build-release-bundle.sh
+grep -q 'goreleaser" check' Makefile
+grep -q 'goreleaser" healthcheck' Makefile
+grep -q 'build-release-bundle.sh' scripts/registry-release-preflight.sh
+# Match the literal Make variable expression.
+# shellcheck disable=SC2016
+grep -q '^[[:space:]]*@"$(TOOLS_BIN)/goreleaser" release --snapshot --clean --skip=sign$' Makefile

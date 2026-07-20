@@ -4,6 +4,17 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Consolidate seven GitHub Actions workflows into quality, provider lifecycle,
+  and manual CRM-configuration archival surfaces with pinned runner images and
+  least-privilege release jobs.
+- Use one local release-bundle builder for developer pre-flight and reproducible
+  CI builds, then verify the published provider through both Terraform and
+  OpenTofu in one serialized portal journey.
+- Resume verified draft or published versions by rerunning the same provider
+  lifecycle input instead of passing candidate reports between workflows.
+
 ## [0.1.3] - 2026-07-20
 
 ### Changed

@@ -25,33 +25,37 @@ verified through the strongest API-supported probe, and the same Git-authored na
 must recreate successfully before the demo rebuild is verified. Properties are
 read back from the archive; groups are proven absent from the active API and reusable.
 
-The scheduled janitor reports stale `tf_acc_` configuration. It never deletes.
-Manual cleanup requires a selected shard, an exact owned prefix ending in `_`,
-the protected shard environment, and the confirmation text shown by the workflow.
+The scheduled lifecycle reports stale `tf_acc_` configuration. It never archives
+anything. Manual archival uses `Archive CRM configuration` and requires an exact
+owned prefix ending in `_`, the protected `free_properties` environment, and the
+literal confirmation `archive-prefixed-crm-configuration`. HubSpot retains this
+configuration in its recycling bin, so do not describe the operation as deletion.
 
-A candidate names one full commit SHA. Its directly environment-bound acceptance
-run, full engine matrix, security gate, and deterministic gate produce a
-commit-bound report.
-Publication accepts a v-prefixed SemVer and only proceeds when it downloads a
-successful report for that exact SHA. The unsigned build and independent rebuild
-use an unpushed local version tag and run without secrets. Only the signing job
-receives the GPG key, and it fetches commit metadata without checking out source.
+To release, run `Provider lifecycle` from `main` with one input: the intended
+v-prefixed SemVer. The workflow binds the release to the dispatch commit, requires
+that commit to be the current head of `main` with a successful `Required` quality
+check, and observes whether the version is new, a verified draft, or already
+published. A new release runs protected source acceptance, constructs the same
+real-version asset set twice without secrets, and compares it. The signing
+job then waits for one approval on the `release` environment before it receives
+the GPG key. Attestation and publication promote the first build; they do not
+rebuild it.
 
-The release workflow smoke-installs the first artifact set through filesystem
-mirrors under both full registry addresses, signs the checksum and tag, verifies
-the draft assets and attestations, then publishes. Enable GitHub immutable
-releases, require one approval for the `release` environment before signing, and register the same
-GPG public key with Terraform Registry before v0.1.0. OpenTofu's bootstrap requires
-the first signed release and accepted provider entry before its signing-key issue
-can be submitted; register that same key immediately after provider acceptance.
-This ordering does not permit an unsigned release. Store `GPG_PRIVATE_KEY` and
+After publication, the same run polls both registries, verifies actual Terraform
+and OpenTofu downloads against the immutable GitHub assets, and performs both
+released-provider lifecycles plus bidirectional state migration inside one portal
+teardown/restoration window. If registry ingestion is not ready, rerun `Provider
+lifecycle` with the same version. A verified draft resumes publication; a verified
+published release skips creation and resumes registry and live verification.
+
+Enable GitHub immutable releases, require one approval for the `release`
+environment before signing, and register the same GPG public key with Terraform
+Registry. OpenTofu's bootstrap requires the first signed release and accepted
+provider entry before its signing-key issue can be submitted; register that same
+key immediately after provider acceptance, then rerun the same version. This
+ordering does not permit an unsigned release. Store `GPG_PRIVATE_KEY` and
 `GPG_FINGERPRINT` only in the release environment; expose the armored public key
 as the non-secret `GPG_PUBLIC_KEY` repository variable.
-
-After publication, run `Verify release`. It polls both registries, installs the
-actual archives through Terraform and OpenTofu, runs protected released-artifact
-capability fixtures, and migrates live state in both directions. A release is not
-announced until its uploaded release report is entirely green.
 
 Registry metadata can be resynchronized after an ingestion failure. A bad archive,
 checksum, signature, manifest, SBOM, or provenance record requires a new patch
@@ -65,15 +69,17 @@ Registry release contract. Standalone SPDX SBOM files remain published release a
 must not appear in the Registry checksum file because Registry ingestion does not
 include them in its package request.
 
-Run `make release-preflight` before qualifying a release, or pass the intended
+Run `make release-preflight` before dispatching a release, or pass the intended
 version with `make release-preflight VERSION=vX.Y.Z`. The target runs GoReleaser's
 configuration and tool health checks, builds the full release without publishing,
 validates the Registry manifest schema, exact archive/manifest/checksum closure,
 archive binary names, and SPDX documents, then installs the built archive through
 filesystem mirrors with both OpenTofu and Terraform. The public registries expose
 no pre-publication dry-run API, so this local/CI gate is the publication-contract
-test; the protected release job still verifies the real GPG signature before the
-draft becomes immutable.
+test. `scripts/build-release-bundle.sh` is shared by that local target and both CI
+builds, preventing the pre-flight and production artifact shapes from drifting.
+The protected release job still verifies the bundle before the private signing
+key is exposed and verifies the real GPG signature before the draft is published.
 
 The shared registry platform set uses standard `{OS}_{ARCH}` names. In particular,
 the 32-bit ARM build is GOARM=6 and is published as `*_arm.zip`; do not suffix the

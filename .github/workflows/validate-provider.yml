@@ -1,0 +1,159 @@
+name: Quality
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '**'
+  push:
+    branches: [main]
+    paths:
+      - '**'
+  schedule:
+    - cron: '17 3 * * 1'
+
+permissions: {}
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deterministic:
+    name: Deterministic provider checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up provider toolchain
+        uses: ./.github/actions/setup-provider-toolchain
+        with:
+          tofu-version: '1.12.3'
+          terraform-version: '1.15.8'
+      - name: Install pinned developer tools
+        run: make tools
+      - name: Run aggregate gate
+        run: make check
+      - name: Run Registry release pre-flight
+        run: make release-preflight
+      - name: Verify generated documentation
+        run: make docs && git diff --exit-code -- docs
+
+  engine:
+    name: Engine / ${{ matrix.engine }} ${{ matrix.version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - engine: tofu
+            version: 1.8.8
+            tofu-version: 1.8.8
+            terraform-version: ''
+          - engine: tofu
+            version: 1.10.10
+            tofu-version: 1.10.10
+            terraform-version: ''
+          - engine: tofu
+            version: 1.11.11
+            tofu-version: 1.11.11
+            terraform-version: ''
+          - engine: tofu
+            version: 1.12.3
+            tofu-version: 1.12.3
+            terraform-version: ''
+          - engine: terraform
+            version: 1.8.5
+            tofu-version: ''
+            terraform-version: 1.8.5
+          - engine: terraform
+            version: 1.15.8
+            tofu-version: ''
+            terraform-version: 1.15.8
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      ENGINE: ${{ matrix.engine }}
+      TOFU_EXPECTED_VERSION: ${{ matrix.version }}
+      TERRAFORM_EXPECTED_VERSION: ${{ matrix.version }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up provider toolchain
+        uses: ./.github/actions/setup-provider-toolchain
+        with:
+          tofu-version: ${{ matrix.tofu-version }}
+          terraform-version: ${{ matrix.terraform-version }}
+      - name: Exercise provider with selected engine
+        run: ./scripts/engine-smoke.sh
+
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@fca7ace96b7d713c7035871441bd52efbe39e27e # v3.28.17
+        with:
+          languages: go
+      - name: Build for CodeQL
+        uses: github/codeql-action/autobuild@fca7ace96b7d713c7035871441bd52efbe39e27e # v3.28.17
+      - name: Analyze with CodeQL
+        uses: github/codeql-action/analyze@fca7ace96b7d713c7035871441bd52efbe39e27e # v3.28.17
+
+  scorecard:
+    name: OpenSSF Scorecard
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Run OpenSSF Scorecard
+        uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a # v2.4.3
+        with:
+          results_file: scorecard.sarif
+          results_format: sarif
+          publish_results: false
+      - name: Upload Scorecard SARIF
+        uses: github/codeql-action/upload-sarif@fca7ace96b7d713c7035871441bd52efbe39e27e # v3.28.17
+        with:
+          sarif_file: scorecard.sarif
+
+  required:
+    name: Required
+    if: always()
+    needs: [deterministic, engine, codeql]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    env:
+      DETERMINISTIC_RESULT: ${{ needs.deterministic.result }}
+      ENGINE_RESULT: ${{ needs.engine.result }}
+      CODEQL_RESULT: ${{ needs.codeql.result }}
+    steps:
+      - name: Enforce required quality results
+        run: |
+          test "$DETERMINISTIC_RESULT" = success
+          test "$ENGINE_RESULT" = success
+          test "$CODEQL_RESULT" = success
