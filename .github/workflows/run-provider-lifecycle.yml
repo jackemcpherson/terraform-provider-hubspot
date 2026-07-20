@@ -303,7 +303,7 @@ jobs:
   attest:
     name: Attest release bundle
     if: needs.observe.outputs.state == 'new'
-    needs: [observe, rebuild]
+    needs: [observe, rebuild, sign]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -380,14 +380,33 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
+      attestations: read
+      checks: read
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
+      GPG_PUBLIC_KEY: ${{ vars.GPG_PUBLIC_KEY }}
       REPOSITORY: ${{ github.repository }}
       VERSION: ${{ inputs.version }}
     steps:
-      - name: Publish previously verified draft
-        run: gh release edit "$VERSION" --repo "$REPOSITORY" --draft=false --latest
+      - name: Check out release verification code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.observe.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up release verification toolchain
+        uses: ./.github/actions/setup-provider-toolchain
+        with:
+          tofu-version: '1.12.3'
+          terraform-version: '1.15.8'
+      - name: Reverify and publish existing draft
+        env:
+          COMMIT: ${{ needs.observe.outputs.commit }}
+        run: |
+          observation=$(./scripts/observe-release.sh "$VERSION" "$COMMIT" "$REPOSITORY")
+          test "$observation" = "draft $COMMIT"
+          gh release edit "$VERSION" --repo "$REPOSITORY" --draft=false --latest
 
   assets:
     name: Verify published assets and registries

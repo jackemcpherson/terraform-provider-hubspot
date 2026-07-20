@@ -91,6 +91,14 @@ test "$(grep -c 'GPG_PRIVATE_KEY:.*secrets.GPG_PRIVATE_KEY' "$lifecycle")" -eq 1
 }
 test "$(grep -c 'id-token: write' "$lifecycle")" -eq 1 || { echo 'OIDC write permission must be isolated to attestation' >&2; exit 1; }
 test "$(grep -c 'contents: write' "$lifecycle")" -eq 2 || { echo 'contents write must be isolated to new and resumed publication' >&2; exit 1; }
+grep -A4 '^  attest:$' "$lifecycle" | grep -q 'needs: \[observe, rebuild, sign\]' || {
+	echo 'attestation must remain behind protected release approval' >&2
+	exit 1
+}
+test "$(grep -c 'observe-release.sh' "$lifecycle")" -eq 2 || {
+	echo 'a resumed draft must be reverified immediately before publication' >&2
+	exit 1
+}
 if grep -q -- '--snapshot' "$lifecycle"; then
 	echo 'production release must not use snapshot assets' >&2
 	exit 1
