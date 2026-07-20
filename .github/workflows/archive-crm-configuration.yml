@@ -1,0 +1,44 @@
+name: Archive CRM configuration
+
+on:
+  workflow_dispatch:
+    inputs:
+      prefix:
+        description: Exact tf_acc_ prefix ending in underscore
+        required: true
+        type: string
+      confirmation:
+        description: Type archive-prefixed-crm-configuration
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: archive-crm-configuration-free_properties
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    name: Archive exact owned prefix
+    environment: free_properties
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    concurrency:
+      group: hubspot-account-free_properties
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
+      PREFIX: ${{ inputs.prefix }}
+      CONFIRMATION: ${{ inputs.confirmation }}
+    steps:
+      - name: Check out provider source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up provider toolchain
+        uses: ./.github/actions/setup-provider-toolchain
+      - name: Archive exact owned CRM configuration
+        run: ./scripts/acceptance-cleanup.sh archive free_properties "$PREFIX" "$CONFIRMATION"

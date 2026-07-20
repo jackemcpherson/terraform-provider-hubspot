@@ -1,0 +1,488 @@
+name: Provider lifecycle
+
+on:
+  schedule:
+    - cron: '41 4 * * *'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: v-prefixed SemVer to release or resume
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: provider-lifecycle-${{ github.event_name }}-${{ inputs.version || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  source-acceptance:
+    name: Scheduled source acceptance
+    if: github.event_name == 'schedule'
+    environment: free_properties
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    concurrency:
+      group: hubspot-account-free_properties
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      CAPABILITY_SHARD: free_properties
+      HUBSPOT_DEMO_SCRIPT: ${{ github.workspace }}/.release-demo/scripts/demo
+      HUBSPOT_PROVIDER_REPO: ${{ github.workspace }}
+      HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
+      HUBSPOT_ACCEPTANCE_PREFIX: tf_acc_${{ github.run_id }}_${{ github.run_attempt }}_
+    steps:
+      - name: Check out provider source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Check out exact Northstar demo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: jackemcpherson/terraform-hubspot-instance-demo
+          ref: 20efda68e25d703f73fd48da63bf7d4f20bb260b
+          path: .release-demo
+          persist-credentials: false
+      - name: Set up provider toolchain
+        uses: ./.github/actions/setup-provider-toolchain
+        with:
+          tofu-version: '1.12.3'
+          terraform-version: '1.15.8'
+      - name: Run fail-closed source acceptance
+        run: ./scripts/one-portal-free-lifecycle.sh
+      - name: Upload sanitized acceptance result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: scheduled-acceptance-free_properties
+          path: acceptance-report/free_properties.json
+          if-no-files-found: error
+
+  janitor-report:
+    name: Scheduled archive report
+    if: github.event_name == 'schedule'
+    environment: free_properties
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    concurrency:
+      group: hubspot-account-free_properties
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
+    steps:
+      - name: Check out provider source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up provider toolchain
+        uses: ./.github/actions/setup-provider-toolchain
+      - name: Report stale owned CRM configuration
+        run: ./scripts/acceptance-cleanup.sh report free_properties
+
+  observe:
+    name: Observe immutable release state
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      checks: read
+      contents: read
+    outputs:
+      state: ${{ steps.release-state.outputs.state }}
+      commit: ${{ steps.release-commit.outputs.commit }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GPG_PUBLIC_KEY: ${{ vars.GPG_PUBLIC_KEY }}
+      REPOSITORY: ${{ github.repository }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Check out exact workflow commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bind release to the default branch commit
+        id: release-commit
+        env:
+          WORKFLOW_REF: ${{ github.ref }}
+        run: |
+          test "$WORKFLOW_REF" = refs/heads/main
+          commit=$(git rev-parse HEAD)
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          test "$commit" = "$(git rev-parse refs/remotes/origin/main)"
+          echo "commit=$commit" >>"$GITHUB_OUTPUT"
+      - name: Classify resumable release state
+        id: release-state
+        env:
+          COMMIT: ${{ steps.release-commit.outputs.commit }}
+        run: |
+          state=$(./scripts/observe-release.sh "$VERSION" "$COMMIT" "$REPOSITORY")
+          echo "state=$state" >>"$GITHUB_OUTPUT"
+
+  qualify-source:
+    name: Qualify live source
+    if: needs.observe.outputs.state == 'new'
+    needs: observe
+    environment: free_properties
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    concurrency:
+      group: hubspot-account-free_properties
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      CAPABILITY_SHARD: free_properties
+      HUBSPOT_DEMO_SCRIPT: ${{ github.workspace }}/.release-demo/scripts/demo
+      HUBSPOT_PROVIDER_REPO: ${{ github.workspace }}
+      HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
+      HUBSPOT_ACCEPTANCE_PREFIX: tf_acc_release_${{ github.run_id }}_${{ github.run_attempt }}_
+    steps:
+      - name: Check out qualified source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.observe.outputs.commit }}
+          persist-credentials: false
+      - name: Check out exact Northstar demo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: jackemcpherson/terraform-hubspot-instance-demo
+          ref: 20efda68e25d703f73fd48da63bf7d4f20bb260b
+          path: .release-demo
+          persist-credentials: false
+      - name: Set up provider toolchain
+        uses: ./.github/actions/setup-provider-toolchain
+        with:
+          tofu-version: '1.12.3'
+          terraform-version: '1.15.8'
+      - name: Run fail-closed capability qualification
+        run: ./scripts/one-portal-free-lifecycle.sh
+
+  build:
+    name: Build immutable release bundle
+    if: needs.observe.outputs.state == 'new'
+    needs: [observe, qualify-source]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      COMMIT: ${{ needs.observe.outputs.commit }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Check out qualified source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.observe.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up provider toolchain
+        uses: ./.github/actions/setup-provider-toolchain
+        with:
+          tofu-version: '1.12.3'
+          terraform-version: '1.15.8'
+      - name: Install pinned release tools
+        run: make tools
+      - name: Verify source and build release bundle
+        run: |
+          ./scripts/release-preflight.sh "$VERSION" "$COMMIT"
+          ./scripts/build-release-bundle.sh "$VERSION" bundle
+      - name: Upload unsigned release bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: unsigned-${{ inputs.version }}
+          path: bundle/
+          if-no-files-found: error
+
+  rebuild:
+    name: Rebuild and compare release bundle
+    if: needs.observe.outputs.state == 'new'
+    needs: [observe, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      COMMIT: ${{ needs.observe.outputs.commit }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Check out qualified source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.observe.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up provider toolchain
+        uses: ./.github/actions/setup-provider-toolchain
+        with:
+          tofu-version: '1.12.3'
+          terraform-version: '1.15.8'
+      - name: Install pinned release tools
+        run: make tools
+      - name: Download first release build
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: unsigned-${{ inputs.version }}
+          path: ${{ runner.temp }}/first-release-build
+      - name: Independently rebuild and compare
+        env:
+          FIRST_BUILD: ${{ runner.temp }}/first-release-build
+          SECOND_BUILD: ${{ runner.temp }}/second-release-build
+        run: |
+          ./scripts/release-preflight.sh "$VERSION" "$COMMIT"
+          touch terraform-registry-manifest.json
+          ./scripts/build-release-bundle.sh "$VERSION" "$SECOND_BUILD"
+          ./scripts/compare-release-builds.sh "$FIRST_BUILD/assets" "$SECOND_BUILD/assets"
+
+  sign:
+    name: Approve and sign release
+    if: needs.observe.outputs.state == 'new'
+    needs: [observe, rebuild]
+    environment: release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      COMMIT: ${{ needs.observe.outputs.commit }}
+      REPOSITORY: ${{ github.repository }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Check out release verification code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.observe.outputs.commit }}
+          persist-credentials: false
+      - name: Download unsigned release bundle
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: unsigned-${{ inputs.version }}
+          path: bundle
+      - name: Verify bundle before exposing signing key
+        run: ./scripts/verify-release-bundle.sh bundle/assets "$VERSION"
+      - name: Sign checksum and tag object
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_FINGERPRINT: ${{ secrets.GPG_FINGERPRINT }}
+        run: |
+          printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          checksum=$(find bundle/assets -name '*_SHA256SUMS' -type f -print -quit)
+          gpg --batch --local-user "$GPG_FINGERPRINT" --detach-sign --output "$checksum.sig" "$checksum"
+          git init tag-repo
+          git -C tag-repo remote add origin "https://github.com/$REPOSITORY.git"
+          git -C tag-repo fetch --filter=blob:none --depth=1 origin "$COMMIT"
+          git -C tag-repo config user.name release-bot
+          git -C tag-repo config user.email release-bot@users.noreply.github.com
+          git -C tag-repo tag -s "$VERSION" -u "$GPG_FINGERPRINT" -m "$VERSION" "$COMMIT"
+          git -C tag-repo cat-file tag "$VERSION" >bundle/metadata/signed-tag
+      - name: Upload signed release bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: signed-${{ inputs.version }}
+          path: bundle/
+          if-no-files-found: error
+
+  attest:
+    name: Attest release bundle
+    if: needs.observe.outputs.state == 'new'
+    needs: [observe, rebuild]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download unsigned release bundle
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: unsigned-${{ inputs.version }}
+          path: bundle
+      - name: Attest archive provenance
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: bundle/assets/*.zip
+      - name: Attest release SPDX SBOM
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v2.1.0
+        with:
+          subject-path: bundle/assets/*.zip
+          sbom-path: bundle/metadata/release.spdx.json
+
+  publish-new:
+    name: Publish new immutable release
+    if: needs.observe.outputs.state == 'new'
+    needs: [observe, sign, attest]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GPG_PUBLIC_KEY: ${{ vars.GPG_PUBLIC_KEY }}
+      REPOSITORY: ${{ github.repository }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Check out exact release source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.observe.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Download signed release bundle
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: signed-${{ inputs.version }}
+          path: bundle
+      - name: Verify signed bundle and publish draft
+        run: |
+          test -z "$(git ls-remote --tags origin "refs/tags/$VERSION")"
+          if gh release view "$VERSION" --repo "$REPOSITORY" >/dev/null 2>&1; then
+            echo 'release already exists' >&2
+            exit 1
+          fi
+          printf '%s' "$GPG_PUBLIC_KEY" | gpg --batch --import
+          tag_oid=$(git mktag <bundle/metadata/signed-tag)
+          git update-ref "refs/tags/$VERSION" "$tag_oid"
+          git verify-tag "$VERSION"
+          git push "https://x-access-token:$GH_TOKEN@github.com/$REPOSITORY.git" "refs/tags/$VERSION"
+          gh release create "$VERSION" bundle/assets/* --repo "$REPOSITORY" --draft --verify-tag --title "$VERSION" --notes-file bundle/metadata/release-notes.md
+          mkdir draft-assets
+          gh release download "$VERSION" --repo "$REPOSITORY" --dir draft-assets
+          ./scripts/compare-asset-sets.sh bundle/assets draft-assets
+          ./scripts/verify-release-assets.sh draft-assets "$GPG_PUBLIC_KEY"
+          for archive in bundle/assets/*.zip; do
+            gh attestation verify "$archive" --repo "$REPOSITORY"
+          done
+          gh release edit "$VERSION" --repo "$REPOSITORY" --draft=false --latest
+
+  publish-draft:
+    name: Resume verified draft release
+    if: needs.observe.outputs.state == 'draft'
+    needs: observe
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Publish previously verified draft
+        run: gh release edit "$VERSION" --repo "$REPOSITORY" --draft=false --latest
+
+  assets:
+    name: Verify published assets and registries
+    if: >-
+      always() &&
+      needs.observe.result == 'success' &&
+      (needs.observe.outputs.state == 'published' ||
+       needs.publish-new.result == 'success' ||
+       needs.publish-draft.result == 'success')
+    needs: [observe, publish-new, publish-draft]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GPG_PUBLIC_KEY: ${{ vars.GPG_PUBLIC_KEY }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Check out verification code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.observe.outputs.commit }}
+          persist-credentials: false
+      - name: Download and verify immutable assets
+        run: |
+          gh release download "$VERSION" --dir release-assets
+          ./scripts/verify-release-assets.sh release-assets "$GPG_PUBLIC_KEY"
+      - name: Wait for both registry identities
+        run: ./scripts/verify-registry-ingestion.sh "$VERSION"
+
+  install:
+    name: Install / ${{ matrix.engine }} / ${{ matrix.address }}
+    needs: [observe, assets]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - engine: terraform
+            address: registry.terraform.io/jackemcpherson/hubspot
+            tofu-version: ''
+            terraform-version: 1.15.8
+          - engine: tofu
+            address: registry.opentofu.org/jackemcpherson/hubspot
+            tofu-version: 1.12.3
+            terraform-version: ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      ENGINE: ${{ matrix.engine }}
+      GH_TOKEN: ${{ github.token }}
+      PROVIDER_ADDRESS: ${{ matrix.address }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Check out verification code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.observe.outputs.commit }}
+          persist-credentials: false
+      - name: Set up selected engine
+        uses: ./.github/actions/setup-provider-toolchain
+        with:
+          tofu-version: ${{ matrix.tofu-version }}
+          terraform-version: ${{ matrix.terraform-version }}
+      - name: Verify registry package against GitHub asset
+        run: |
+          gh release download "$VERSION" --dir release-assets --pattern '*.zip'
+          ./scripts/verify-released-provider.sh "$ENGINE" "$PROVIDER_ADDRESS" "$VERSION" release-assets
+
+  released-journey:
+    name: Released provider journey
+    needs: [observe, install]
+    environment: free_properties
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    concurrency:
+      group: hubspot-account-free_properties
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      CAPABILITY_SHARD: free_properties
+      HUBSPOT_DEMO_SCRIPT: ${{ github.workspace }}/.release-demo/scripts/demo
+      HUBSPOT_PROVIDER_REPO: ${{ github.workspace }}
+      HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
+      HUBSPOT_ACCEPTANCE_PREFIX: tf_acc_released_${{ github.run_id }}_${{ github.run_attempt }}_
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Check out verification code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.observe.outputs.commit }}
+          persist-credentials: false
+      - name: Check out exact Northstar demo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: jackemcpherson/terraform-hubspot-instance-demo
+          ref: 20efda68e25d703f73fd48da63bf7d4f20bb260b
+          path: .release-demo
+          persist-credentials: false
+      - name: Set up both supported engines
+        uses: ./.github/actions/setup-provider-toolchain
+        with:
+          tofu-version: '1.12.3'
+          terraform-version: '1.15.8'
+      - name: Exercise Terraform, OpenTofu, and bidirectional state migration
+        run: ./scripts/one-portal-free-lifecycle.sh ./scripts/released-provider-journey.sh "$VERSION"
