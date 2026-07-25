@@ -192,3 +192,25 @@ func TestPipelineClientUsesTicketMetadataWithoutDealDeletionGuard(t *testing.T) 
 		t.Fatalf("ticket pipeline delete query = %q", deleteQuery)
 	}
 }
+
+func TestAccountInfoClientReadsPortalIdentity(t *testing.T) {
+	var requestPath string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requestPath = request.URL.Path
+		writer.Header().Set("Content-Type", "application/json")
+		io.WriteString(writer, `{"portalId":12345678}`)
+	}))
+	defer server.Close()
+
+	client := &AccountInfoClient{transport: newTestTransport(t, server.URL)}
+	info, err := client.Get(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requestPath != "/account-info/v3/details" {
+		t.Fatalf("account info route = %q", requestPath)
+	}
+	if info.PortalID != 12345678 {
+		t.Fatalf("portal id = %d", info.PortalID)
+	}
+}

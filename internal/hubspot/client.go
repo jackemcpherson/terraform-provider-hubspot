@@ -24,6 +24,7 @@ type ClientSet struct {
 	Properties     *PropertyDefinitionClient
 	Pipelines      *PipelineClient
 	Schemas        *SchemaClient
+	AccountInfo    *AccountInfoClient
 }
 
 func NewClientSet(config TransportConfig) (*ClientSet, error) {
@@ -31,7 +32,35 @@ func NewClientSet(config TransportConfig) (*ClientSet, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ClientSet{PropertyGroups: &PropertyGroupClient{transport: transport}, Properties: &PropertyDefinitionClient{transport: transport}, Pipelines: &PipelineClient{transport: transport}, Schemas: &SchemaClient{transport: transport}}, nil
+	return &ClientSet{
+		PropertyGroups: &PropertyGroupClient{transport: transport},
+		Properties:     &PropertyDefinitionClient{transport: transport},
+		Pipelines:      &PipelineClient{transport: transport},
+		Schemas:        &SchemaClient{transport: transport},
+		AccountInfo:    &AccountInfoClient{transport: transport},
+	}, nil
+}
+
+// AccountInfoClient reads the authenticated token's portal identity. It
+// exists so callers (notably the acceptance layer's portal identity guard)
+// can confirm which HubSpot portal a token actually resolves to before
+// running mutating operations against it.
+type AccountInfoClient struct{ transport *Transport }
+
+// AccountInfo is the subset of HubSpot's account-info response the provider
+// consumes: the portal identifier that a token resolves to.
+type AccountInfo struct {
+	PortalID int64 `json:"portalId"`
+}
+
+func accountInfoPath() string { return "/account-info/v3/details" }
+
+func (c *AccountInfoClient) Get(ctx context.Context) (AccountInfo, error) {
+	var out AccountInfo
+	if err := c.transport.Do(ctx, Operation{Name: "account-info-read", Method: http.MethodGet, Path: accountInfoPath(), Replay: ReplaySafe}, nil, &out); err != nil {
+		return out, err
+	}
+	return out, nil
 }
 
 type SchemaClient struct{ transport *Transport }

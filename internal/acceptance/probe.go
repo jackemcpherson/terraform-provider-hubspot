@@ -390,11 +390,10 @@ func (s *Session) probeClients() (*hubspot.ClientSet, error) {
 	if accessToken == "" {
 		return nil, errors.New("HUBSPOT_ACCESS_TOKEN is required")
 	}
-	baseURL := s.probeURL
-	if baseURL == "" {
-		baseURL = "https://api.hubapi.com"
+	if s.probeURL == "" {
+		return NewRealPortalClientSet(context.Background(), accessToken, "terraform-provider-hubspot/acceptance-probe")
 	}
-	origin, err := url.Parse(baseURL)
+	origin, err := url.Parse(s.probeURL)
 	if err != nil {
 		return nil, errors.New("invalid HubSpot probe origin")
 	}

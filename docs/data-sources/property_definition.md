@@ -25,45 +25,45 @@ data "hubspot_property_definition" "email" {
 ### Required
 
 - `name` (String) Exact immutable property name.
-- `object_type` (String) Exact CRM object type API identifier.
+- `object_type` (String) Exact HubSpot CRM object type API identifier, such as `contacts`.
 
 ### Optional
 
-- `archived` (Boolean) Select archived definitions instead of active definitions; defaults to false.
-- `data_sensitivity` (String) Must be non_sensitive; sensitive definition discovery is deferred from v0.1.
+- `archived` (Boolean) Select archived definitions instead of active definitions. Defaults to `false`.
+- `data_sensitivity` (String) Must be `non_sensitive`. Sensitive definition discovery is deferred from v0.1.
 - `locale` (String) Optional HubSpot locale selector.
 
 ### Read-Only
 
-- `archived_at` (String)
-- `calculated` (Boolean)
-- `calculation_formula` (String)
-- `created_at` (String)
-- `created_user_id` (String)
-- `currency_property_name` (String)
-- `date_display_hint` (String)
-- `description` (String)
-- `display_order` (Number)
-- `external_options` (Boolean)
-- `field_type` (String)
-- `form_field` (Boolean)
-- `group_name` (String)
-- `has_unique_value` (Boolean)
-- `hidden` (Boolean)
-- `hubspot_defined` (Boolean)
-- `id` (String) Canonical object_type/property_name identity.
-- `is_archived` (Boolean)
-- `label` (String)
-- `modification_metadata` (Object) (see [below for nested schema](#nestedatt--modification_metadata))
-- `number_display_hint` (String)
-- `options` (Map of Object) (see [below for nested schema](#nestedatt--options))
-- `referenced_object_type` (String)
-- `sensitivity_category` (String)
-- `show_currency_symbol` (Boolean)
-- `text_display_hint` (String)
-- `type` (String)
-- `updated_at` (String)
-- `updated_user_id` (String)
+- `archived_at` (String) Timestamp the property definition was archived, when applicable.
+- `calculated` (Boolean) Whether HubSpot calculates this property's value automatically.
+- `calculation_formula` (String) HubSpot calculation formula, when this is a calculated property.
+- `created_at` (String) Timestamp the property definition was created.
+- `created_user_id` (String) Identifier of the user who created the property definition.
+- `currency_property_name` (String) Internal name of the currency source property, when applicable.
+- `date_display_hint` (String) HubSpot date display hint.
+- `description` (String) Property description.
+- `display_order` (Number) HubSpot display order.
+- `external_options` (Boolean) Whether HubSpot, rather than this provider, owns the option set.
+- `field_type` (String) HubSpot editor field type.
+- `form_field` (Boolean) Whether the property can appear in forms.
+- `group_name` (String) Internal name of the owning property group.
+- `has_unique_value` (Boolean) Whether values must be unique.
+- `hidden` (Boolean) Whether HubSpot hides the property.
+- `hubspot_defined` (Boolean) Whether HubSpot, rather than this provider, defines this property.
+- `id` (String) Canonical `object_type/property_name` identity.
+- `is_archived` (Boolean) Whether this property definition is archived.
+- `label` (String) Property display label.
+- `modification_metadata` (Object) HubSpot modification metadata describing what practitioners may change on this property. (see [below for nested schema](#nestedatt--modification_metadata))
+- `number_display_hint` (String) HubSpot number display hint.
+- `options` (Map of Object) Enumeration option set, keyed by immutable CRM record value. (see [below for nested schema](#nestedatt--options))
+- `referenced_object_type` (String) Referenced CRM object type, when this property references another object type.
+- `sensitivity_category` (String) HubSpot data sensitivity category reported for this definition.
+- `show_currency_symbol` (Boolean) Whether HubSpot shows a currency symbol.
+- `text_display_hint` (String) HubSpot text display hint.
+- `type` (String) HubSpot storage type.
+- `updated_at` (String) Timestamp the property definition was last updated.
+- `updated_user_id` (String) Identifier of the user who last updated the property definition.
 
 <a id="nestedatt--modification_metadata"></a>
 ### Nested Schema for `modification_metadata`

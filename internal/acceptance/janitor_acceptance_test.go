@@ -7,7 +7,6 @@ package acceptance_test
 
 import (
 	"context"
-	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -98,17 +97,11 @@ func janitorClients(t *testing.T) (*hubspot.ClientSet, string) {
 		t.Fatal("janitor implementation is unavailable for the selected capability shard")
 	}
 	token := requiredEnvironment(t, "HUBSPOT_ACCESS_TOKEN")
-	origin, err := url.Parse("https://api.hubapi.com")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	clients, err := acceptance.NewRealPortalClientSet(ctx, token, "terraform-provider-hubspot/acceptance-janitor")
 	if err != nil {
-		t.Fatal("parse HubSpot API origin")
-	}
-	clients, err := hubspot.NewClientSet(hubspot.TransportConfig{
-		BaseURL:     origin,
-		AccessToken: token,
-		UserAgent:   "terraform-provider-hubspot/acceptance-janitor",
-	})
-	if err != nil {
-		t.Fatal("configure HubSpot acceptance janitor")
+		t.Fatalf("configure HubSpot acceptance janitor: %v", err)
 	}
 	return clients, shard
 }
