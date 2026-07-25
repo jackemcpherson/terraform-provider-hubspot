@@ -81,6 +81,75 @@ func TestTransportRetriesReadAfterRateLimit(t *testing.T) {
 	}
 }
 
+func TestTransportSurfacesDailyRateLimitWithoutRetry(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		attempts++
+		writer.Header().Set("Retry-After", "2")
+		writer.WriteHeader(http.StatusTooManyRequests)
+		io.WriteString(writer, `{"status":"error","message":"You have reached your daily limit.","policyName":"DAILY"}`)
+	}))
+	defer server.Close()
+
+	var waits []time.Duration
+	transport := newTestTransport(t, server.URL)
+	transport.sleep = func(_ context.Context, duration time.Duration) error {
+		waits = append(waits, duration)
+		return nil
+	}
+	err := transport.Do(context.Background(), Operation{
+		Name:   "property-group-read",
+		Method: http.MethodGet,
+		Path:   "/crm/properties/2026-03/contacts/groups",
+		Replay: ReplaySafe,
+	}, nil, nil)
+	if err == nil {
+		t.Fatal("expected daily limit error")
+	}
+	if attempts != 1 || len(waits) != 0 {
+		t.Fatalf("attempts = %d, waits = %#v, want a single attempt with no retry sleep", attempts, waits)
+	}
+	var apiError *Error
+	if !errors.As(err, &apiError) || apiError.Status != http.StatusTooManyRequests {
+		t.Fatalf("error = %#v", err)
+	}
+	if apiError.PolicyName != "DAILY" {
+		t.Fatalf("policy name = %q, want DAILY", apiError.PolicyName)
+	}
+	if !strings.Contains(err.Error(), "daily") || !strings.Contains(err.Error(), "wait") {
+		t.Fatalf("error message = %q, want it to name the daily limit and remedy", err.Error())
+	}
+}
+
+func TestTransportRetriesRollingWindowRateLimitWithoutPolicyName(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		attempts++
+		if attempts == 1 {
+			writer.Header().Set("Retry-After", "1")
+			writer.WriteHeader(http.StatusTooManyRequests)
+			io.WriteString(writer, `{"status":"error","message":"slow down","policyName":"SECONDLY"}`)
+			return
+		}
+		io.WriteString(writer, `{"name":"marketing","label":"Marketing","displayOrder":-1,"archived":false}`)
+	}))
+	defer server.Close()
+
+	transport := newTestTransport(t, server.URL)
+	var response propertyGroupRead
+	if err := transport.Do(context.Background(), Operation{
+		Name:   "property-group-read",
+		Method: http.MethodGet,
+		Path:   "/crm/properties/2026-03/contacts/groups",
+		Replay: ReplaySafe,
+	}, nil, &response); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+}
+
 func TestTransportDoesNotReplayAmbiguousCreate(t *testing.T) {
 	attempts := 0
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {

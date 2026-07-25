@@ -92,11 +92,15 @@ type Error struct {
 	RetryAfter  time.Duration
 	Cause       error
 	Ambiguous   bool
+	PolicyName  string
 }
 
 func (e *Error) Error() string {
 	if e.Cause != nil {
 		return fmt.Sprintf("hubspot %s: %v", e.Operation, e.Cause)
+	}
+	if e.PolicyName == dailyLimitPolicyName {
+		return fmt.Sprintf("hubspot %s: HTTP %d: daily rate limit reached (policy %s); this limit does not reset on retry, wait for the daily quota reset or raise the account's API quota", e.Operation, e.Status, e.PolicyName)
 	}
 	if e.Message == "" {
 		return fmt.Sprintf("hubspot %s: HTTP %d", e.Operation, e.Status)
@@ -106,12 +110,19 @@ func (e *Error) Error() string {
 
 func (e *Error) Unwrap() error { return e.Cause }
 
+// dailyLimitPolicyName is the HubSpot policyName marker on a 429 response
+// body that identifies the account's daily API call quota. Unlike
+// rolling-window 429s, a daily-limit 429 cannot succeed on retry within the
+// same day, so it is surfaced immediately as a terminal error.
+const dailyLimitPolicyName = "DAILY"
+
 type errorEnvelope struct {
 	Status        string `json:"status"`
 	Message       string `json:"message"`
 	Category      string `json:"category"`
 	SubCategory   string `json:"subCategory"`
 	CorrelationID string `json:"correlationId"`
+	PolicyName    string `json:"policyName"`
 }
 
 func NewTransport(config TransportConfig) (*Transport, error) {
@@ -217,7 +228,8 @@ func (t *Transport) Do(ctx context.Context, operation Operation, requestBody io.
 		errorBody, readErr := io.ReadAll(io.LimitReader(response.Body, maxErrorBody+1))
 		response.Body.Close()
 		apiError := parseError(operation.Name, response.StatusCode, response.Header, errorBody, readErr, t.clock())
-		retryable := isRetryableStatus(response.StatusCode)
+		isDailyLimit := response.StatusCode == http.StatusTooManyRequests && apiError.PolicyName == dailyLimitPolicyName
+		retryable := isRetryableStatus(response.StatusCode) && !isDailyLimit
 		canRetry := retryable && attempt < maxAttempts && operation.Replay != ReplayNever
 		if !canRetry {
 			t.emit(Event{Operation: operation.Name, Attempt: attempt, Status: response.StatusCode})
@@ -299,6 +311,7 @@ func parseError(operation string, status int, header http.Header, body []byte, r
 		apiError.SubCategory = safeCategory(envelope.SubCategory)
 		apiError.Message = safeMessage(envelope.Message)
 		apiError.Correlation = envelope.CorrelationID
+		apiError.PolicyName = safeCategory(envelope.PolicyName)
 		var nested errorEnvelope
 		if strings.HasPrefix(strings.TrimSpace(envelope.Message), "{") && json.Unmarshal([]byte(envelope.Message), &nested) == nil {
 			if nested.Message != "" {
