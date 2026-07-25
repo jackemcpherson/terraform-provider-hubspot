@@ -15,7 +15,7 @@ SYFT_VERSION := v1.33.0
 ZIZMOR_VERSION := 1.27.0
 STATICCHECK_BIN := $(TOOLS_BIN)/staticcheck
 
-.PHONY: tools check check-go check-docs check-release-tools check-security check-workflows engine-smoke docs test test-race fuzz-seeds fmt release-preflight release-snapshot one-portal-free-lifecycle
+.PHONY: tools check check-go check-docs check-release-tools check-security check-workflows engine-smoke docs test test-race test-hermetic fuzz-seeds fmt release-preflight release-snapshot one-portal-free-lifecycle
 
 tools:
 	@command -v go >/dev/null || { echo "go $(GO_VERSION) required; install tools before running checks"; exit 1; }
@@ -101,6 +101,13 @@ test:
 
 test-race:
 	@go test -race ./...
+
+# test-hermetic runs the provider lifecycle shards against the in-process
+# FakeHubSpot fake instead of a real HubSpot portal, plus the fake's own
+# direct fidelity tests. It requires no HubSpot credentials and needs
+# whichever of tofu/terraform are installed to be exercised.
+test-hermetic:
+	@go test -tags=acceptance ./internal/acceptance -run '^(TestHermetic|TestFakeHubSpot)' -v
 
 fuzz-seeds:
 	@go test -run=^$ -fuzz=Fuzz -fuzztime=1x ./internal/provider
