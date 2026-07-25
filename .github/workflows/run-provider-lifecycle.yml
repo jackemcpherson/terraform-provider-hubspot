@@ -33,6 +33,7 @@ jobs:
       HUBSPOT_DEMO_SCRIPT: ${{ github.workspace }}/.release-demo/scripts/demo
       HUBSPOT_PROVIDER_REPO: ${{ github.workspace }}
       HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
+      HUBSPOT_ACCEPTANCE_PORTAL_ID: ${{ vars.HUBSPOT_ACCEPTANCE_PORTAL_ID }}
       HUBSPOT_ACCEPTANCE_PREFIX: tf_acc_${{ github.run_id }}_${{ github.run_attempt }}_
     steps:
       - name: Check out provider source
@@ -74,6 +75,7 @@ jobs:
       contents: read
     env:
       HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
+      HUBSPOT_ACCEPTANCE_PORTAL_ID: ${{ vars.HUBSPOT_ACCEPTANCE_PORTAL_ID }}
     steps:
       - name: Check out provider source
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -154,6 +156,7 @@ jobs:
       HUBSPOT_DEMO_SCRIPT: ${{ github.workspace }}/.release-demo/scripts/demo
       HUBSPOT_PROVIDER_REPO: ${{ github.workspace }}
       HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
+      HUBSPOT_ACCEPTANCE_PORTAL_ID: ${{ vars.HUBSPOT_ACCEPTANCE_PORTAL_ID }}
       HUBSPOT_ACCEPTANCE_PREFIX: tf_acc_release_${{ github.run_id }}_${{ github.run_attempt }}_
     steps:
       - name: Check out qualified source
@@ -499,6 +502,7 @@ jobs:
       HUBSPOT_DEMO_SCRIPT: ${{ github.workspace }}/.release-demo/scripts/demo
       HUBSPOT_PROVIDER_REPO: ${{ github.workspace }}
       HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
+      HUBSPOT_ACCEPTANCE_PORTAL_ID: ${{ vars.HUBSPOT_ACCEPTANCE_PORTAL_ID }}
       HUBSPOT_ACCEPTANCE_PREFIX: tf_acc_released_${{ github.run_id }}_${{ github.run_attempt }}_
       VERSION: ${{ inputs.version }}
     steps:
