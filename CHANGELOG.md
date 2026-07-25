@@ -4,6 +4,33 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-07-25
+
+### Added
+
+- Run provider lifecycle acceptance on every change against an in-process
+  HubSpot fake that models archival, archived-name reservation, and server-side
+  write normalization, with no portal credentials, under both Terraform and
+  OpenTofu.
+- Document destroy semantics per resource: archival versus deletion, name
+  reservation after archival, and the non-destructive state-removal
+  alternative.
+
+### Changed
+
+- Refuse mutating real-portal acceptance runs, including cleanup, unless the
+  token's portal identity resolved from the account-info API matches the
+  expected portal identifier.
+- Surface HubSpot daily-quota rate limits as immediate terminal errors instead
+  of retrying requests that cannot succeed before the daily quota resets.
+
+### Fixed
+
+- Describe every provider, resource, and data-source schema attribute so
+  Registry documentation and editor hovers carry the full contract.
+- Upgrade `golang.org/x/text` to v0.39.0 to resolve GO-2026-5970 (infinite loop
+  on invalid input) reached through schema description formatting.
+
 ## [0.1.4] - 2026-07-20
 
 ### Changed
