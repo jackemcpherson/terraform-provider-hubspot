@@ -23,12 +23,12 @@ data "hubspot_property_definitions" "contacts" {
 
 ### Required
 
-- `object_type` (String) Exact CRM object type API identifier.
+- `object_type` (String) Exact HubSpot CRM object type API identifier, such as `contacts`.
 
 ### Optional
 
-- `archived` (Boolean) Select archived definitions instead of active definitions; defaults to false.
-- `data_sensitivity` (String) Must be non_sensitive; sensitive definition discovery is deferred from v0.1.
+- `archived` (Boolean) Select archived definitions instead of active definitions. Defaults to `false`.
+- `data_sensitivity` (String) Must be `non_sensitive`. Sensitive definition discovery is deferred from v0.1.
 - `locale` (String) Optional HubSpot locale selector.
 
 ### Read-Only

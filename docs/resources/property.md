@@ -36,30 +36,30 @@ resource "hubspot_property" "customer_tier" {
 - `field_type` (String) HubSpot editor field type. Field-type changes update in place and can affect existing record values.
 - `group_name` (String) Internal name of the owning property group.
 - `label` (String) Property display label.
-- `name` (String) Immutable property name; changes replace the definition.
-- `object_type` (String) Exact CRM object type; changes replace the definition.
+- `name` (String) Immutable property name. Changes replace the definition.
+- `object_type` (String) Exact HubSpot CRM object type API identifier, such as `contacts`. Changes replace the definition.
 - `type` (String) HubSpot storage type. Type changes update in place and can affect existing record values.
 
 ### Optional
 
-- `calculation_formula` (String) HubSpot calculation formula; omitted when null.
-- `currency_property_name` (String) Internal name of the currency source property; omitted when null.
-- `data_sensitivity` (String) Must be non_sensitive; sensitive property definitions are deferred from v0.1.
-- `description` (String) Property description; defaults to an empty string.
-- `display_order` (Number) HubSpot display order; defaults to -1.
-- `external_options` (Boolean) Delegates option ownership to HubSpot; defaults to false and changes replace the definition.
-- `form_field` (Boolean) Whether the property can appear in forms; defaults to false.
-- `has_unique_value` (Boolean) Whether values must be unique; defaults to false and changes replace the definition.
-- `hidden` (Boolean) Whether HubSpot hides the property; defaults to false.
-- `number_display_hint` (String) HubSpot number display hint; omitted when null.
+- `calculation_formula` (String) HubSpot calculation formula. Omitted when null.
+- `currency_property_name` (String) Internal name of the currency source property. Omitted when null.
+- `data_sensitivity` (String) Must be `non_sensitive`. Sensitive property definitions are deferred from v0.1.
+- `description` (String) Property description. Defaults to an empty string.
+- `display_order` (Number) HubSpot display order. Defaults to `-1`.
+- `external_options` (Boolean) Delegates option ownership to HubSpot. Defaults to `false` and changes replace the definition.
+- `form_field` (Boolean) Whether the property can appear in forms. Defaults to `false`.
+- `has_unique_value` (Boolean) Whether values must be unique. Defaults to `false` and changes replace the definition.
+- `hidden` (Boolean) Whether HubSpot hides the property. Defaults to `false`.
+- `number_display_hint` (String) HubSpot number display hint. Omitted when null.
 - `options` (Attributes Map) Complete option set keyed by immutable CRM record value. (see [below for nested schema](#nestedatt--options))
-- `referenced_object_type` (String) Referenced CRM object type; changes replace the definition.
-- `show_currency_symbol` (Boolean) Whether HubSpot shows a currency symbol; defaults to false.
-- `text_display_hint` (String) HubSpot text display hint; omitted when null.
+- `referenced_object_type` (String) Referenced CRM object type. Changes replace the definition.
+- `show_currency_symbol` (Boolean) Whether HubSpot shows a currency symbol. Defaults to `false`.
+- `text_display_hint` (String) HubSpot text display hint. Omitted when null.
 
 ### Read-Only
 
-- `id` (String) Canonical object_type/property_name identity.
+- `id` (String) Canonical `object_type/property_name` identity.
 
 <a id="nestedatt--options"></a>
 ### Nested Schema for `options`
@@ -70,9 +70,9 @@ Required:
 
 Optional:
 
-- `description` (String) Option description; defaults to an empty string.
-- `display_order` (Number) HubSpot display order; defaults to -1.
-- `hidden` (Boolean) Whether HubSpot hides the option; defaults to false.
+- `description` (String) Option description. Defaults to an empty string.
+- `display_order` (Number) HubSpot display order. Defaults to `-1`.
+- `hidden` (Boolean) Whether HubSpot hides the option. Defaults to `false`.
 
 ## Import
 

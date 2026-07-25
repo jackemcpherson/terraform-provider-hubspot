@@ -48,6 +48,7 @@ Terraform users can change the source to
 - [Permissions, account tiers, and exclusions](docs/permissions-and-limits.md)
 - [Imports and drift](docs/imports-and-drift.md)
 - [Property lifecycle](docs/property-lifecycle.md)
+- [Destroy semantics](docs/destroy-semantics.md)
 - [State portability](docs/state-portability.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Maintainer release operations](docs/release-operations.md)
