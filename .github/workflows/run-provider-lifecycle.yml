@@ -36,11 +36,11 @@ jobs:
       HUBSPOT_ACCEPTANCE_PREFIX: tf_acc_${{ github.run_id }}_${{ github.run_attempt }}_
     steps:
       - name: Check out provider source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
       - name: Check out exact Northstar demo
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           repository: jackemcpherson/terraform-hubspot-instance-demo
           ref: 20efda68e25d703f73fd48da63bf7d4f20bb260b
@@ -76,7 +76,7 @@ jobs:
       HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
     steps:
       - name: Check out provider source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
       - name: Set up provider toolchain
@@ -103,7 +103,7 @@ jobs:
       VERSION: ${{ inputs.version }}
     steps:
       - name: Check out exact workflow commit
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
@@ -157,12 +157,12 @@ jobs:
       HUBSPOT_ACCEPTANCE_PREFIX: tf_acc_release_${{ github.run_id }}_${{ github.run_attempt }}_
     steps:
       - name: Check out qualified source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ needs.observe.outputs.commit }}
           persist-credentials: false
       - name: Check out exact Northstar demo
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           repository: jackemcpherson/terraform-hubspot-instance-demo
           ref: 20efda68e25d703f73fd48da63bf7d4f20bb260b
@@ -189,7 +189,7 @@ jobs:
       VERSION: ${{ inputs.version }}
     steps:
       - name: Check out qualified source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ needs.observe.outputs.commit }}
           fetch-depth: 0
@@ -225,7 +225,7 @@ jobs:
       VERSION: ${{ inputs.version }}
     steps:
       - name: Check out qualified source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ needs.observe.outputs.commit }}
           fetch-depth: 0
@@ -267,7 +267,7 @@ jobs:
       VERSION: ${{ inputs.version }}
     steps:
       - name: Check out release verification code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ needs.observe.outputs.commit }}
           persist-credentials: false
@@ -326,7 +326,7 @@ jobs:
         with:
           subject-path: bundle/assets/*.zip
       - name: Attest release SPDX SBOM
-        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v2.1.0
+        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2.4.0
         with:
           subject-path: bundle/assets/*.zip
           sbom-path: bundle/metadata/release.spdx.json
@@ -346,7 +346,7 @@ jobs:
       VERSION: ${{ inputs.version }}
     steps:
       - name: Check out exact release source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ needs.observe.outputs.commit }}
           fetch-depth: 0
@@ -395,7 +395,7 @@ jobs:
       VERSION: ${{ inputs.version }}
     steps:
       - name: Check out release verification code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ needs.observe.outputs.commit }}
           fetch-depth: 0
@@ -432,7 +432,7 @@ jobs:
       VERSION: ${{ inputs.version }}
     steps:
       - name: Check out verification code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ needs.observe.outputs.commit }}
           persist-credentials: false
@@ -469,7 +469,7 @@ jobs:
       VERSION: ${{ inputs.version }}
     steps:
       - name: Check out verification code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ needs.observe.outputs.commit }}
           persist-credentials: false
@@ -503,12 +503,12 @@ jobs:
       VERSION: ${{ inputs.version }}
     steps:
       - name: Check out verification code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ needs.observe.outputs.commit }}
           persist-credentials: false
       - name: Check out exact Northstar demo
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           repository: jackemcpherson/terraform-hubspot-instance-demo
           ref: 20efda68e25d703f73fd48da63bf7d4f20bb260b
