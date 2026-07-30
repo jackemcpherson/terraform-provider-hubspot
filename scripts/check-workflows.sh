@@ -72,6 +72,22 @@ done
 lifecycle=.github/workflows/run-provider-lifecycle.yml
 grep -q '^  schedule:' "$lifecycle"
 grep -q '^  workflow_dispatch:' "$lifecycle"
+grep -A8 '^      operation:$' "$lifecycle" | grep -q '        default: janitor-report' || {
+	echo 'manual lifecycle dispatch must default to the read-only janitor report' >&2
+	exit 1
+}
+grep -A12 '^      operation:$' "$lifecycle" | grep -q '          - release' || {
+	echo 'manual lifecycle dispatch must retain an explicit release operation' >&2
+	exit 1
+}
+grep -q "github.event_name == 'workflow_dispatch' && inputs.operation == 'janitor-report'" "$lifecycle" || {
+	echo 'janitor report must support an explicit manual dispatch' >&2
+	exit 1
+}
+grep -q "github.event_name == 'workflow_dispatch' && inputs.operation == 'release'" "$lifecycle" || {
+	echo 'release observation must require the explicit release operation' >&2
+	exit 1
+}
 test "$(grep -c '^      [a-z-]*:$' "$lifecycle" || true)" -ge 1
 grep -q 'observe-release.sh' "$lifecycle"
 grep -q 'build-release-bundle.sh' "$lifecycle"
