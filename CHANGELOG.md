@@ -1,92 +1,82 @@
 # Changelog
 
-All notable changes to this project are documented here.
+This file records notable provider changes.
 
-## [Unreleased]
+---
 
-### Changed
+## Unreleased
 
-- Consolidate seven GitHub Actions workflows into quality, provider lifecycle,
-  and manual CRM-configuration archival surfaces with pinned runner images and
-  least-privilege release jobs.
-- Use one local release-bundle builder for developer pre-flight and reproducible
-  CI builds, then verify the published provider through both Terraform and
-  OpenTofu in one serialized portal journey.
-- Resume verified draft or published versions by rerunning the same provider
-  lifecycle input instead of passing candidate reports between workflows.
+The unreleased changes consolidate provider validation and release operations.
 
-## [0.1.3] - 2026-07-20
+### Changed in Unreleased
 
-### Changed
+- Three workflows now cover quality, provider lifecycle, and manual archival.
+- A shared builder creates the local and CI release bundles.
+- Both engines verify the provider in one serialised portal lifecycle.
+- A rerun can resume a verified draft or published release.
 
-- Publish 32-bit ARM provider builds under the standard `arm` architecture name
-  so the same release target is discoverable by OpenTofu and Terraform.
-- Run the full Registry artifact pre-flight locally, in ordinary CI, and before
-  release artifacts enter the protected signing path.
+## 0.1.3 - 2026-07-20
 
-### Fixed
+Version 0.1.3 corrected Registry support for 32-bit ARM releases.
 
-- Declare Registry manifest format `version` 1 instead of the unsupported
-  `format_version` field that Terraform Registry interpreted as version 0.
-- Validate the manifest schema, GoReleaser artifact catalog, checksum closure,
-  archive contents, SPDX SBOMs, and dual-engine installation before publication.
+### Changed in 0.1.3
 
-## [0.1.2] - 2026-07-19
+- Release assets use the standard `arm` architecture name.
+- Local, CI, and signing checks run the full Registry pre-flight.
 
-### Fixed
+### Fixed in 0.1.3
 
-- Publish the Registry manifest under the required versioned provider asset name
-  and checksum that exact filename so Terraform Registry can ingest releases.
+- The Registry manifest uses format `version` 1.
+- Pre-flight checks validate the manifest, artefact catalogue, and checksums.
+- Pre-flight checks inspect archives, SPDX SBOMs, and dual-engine installation.
 
-## [0.1.1] - 2026-07-19
+## 0.1.2 - 2026-07-19
 
-### Fixed
+Version 0.1.2 corrected the Registry manifest asset name.
 
-- Restrict signed Registry checksums to provider archives and the Registry
-  manifest while continuing to publish standalone SPDX SBOM assets.
-- Enforce the Registry checksum membership contract before signing and after
-  draft upload so unsupported artifacts cannot block version ingestion again.
+### Fixed in 0.1.2
 
-## [0.1.0] - 2026-07-18
+- Releases publish and checksum the required versioned manifest filename.
 
-### Added
+## 0.1.1 - 2026-07-19
 
-- Protocol-6 OpenTofu-first provider skeleton and deterministic local gate.
-- Property-group transport/client boundary and full Terraform lifecycle tracer.
-- Read-only active/archived property-definition discovery data sources.
-- Ordinary scalar and enumeration property lifecycle resource.
-- Advanced non-sensitive calculation, currency, and owner-reference fields.
-- Deterministic, offline schema-version-0-to-1 state migration for every managed
-  resource and documented registry-source portability.
-- Generated field references with reviewed import examples, consumer lifecycle
-  guides, alias/module configuration, and dual-engine example validation.
-- Fail-closed capability-sharded acceptance, cleanup, candidate, signed release,
-  provenance, and post-release verification workflows.
-- Black-box OpenTofu/Terraform acceptance coverage for Free CRM property
-  lifecycles, including canonical mutation readback, import/drift checks,
-  plan-time destructive-change warnings, and cleanup evidence.
+Version 0.1.1 corrected the Registry checksum inventory.
 
-### Changed
+### Fixed in 0.1.1
 
-- Limit the public v0.1.0 surface to property groups, ordinary non-sensitive
-  properties, and property-definition discovery on HubSpot Free, including its
-  portal-wide limit of ten custom properties. Pipelines, custom schemas, and
-  sensitive definitions are deferred.
-- Serialize the shared Free portal lifecycle, reserve full demo-rebuild capacity,
-  and verify the rebuilt demo has no pending changes.
+- Registry checksums include only provider archives and the manifest.
+- Releases continue to publish standalone SPDX SBOM assets.
+- Checks enforce inventory membership before and after the draft upload.
 
-### Fixed
+## 0.1.0 - 2026-07-18
 
-- Preserve property-to-group dependency edges during lifecycle acceptance and
-  clear stale enumeration options when a property changes to scalar storage.
-- Verify property-group cleanup through active absence and reusable names,
-  matching the live HubSpot recycling-bin behavior.
-- Preserve hyphenated provider diagnostic titles in sanitized acceptance errors.
-- Compare repeated release SBOMs canonically while keeping provider archives,
-  registry manifests, and their non-SBOM checksums byte-for-byte reproducible.
-- Normalize archived manifest timestamps to the source commit so release assets
-  reproduce across independent runner checkouts.
-- Run candidate and released-provider live gates inside the serialized Northstar
-  demo teardown and reconstruction lifecycle.
-- Recover blocked property-group deletion tests through the original dependency
-  graph before cleanup.
+Version 0.1.0 was the first public provider release.
+
+### Added in 0.1.0
+
+- The release added a protocol 6 provider and deterministic local gate.
+- Property groups support full Terraform lifecycle operations.
+- Data sources discover active and archived property definitions.
+- Resources manage ordinary scalar and enumeration properties.
+- Advanced fields support calculations, currency, and owner references.
+- Offline migration upgrades each managed resource from schema 0 to schema 1.
+- Consumer guides cover imports, aliases, lifecycles, and state portability.
+- Protected workflows provide acceptance, cleanup, signing, and verification.
+- Both engines test Free CRM property lifecycles.
+
+### Changed in 0.1.0
+
+- The public surface includes only property groups and ordinary properties.
+- Property-definition data sources support HubSpot Free.
+- The shared Free portal lifecycle reserves capacity for the demo rebuild.
+
+### Fixed in 0.1.0
+
+- Lifecycle tests preserve property-to-group dependency edges.
+- Scalar property updates clear stale enumeration options.
+- Cleanup checks require group absence and reusable names.
+- Acceptance errors preserve hyphenated diagnostic titles.
+- Canonical SBOM comparison permits reproducible release archives.
+- Archived manifest timestamps use the source commit time.
+- Live checks share the serialised Northstar demo lifecycle.
+- Cleanup restores the dependency graph after blocked group deletion tests.

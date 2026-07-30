@@ -1,7 +1,9 @@
-# HubSpot provider
+# HubSpot Provider
 
 This provider manages HubSpot CRM configuration with OpenTofu or Terraform. The
 v0.1 release is a public beta and does not promise compatibility with v1.
+
+---
 
 Managed resources:
 
@@ -9,8 +11,8 @@ Managed resources:
 
 The two property-definition data sources inspect non-sensitive schema metadata.
 The provider does not read CRM records or record values. v0.1 supports only
-non-sensitive property definitions on HubSpot Free; pipelines, custom schemas, and
-sensitive definitions are deferred.
+non-sensitive property definitions on HubSpot Free. The release excludes
+pipelines, custom schemas, and sensitive definitions.
 
 HubSpot Free permits ten custom properties across the portal. Review
 [permissions, account tiers, and exclusions](docs/permissions-and-limits.md)
@@ -40,9 +42,9 @@ tofu plan
 
 Terraform users can change the source to
 `registry.terraform.io/jackemcpherson/hubspot` and replace `tofu` with
-`terraform`. Both registry identities publish the same provider artifacts.
+`terraform`. Both registry identities publish the same provider artefacts.
 
-## Read before applying
+## Read Before Applying
 
 - [Authentication and aliases](docs/authentication-and-aliases.md)
 - [Permissions, account tiers, and exclusions](docs/permissions-and-limits.md)
@@ -58,10 +60,9 @@ Generated field references are under [docs/resources](docs/resources) and
 
 ## Exclusions
 
-v0.1 does not manage CRM records, record values, pipelines, custom schemas,
-association labels, sensitive definitions, OAuth, HubSpot-defined properties, or
-arbitrary HTTP/JSON payloads. It does not migrate state from third-party HubSpot
-providers.
+v0.1 does not manage CRM records, record values, pipelines, or custom schemas.
+It also excludes association labels, sensitive definitions, and OAuth. The
+provider does not migrate state from third-party HubSpot providers.
 
 ## Development
 

@@ -1,87 +1,108 @@
-# Release operations
+# Release Operations
 
-Release qualification is fail-closed. Each capability shard has its own GitHub
-Environment and `HUBSPOT_ACCESS_TOKEN`; a missing token, entitlement, scope,
-quota, acceptance test, or cleanup result fails the run. Capability manifests
-contain feature and scope families only. They must not contain Hub IDs, app IDs,
-record IDs, configuration IDs, or credentials.
+This guide explains provider qualification, publication, and recovery. Release
+qualification fails closed at each trust boundary.
 
-v0.1 has one `free_properties` shard and one disposable portal shared with the
-Northstar demo. Run `make one-portal-free-lifecycle` only with the Free shard's
-protected token and a valid acceptance prefix. It saves no CRM records: it applies
-the demo's reviewed destroy plan after adopting and verifying its known identities,
-runs the owned Free acceptance suite, then always rebuilds the Git-authored demo
-through a fresh reviewed plan, including when acceptance fails. The demo and the
-shard share a portal lock keyed by
-`HUBSPOT_PORTAL_LOCK_ID` (default `default`) across local checkouts; GitHub uses
-the non-cancelling `hubspot-account-free_properties` concurrency group across
-runners. Do not bypass either gate for this portal.
+---
 
-HubSpot's property DELETE operations archive definitions and groups into its
-recycling bin rather than offering a permanent-purge endpoint. Free acceptance
-therefore treats verified archival plus active-name reuse as its terminal cleanup
-invariant: no active prefix-owned configuration may remain, each archive path is
-verified through the strongest API-supported probe, and the same Git-authored names
-must recreate successfully before the demo rebuild is verified. Properties are
-read back from the archive; groups are proven absent from the active API and reusable.
+## Acceptance Environment
 
-The scheduled lifecycle reports stale `tf_acc_` configuration. It never archives
-anything. Manual archival uses `Archive CRM configuration` and requires an exact
-owned prefix ending in `_`, the protected `free_properties` environment, and the
-literal confirmation `archive-prefixed-crm-configuration`. HubSpot retains this
-configuration in its recycling bin, so do not describe the operation as deletion.
+Each capability shard has a protected GitHub environment and access token. A
+missing token, scope, entitlement, quota, test, or cleanup result stops the run.
 
-To release, run `Provider lifecycle` from `main` with one input: the intended
-v-prefixed SemVer. The workflow binds the release to the dispatch commit, requires
-that commit to be the current head of `main` with a successful `Required` quality
-check, and observes whether the version is new, a verified draft, or already
-published. A new release runs protected source acceptance, constructs the same
-real-version asset set twice without secrets, and compares it. The signing
-job then waits for one approval on the `release` environment before it receives
-the GPG key. Attestation and publication promote the first build; they do not
-rebuild it.
+The v0.1 release has one `free_properties` shard. It shares a disposable portal
+with the Northstar demo. Run `make one-portal-free-lifecycle` only with that
+shard's protected token and a valid acceptance prefix.
 
-After publication, the same run polls both registries, verifies actual Terraform
-and OpenTofu downloads against the immutable GitHub assets, and performs both
-released-provider lifecycles plus bidirectional state migration inside one portal
-teardown/restoration window. If registry ingestion is not ready, rerun `Provider
-lifecycle` with the same version. A verified draft resumes publication; a verified
-published release skips creation and resumes registry and live verification.
+The target completes this sequence:
 
-Enable GitHub immutable releases, require one approval for the `release`
-environment before signing, and register the same GPG public key with Terraform
-Registry. OpenTofu's bootstrap requires the first signed release and accepted
-provider entry before its signing-key issue can be submitted; register that same
-key immediately after provider acceptance, then rerun the same version. This
-ordering does not permit an unsigned release. Store `GPG_PRIVATE_KEY` and
-`GPG_FINGERPRINT` only in the release environment; expose the armored public key
-as the non-secret `GPG_PUBLIC_KEY` repository variable.
+1. Adopt and verify the known demo identities.
+2. Apply the reviewed demo destroy plan.
+3. Run the owned Free acceptance suite.
+4. Rebuild the Git-authored demo through a fresh reviewed plan.
 
-Registry metadata can be resynchronized after an ingestion failure. A bad archive,
-checksum, signature, manifest, SBOM, or provenance record requires a new patch
-release; maintainers must not move the tag or replace an asset.
+The target also rebuilds the demo after an acceptance failure. Local checkouts
+share `HUBSPOT_PORTAL_LOCK_ID`. GitHub uses the non-cancelling
+`hubspot-account-free_properties` concurrency group. Do not bypass these locks.
 
-The signed checksum inventory must contain exactly the provider archives and one
-Registry manifest. Keep `terraform-registry-manifest.json` as the repository source,
-but publish and checksum it as
-`terraform-provider-hubspot_<VERSION>_manifest.json`, matching the Terraform
-Registry release contract. Standalone SPDX SBOM files remain published release assets but
-must not appear in the Registry checksum file because Registry ingestion does not
-include them in its package request.
+## Cleanup
 
-Run `make release-preflight` before dispatching a release, or pass the intended
-version with `make release-preflight VERSION=vX.Y.Z`. The target runs GoReleaser's
-configuration and tool health checks, builds the full release without publishing,
-validates the Registry manifest schema, exact archive/manifest/checksum closure,
-archive binary names, and SPDX documents, then installs the built archive through
-filesystem mirrors with both OpenTofu and Terraform. The public registries expose
-no pre-publication dry-run API, so this local/CI gate is the publication-contract
-test. `scripts/build-release-bundle.sh` is shared by that local target and both CI
-builds, preventing the pre-flight and production artifact shapes from drifting.
-The protected release job still verifies the bundle before the private signing
-key is exposed and verifies the real GPG signature before the draft is published.
+HubSpot archives property definitions and groups instead of deleting them. The
+acceptance suite verifies archival and active-name reuse. No active configuration
+with the owned prefix can remain.
 
-The shared registry platform set uses standard `{OS}_{ARCH}` names. In particular,
-the 32-bit ARM build is GOARM=6 and is published as `*_arm.zip`; do not suffix the
-archive as `armv6` or `armv7`, because OpenTofu Registry target discovery ignores
-those nonstandard architecture names.
+The scheduled lifecycle reports stale `tf_acc_` configuration. It does not
+archive configuration. Use `Archive CRM configuration` for manual archival.
+Provide an owned prefix that ends in `_` and the exact required confirmation.
+
+## Publish a Release
+
+Run `Provider lifecycle` from `main`. Supply the intended version with a `v`
+prefix. The workflow binds the release to the dispatch commit and checks that
+commit through the `Required` status.
+
+A new release completes these actions:
+
+1. Run protected source acceptance.
+2. Build the release artefact set twice without secrets.
+3. Compare the two builds.
+4. Wait for approval on the protected `release` environment.
+5. Sign, attest, and publish the first verified build.
+
+The same run waits for both registries after publication. It verifies registry
+downloads against the immutable GitHub assets. It then checks both provider
+lifecycles and bidirectional state migration.
+
+If registry ingestion is incomplete, rerun the same version. A verified draft
+resumes publication. A published release resumes registry and live checks.
+
+## Configure Signing
+
+Require one approval for the `release` environment. Register the same GPG public
+key with Terraform Registry and OpenTofu Registry.
+
+OpenTofu requires the first signed release before provider acceptance. Register
+the key immediately after that acceptance, then rerun the same version.
+
+Store `GPG_PRIVATE_KEY` and `GPG_FINGERPRINT` only in the release environment.
+Expose the public key through the non-secret `GPG_PUBLIC_KEY` variable.
+
+Do not move a published tag or replace an asset. Publish a patch release to
+correct an archive, checksum, signature, manifest, SBOM, or provenance record.
+
+## Validate the Release Bundle
+
+Run the local pre-flight before you dispatch a release:
+
+```shell
+make release-preflight VERSION=vX.Y.Z
+```
+
+The target checks the GoReleaser configuration and tool versions. It builds the
+complete release without publication. It then checks these properties:
+
+- The Registry manifest conforms to its schema.
+- Archive, manifest, and checksum membership is exact.
+- Each archive contains the expected binary name.
+- The bundle contains valid SPDX documents.
+- OpenTofu and Terraform can install the provider from filesystem mirrors.
+
+The public registries do not provide a pre-publication test. This local and CI
+gate therefore checks the publication contract. Local and CI builds use
+`scripts/build-release-bundle.sh`.
+
+## Follow Registry File Rules
+
+The signed checksum inventory contains the provider archives and one manifest.
+Publish `terraform-registry-manifest.json` with this release name:
+
+```text
+terraform-provider-hubspot_<VERSION>_manifest.json
+```
+
+Publish standalone SPDX SBOM files as release assets. Do not include those files
+in the Registry checksum inventory.
+
+Use standard `{OS}_{ARCH}` platform names. Publish the 32-bit ARM build as
+`*_arm.zip` with `GOARM=6`. OpenTofu discovery ignores `armv6` and `armv7`
+archive suffixes.

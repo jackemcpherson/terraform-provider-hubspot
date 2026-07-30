@@ -1,13 +1,13 @@
-# Imports and drift
+# Imports and Drift
 
 Import is explicit adoption. It reads HubSpot configuration and writes local
-state; it does not change the remote object. Existing objects are never adopted
-after a create conflict.
+state. It does not change the remote object. The provider never adopts an
+existing object after a create conflict.
 
-| Resource | Import string |
-| --- | --- |
-| `hubspot_property_group` | `object_type/group_name` |
-| `hubspot_property` | `object_type/property_name` |
+| Resource                 | Import string               |
+| ------------------------ | --------------------------- |
+| `hubspot_property_group` | `object_type/group_name`    |
+| `hubspot_property`       | `object_type/property_name` |
 
 Examples:
 

@@ -1,68 +1,54 @@
-# ADR 0001: Consolidate the provider lifecycle at trust boundaries
+# ADR 0001: Consolidate the Provider Lifecycle at Trust Boundaries
 
-- Status: Accepted
-- Date: 2026-07-20
+This decision record defines the provider validation and release workflow shape.
+
+- Status: Accepted.
+- Date: 2026-07-20.
+
+---
 
 ## Context
 
-The provider had seven GitHub Actions workflows for quality, security,
-acceptance, candidate qualification, release, release verification, and manual
-cleanup. The release path passed a candidate report between separately dispatched
-workflows and repeated tool setup and release-build logic. That made the operator
-interface difficult to understand and allowed local and CI release validation to
-drift. The provider must publish one immutable artifact set that works through
-both the Terraform and OpenTofu registries.
+The provider had seven workflows for validation, release, and cleanup. Separate
+workflow dispatches passed candidate reports and repeated release build logic.
+This design made the operator interface difficult to review. It also let local
+and CI validation differ.
 
-Neither public registry offers a complete pre-publication dry run. The closest
-reliable pre-flight is therefore to construct the real release shape locally,
-validate its manifest, checksum closure, archives, and SBOMs, and install those
-archives under both registry identities through filesystem mirrors.
+Neither public registry provides a complete pre-publication test. The closest
+test must build and install the real release shape locally. It must also validate
+the manifest, checksums, archives, and software bills of materials (SBOMs).
 
 ## Decision
 
-Keep three workflows, aligned to distinct trust boundaries:
+Keep three workflows at separate trust boundaries:
 
-1. `validate-provider.yml` handles pull requests, pushes to `main`, and scheduled security
-   analysis. It runs the repository's local aggregate and release pre-flight,
-   the complete supported Terraform/OpenTofu engine matrix, vulnerability and
-   workflow scans, CodeQL, scheduled Scorecard analysis, and preserves the single
-   branch-protection context named `Required`.
-2. `run-provider-lifecycle.yml` handles scheduled live source health and an explicitly
-   dispatched release version. A release is bound to the workflow commit at the
-   head of `main` and its successful `Required` check. New releases qualify live
-   source, build the same real-version asset set twice, compare it, wait for the
-   protected `release` environment before exposing signing credentials, attest,
-   and publish. The same version may be rerun: verified drafts resume publication
-   and verified published releases resume registry and live verification.
-3. `archive-crm-configuration.yml` is a manual break-glass operation for the only
-   supported capability shard. It requires an exact owned prefix and the literal
-   confirmation `archive-prefixed-crm-configuration`.
+1. `validate-provider.yml` checks pull requests, `main`, and scheduled security
+   analysis. It preserves the required status named `Required`.
+2. `run-provider-lifecycle.yml` checks live source health and publishes a
+   selected version. It binds each release to the checked commit on `main`.
+3. `archive-crm-configuration.yml` provides manual cleanup for the supported
+   capability shard. It requires an owned prefix and an exact confirmation.
 
-The local `scripts/build-release-bundle.sh` is the sole release-bundle builder for
-developer pre-flight and both CI builds. The release assets are independently
-reproduced and compared. The pipeline builds one bundle for publication;
-downstream signing and publishing promote that artifact rather than rebuilding it.
-The independent second bundle is comparison evidence only; its volatile attestation
-metadata is not promoted.
+The `scripts/build-release-bundle.sh` script builds every release bundle. Local
+checks and both CI builds use this script. The pipeline compares two independent
+builds and promotes the first verified bundle.
 
-Release permissions are job-scoped. The private GPG key exists only in the
-protected signing step, OIDC write permission exists only in attestation, and
-repository content write permission exists only in publication jobs. All hosted
-runners and third-party actions are immutably pinned.
+Release jobs use narrow permissions. Only the protected signing step receives
+the private GPG key. Only attestation receives OpenID Connect write permission.
+Only publication jobs receive repository content write permission.
 
-Released-provider verification waits for both registries, verifies registry
-downloads against GitHub assets, then performs the Terraform lifecycle, OpenTofu
-lifecycle, and bidirectional state migration inside one serialized disposable
-portal teardown/restoration window.
+Post-release checks wait for both registries. They compare registry downloads
+with GitHub assets. They then test both provider lifecycles and state migration
+in one disposable portal window.
 
 ## Consequences
 
-The normal operator interface is one workflow and one input: run `Provider
-lifecycle` from `main` with a v-prefixed SemVer. Rerunning that version is the
-recovery and OpenTofu-bootstrap path. Mismatched tags, releases, commits, or assets
-fail closed and require investigation rather than mutation of an immutable release.
+The operator starts one `Provider lifecycle` workflow with a version. A rerun of
+that version resumes a verified draft or registry check.
 
-The workflow policy test treats the three-file surface, permission boundaries,
-engine matrix, local builder, and both registry verification paths as executable
-architecture constraints. Dependabot continues to track GitHub Actions and Go
-dependencies centrally.
+Mismatched tags, commits, releases, or assets stop the workflow. Maintainers must
+investigate the mismatch instead of changing an immutable release.
+
+Policy tests enforce the workflow count, permission boundaries, engine matrix,
+shared builder, and registry checks. Dependabot continues to manage action and
+Go dependency updates.

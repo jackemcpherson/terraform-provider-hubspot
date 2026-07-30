@@ -1,19 +1,24 @@
-# State portability
+# State Portability
 
-Managed resources use schema version 1. The version-0 boundary is an offline,
-byte-preserving migration: IDs, nested map keys, ownership sets, and teardown
-safeguards are copied without contacting HubSpot or normalizing the state.
+This guide explains schema upgrades and registry source changes. Back up the
+state before you change its provider source.
 
-The provider supports forward upgrades only. Downgrades are not promised.
-Legacy flatmap state is rejected before writing a replacement state file; first
-refresh it with the provider version that wrote it using Terraform or OpenTofu.
+---
 
-To move between the Terraform and OpenTofu registry source identities, use the
-engine command in both directions and keep the generated backup. Run `plan`
-afterward; a successful source replacement is expected to produce an empty plan
-and makes no HubSpot API calls.
+## Schema Upgrades
 
-```sh
+Managed resources use schema version 1. The version 0 migration runs offline.
+It preserves identifiers, map keys, ownership sets, and teardown safeguards.
+The migration does not contact HubSpot or normalise state values.
+
+The provider supports only forward upgrades. Refresh legacy flatmap state with
+the provider version that wrote it before you install a newer provider.
+
+## Registry Source Changes
+
+Use the applicable command to move state between registry source identities:
+
+```shell
 tofu state replace-provider \
   registry.terraform.io/jackemcpherson/hubspot \
   registry.opentofu.org/jackemcpherson/hubspot
@@ -23,6 +28,8 @@ terraform state replace-provider \
   registry.terraform.io/jackemcpherson/hubspot
 ```
 
-The CLIs write a state backup before replacement. Do not delete it until the
-subsequent plan is empty. These commands change provider source addresses in
-state; they do not migrate third-party provider schemas.
+Each command writes a state backup. Run `plan` after the replacement and keep
+the backup until the plan is empty.
+
+These commands change only the provider source address. They do not migrate
+schemas from a third-party provider.

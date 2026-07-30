@@ -1,39 +1,41 @@
 # Troubleshooting
 
-## Missing authentication
+Use this guide to identify common authentication, lifecycle, and drift faults.
 
-Confirm that `HUBSPOT_ACCESS_TOKEN` is exported in the same shell or CI step that
-runs OpenTofu. Aliased providers using different accounts need separate sensitive
+## Missing Authentication
+
+Export `HUBSPOT_ACCESS_TOKEN` in the same shell or CI step that runs OpenTofu.
+Aliased providers that use different accounts need separate sensitive
 variables because the shared environment variable supplies only one token.
 
-## HubSpot returns 403
+## HubSpot Returns 403
 
 Check the static app's schema scopes for the configured `object_type`, then check
 the HubSpot edition and feature flags listed in
 [permissions and limits](permissions-and-limits.md). The provider removes neither
 state nor remote configuration after a permission error.
 
-## A create or update returned an ambiguous diagnostic
+## A Create or Update Returned an Ambiguous Diagnostic
 
 Do not immediately replay an uncertain create outside OpenTofu. Run `tofu plan`
 again after the diagnostic. Resources with an immutable recovery key perform a
 bounded read-back. Updates and deletes retain state until a read confirms the
 result.
 
-## Destroy is blocked
+## Destroy Is Blocked
 
 Read the diagnostic before changing state manually. Property groups may be
 nonempty. Remove dependent property configuration, apply, and retry.
 
-## Drift returns after apply
+## Drift Returns After Apply
 
-HubSpot may normalize display order or reject a field combination. Refresh is
+HubSpot may normalise display order or reject a field combination. Refresh is
 read-only, so repeated drift indicates a remote constraint, another writer, or a
-provider defect. Save the sanitized diagnostic and provider version when filing
+provider defect. Save the sanitised diagnostic and provider version when filing
 an issue. Never include the token, state file, full response body, CRM record
 values, or account-specific IDs.
 
-## State source changed
+## State Source Changed
 
 Use the commands in [state portability](state-portability.md). Keep the generated
 backup and confirm an empty plan before removing it.

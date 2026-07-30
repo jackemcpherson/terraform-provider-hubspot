@@ -1,7 +1,7 @@
-# Authentication and aliases
+# Authentication and Aliases
 
 Create a HubSpot static app with the least set of schema permissions needed by
-your configuration. Put its access token in `HUBSPOT_ACCESS_TOKEN`; an empty
+your configuration. Put its access token in `HUBSPOT_ACCESS_TOKEN`. An empty
 provider block reads that variable. `access_token` is sensitive when supplied as
 a provider argument, but environment-based authentication keeps it out of HCL
 and state.
@@ -9,7 +9,7 @@ and state.
 Provider configuration does not contact HubSpot. The first resource or data
 source request reports a missing or rejected token.
 
-## Multiple accounts
+## Multiple Accounts
 
 Each alias has its own client and rate controller. Pass aliases from the root
 module instead of configuring providers inside child modules:
@@ -38,5 +38,5 @@ Do not commit `.tfvars` files containing tokens. See the complete
 [alias example](../examples/aliases).
 
 `api_base_url` exists for local testing. It accepts HTTPS origins and loopback
-HTTP URLs, rejects credentials, query strings, and fragments, and should not be
-used as a generic API routing mechanism.
+HTTP URLs. It rejects credentials, query strings, and fragments. Use this option
+only for local API routing.
