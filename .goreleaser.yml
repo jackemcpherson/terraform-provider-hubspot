@@ -39,11 +39,6 @@ archives:
         info:
           mtime: '{{ .CommitDate }}'
 
-sboms:
-  - artifacts: archive
-    documents:
-      - '${artifact}.spdx.sbom'
-
 checksum:
   name_template: '{{ .ProjectName }}_{{ .Version }}_SHA256SUMS'
   ids:

@@ -14,7 +14,6 @@ fi
 printf '%s' "$public_key" | gpg --batch --import
 gpg --batch --verify "$checksum.sig" "$checksum"
 "$root/scripts/verify-registry-checksums.sh" "$dir"
-find "$dir" -name '*.spdx.sbom' -type f -print -quit | grep -q .
 checksum_name=$(basename "$checksum")
 release_prefix=${checksum_name%_SHA256SUMS}
 manifest="$dir/${release_prefix}_manifest.json"

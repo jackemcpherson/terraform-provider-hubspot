@@ -1,6 +1,6 @@
 # ADR 0001: Consolidate the provider lifecycle at trust boundaries
 
-- Status: Accepted
+- Status: Superseded by ADR 0002
 - Date: 2026-07-20
 
 ## Context

@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-required='archive-crm-configuration.yml run-provider-lifecycle.yml validate-provider.yml'
-legacy='acceptance-cleanup.yml acceptance.yml ci.yml provider-lifecycle.yml quality.yml release-candidate.yml release.yml security.yml verify-release.yml'
+required='archive-crm-configuration.yml provider-maintenance.yml release.yml validate-provider.yml'
+legacy='acceptance-cleanup.yml acceptance.yml ci.yml provider-lifecycle.yml quality.yml release-candidate.yml run-provider-lifecycle.yml security.yml verify-release.yml'
 
 actual=$(find .github/workflows -maxdepth 1 -type f -name '*.yml' -exec basename {} \; | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')
 # Split the fixed repository-owned filename list into one name per line.
@@ -69,64 +69,49 @@ for version in 1.8.8 1.10.10 1.11.11 1.12.3 1.8.5 1.15.8; do
 	grep -q "version: $version" "$quality" || { echo "quality engine matrix is missing $version" >&2; exit 1; }
 done
 
-lifecycle=.github/workflows/run-provider-lifecycle.yml
-grep -q '^  schedule:' "$lifecycle"
-grep -q '^  workflow_dispatch:' "$lifecycle"
-grep -A8 '^      operation:$' "$lifecycle" | grep -q '        default: janitor-report' || {
-	echo 'manual lifecycle dispatch must default to the read-only janitor report' >&2
+maintenance=.github/workflows/provider-maintenance.yml
+grep -q '^  schedule:' "$maintenance"
+grep -q '^  workflow_dispatch:' "$maintenance"
+grep -q "if: github.event_name == 'schedule'" "$maintenance"
+grep -q 'one-portal-free-lifecycle.sh' "$maintenance"
+grep -q 'acceptance-cleanup.sh report free_properties' "$maintenance"
+test "$(grep -c 'HUBSPOT_ACCEPTANCE_PORTAL_ID:.*vars.HUBSPOT_ACCEPTANCE_PORTAL_ID' "$maintenance")" -eq 2 || {
+	echo 'both live maintenance jobs must enforce the expected portal identity' >&2
 	exit 1
 }
-grep -A12 '^      operation:$' "$lifecycle" | grep -q '          - release' || {
-	echo 'manual lifecycle dispatch must retain an explicit release operation' >&2
+! grep -Eq 'GPG_|contents: write|goreleaser' "$maintenance" || {
+	echo 'provider maintenance must not contain release credentials or publication logic' >&2
 	exit 1
 }
-grep -q "github.event_name == 'workflow_dispatch' && inputs.operation == 'janitor-report'" "$lifecycle" || {
-	echo 'janitor report must support an explicit manual dispatch' >&2
+
+release=.github/workflows/release.yml
+grep -q '^  workflow_dispatch:' "$release"
+! grep -q '^  schedule:' "$release" || { echo 'release must be manually dispatched only' >&2; exit 1; }
+grep -A4 '^      version:$' "$release" | grep -q '        required: true'
+test "$(grep -c '^    runs-on:' "$release")" -eq 1 || { echo 'release must contain exactly one job' >&2; exit 1; }
+test "$(grep -c '^    environment: release$' "$release")" -eq 1 || {
+	echo 'release must have one protected-environment boundary' >&2
 	exit 1
 }
-grep -q "github.event_name == 'workflow_dispatch' && inputs.operation == 'release'" "$lifecycle" || {
-	echo 'release observation must require the explicit release operation' >&2
+test "$(grep -c 'contents: write' "$release")" -eq 1 || { echo 'release needs one contents-write permission' >&2; exit 1; }
+grep -q 'checks: read' "$release"
+grep -q 'goreleaser/goreleaser-action@' "$release"
+grep -q 'version: v2.17.0' "$release"
+grep -q 'args: release --clean' "$release"
+grep -q 'git tag -s' "$release"
+grep -q 'git push .*refs/tags/' "$release"
+test "$(grep -c 'GPG_PRIVATE_KEY:.*secrets.GPG_PRIVATE_KEY' "$release")" -eq 1 || {
+	echo 'the private signing key must be exposed only to its import step' >&2
 	exit 1
 }
-test "$(grep -c '^      [a-z-]*:$' "$lifecycle" || true)" -ge 1
-grep -q 'observe-release.sh' "$lifecycle"
-grep -q 'build-release-bundle.sh' "$lifecycle"
-test "$(grep -c 'build-release-bundle.sh' "$lifecycle")" -eq 2 || { echo 'release must use one builder for both builds' >&2; exit 1; }
-grep -q 'compare-release-builds.sh' "$lifecycle"
-grep -q 'verify-registry-ingestion.sh' "$lifecycle"
-grep -q 'verify-released-provider.sh' "$lifecycle"
-grep -q 'one-portal-free-lifecycle.sh ./scripts/released-provider-journey.sh' "$lifecycle"
-grep -q "needs.observe.outputs.state == 'published'" "$lifecycle"
-test "$(grep -c '^    environment: release$' "$lifecycle")" -eq 1 || {
-	echo 'release must require one protected-environment approval before signing' >&2
+! grep -Eq 'HUBSPOT_|schedule:|needs:|always\(\)|attest|upload-artifact|download-artifact|observe-release|compare-release|verify-registry-ingestion|released-provider' "$release" || {
+	echo 'release contains work outside the minimal build, tag, and publication path' >&2
 	exit 1
 }
-test "$(grep -c 'GPG_PRIVATE_KEY:.*secrets.GPG_PRIVATE_KEY' "$lifecycle")" -eq 1 || {
-	echo 'the private signing key must be exposed only to the signing step' >&2
-	exit 1
-}
-sed -n '/^  sign:$/,/^  attest:$/p' "$lifecycle" | grep -q 'uses: ./.github/actions/setup-provider-toolchain' || {
-	echo 'protected bundle verification must install both provider engines' >&2
-	exit 1
-}
-test "$(grep -c 'id-token: write' "$lifecycle")" -eq 1 || { echo 'OIDC write permission must be isolated to attestation' >&2; exit 1; }
-test "$(grep -c 'contents: write' "$lifecycle")" -eq 2 || { echo 'contents write must be isolated to new and resumed publication' >&2; exit 1; }
-grep -A4 '^  attest:$' "$lifecycle" | grep -q 'needs: \[observe, rebuild, sign\]' || {
-	echo 'attestation must remain behind protected release approval' >&2
-	exit 1
-}
-test "$(grep -c 'observe-release.sh' "$lifecycle")" -eq 2 || {
-	echo 'a resumed draft must be reverified immediately before publication' >&2
-	exit 1
-}
-if grep -q -- '--snapshot' "$lifecycle"; then
+if grep -q -- '--snapshot' "$release"; then
 	echo 'production release must not use snapshot assets' >&2
 	exit 1
 fi
-! grep -Eq 'candidate-report|verify-candidate-report|release-candidate' "$lifecycle" || {
-	echo 'release lifecycle must not depend on a candidate-report handoff' >&2
-	exit 1
-}
 
 archive=.github/workflows/archive-crm-configuration.yml
 grep -q '^  workflow_dispatch:' "$archive"

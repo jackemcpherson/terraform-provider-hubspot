@@ -20,22 +20,10 @@ test -f "$checksum" || {
 }
 
 archive_count=$(find "$assets" -maxdepth 1 -type f -name '*.zip' | wc -l | tr -d ' ')
-sbom_count=$(find "$assets" -maxdepth 1 -type f -name '*.zip.spdx.sbom' | wc -l | tr -d ' ')
 test "$archive_count" -eq 13 || {
 	echo 'release bundle must contain 13 standard provider archives' >&2
 	exit 1
 }
-test "$sbom_count" -eq "$archive_count" || {
-	echo 'release bundle must contain one SPDX SBOM per provider archive' >&2
-	exit 1
-}
-
-for sbom in "$assets"/*.zip.spdx.sbom; do
-	jq -e '.spdxVersion | type == "string"' "$sbom" >/dev/null || {
-		echo "invalid SPDX SBOM: $(basename "$sbom")" >&2
-		exit 1
-	}
-done
 
 for archive in "$assets"/*.zip; do
 	expected_binary="terraform-provider-hubspot_v${release_version}"

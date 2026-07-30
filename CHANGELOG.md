@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Reduce releases to one manually dispatched job that creates the signed tag and
+  uses GoReleaser once to build and publish the complete Terraform/OpenTofu asset
+  set; move scheduled portal checks into a separate maintenance workflow.
+
 ## [0.1.5] - 2026-07-25
 
 ### Added

@@ -1,0 +1,81 @@
+name: Provider maintenance
+
+on:
+  schedule:
+    - cron: '41 4 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: provider-maintenance-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  source-acceptance:
+    name: Scheduled source acceptance
+    if: github.event_name == 'schedule'
+    environment: free_properties
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    concurrency:
+      group: hubspot-account-free_properties
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      CAPABILITY_SHARD: free_properties
+      HUBSPOT_DEMO_SCRIPT: ${{ github.workspace }}/.release-demo/scripts/demo
+      HUBSPOT_PROVIDER_REPO: ${{ github.workspace }}
+      HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
+      HUBSPOT_ACCEPTANCE_PORTAL_ID: ${{ vars.HUBSPOT_ACCEPTANCE_PORTAL_ID }}
+      HUBSPOT_ACCEPTANCE_PREFIX: tf_acc_${{ github.run_id }}_${{ github.run_attempt }}_
+    steps:
+      - name: Check out provider source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Check out exact Northstar demo
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          repository: jackemcpherson/terraform-hubspot-instance-demo
+          ref: 20efda68e25d703f73fd48da63bf7d4f20bb260b
+          path: .release-demo
+          persist-credentials: false
+      - name: Set up provider toolchain
+        uses: ./.github/actions/setup-provider-toolchain
+        with:
+          tofu-version: '1.12.3'
+          terraform-version: '1.15.8'
+      - name: Run fail-closed source acceptance
+        run: ./scripts/one-portal-free-lifecycle.sh
+      - name: Upload sanitized acceptance result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: scheduled-acceptance-free_properties
+          path: acceptance-report/free_properties.json
+          if-no-files-found: error
+
+  janitor-report:
+    name: Owned CRM configuration report
+    environment: free_properties
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    concurrency:
+      group: hubspot-account-free_properties
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
+      HUBSPOT_ACCEPTANCE_PORTAL_ID: ${{ vars.HUBSPOT_ACCEPTANCE_PORTAL_ID }}
+    steps:
+      - name: Check out provider source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Set up provider toolchain
+        uses: ./.github/actions/setup-provider-toolchain
+      - name: Report stale owned CRM configuration
+        run: ./scripts/acceptance-cleanup.sh report free_properties

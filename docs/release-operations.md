@@ -25,61 +25,53 @@ verified through the strongest API-supported probe, and the same Git-authored na
 must recreate successfully before the demo rebuild is verified. Properties are
 read back from the archive; groups are proven absent from the active API and reusable.
 
-The scheduled lifecycle reports stale `tf_acc_` configuration. It never archives
-anything. Manual archival uses `Archive CRM configuration` and requires an exact
-owned prefix ending in `_`, the protected `free_properties` environment, and the
-literal confirmation `archive-prefixed-crm-configuration`. HubSpot retains this
-configuration in its recycling bin, so do not describe the operation as deletion.
+The scheduled `Provider maintenance` workflow reports stale `tf_acc_`
+configuration. It never archives anything. Manual archival uses `Archive CRM
+configuration` and requires an exact owned prefix ending in `_`, the protected
+`free_properties` environment, and the literal confirmation
+`archive-prefixed-crm-configuration`. HubSpot retains this configuration in its
+recycling bin, so do not describe the operation as deletion.
 
-To release, run `Provider lifecycle` from `main` with one input: the intended
-v-prefixed SemVer. The workflow binds the release to the dispatch commit, requires
-that commit to be the current head of `main` with a successful `Required` quality
-check, and observes whether the version is new, a verified draft, or already
-published. A new release runs protected source acceptance, constructs the same
-real-version asset set twice without secrets, and compares it. The signing
-job then waits for one approval on the `release` environment before it receives
-the GPG key. Attestation and publication promote the first build; they do not
-rebuild it.
+To release, run `Release` from `main` with the intended v-prefixed SemVer. The
+single protected job requires the dispatch commit to be the current head of
+`main` with a successful `Required` quality check. It imports the release signing
+key, creates a signed tag, and runs pinned GoReleaser once. GoReleaser builds all
+supported platform archives, signs the checksum inventory, publishes the
+versioned Registry manifest, and creates the GitHub release.
 
-After publication, the same run polls both registries, verifies actual Terraform
-and OpenTofu downloads against the immutable GitHub assets, and performs both
-released-provider lifecycles plus bidirectional state migration inside one portal
-teardown/restoration window. If registry ingestion is not ready, rerun `Provider
-lifecycle` with the same version. A verified draft resumes publication; a verified
-published release skips creation and resumes registry and live verification.
+Terraform Registry and OpenTofu Registry ingest that same GitHub release through
+their configured integrations; the workflow does not upload to either registry
+separately or wait for asynchronous ingestion. If a run pushed the signed tag but
+failed before creating the GitHub release, rerun the same version only after
+confirming the tag points to the same `main` commit. Once the GitHub release
+exists, never rerun or mutate that version; publish a patch release instead.
 
 Enable GitHub immutable releases, require one approval for the `release`
 environment before signing, and register the same GPG public key with Terraform
 Registry. OpenTofu's bootstrap requires the first signed release and accepted
 provider entry before its signing-key issue can be submitted; register that same
-key immediately after provider acceptance, then rerun the same version. This
-ordering does not permit an unsigned release. Store `GPG_PRIVATE_KEY` and
-`GPG_FINGERPRINT` only in the release environment; expose the armored public key
-as the non-secret `GPG_PUBLIC_KEY` repository variable.
+key immediately after provider acceptance, then resynchronize the Registry if
+needed. This ordering does not permit an unsigned release. Store
+`GPG_PRIVATE_KEY` and `GPG_FINGERPRINT` only in the release environment.
 
-Registry metadata can be resynchronized after an ingestion failure. A bad archive,
-checksum, signature, manifest, SBOM, or provenance record requires a new patch
-release; maintainers must not move the tag or replace an asset.
+Registry metadata can be resynchronized after an ingestion failure. A bad
+archive, checksum, signature, or manifest requires a new patch release;
+maintainers must not move the tag or replace an asset.
 
 The signed checksum inventory must contain exactly the provider archives and one
 Registry manifest. Keep `terraform-registry-manifest.json` as the repository source,
 but publish and checksum it as
 `terraform-provider-hubspot_<VERSION>_manifest.json`, matching the Terraform
-Registry release contract. Standalone SPDX SBOM files remain published release assets but
-must not appear in the Registry checksum file because Registry ingestion does not
-include them in its package request.
+Registry release contract.
 
 Run `make release-preflight` before dispatching a release, or pass the intended
 version with `make release-preflight VERSION=vX.Y.Z`. The target runs GoReleaser's
 configuration and tool health checks, builds the full release without publishing,
 validates the Registry manifest schema, exact archive/manifest/checksum closure,
-archive binary names, and SPDX documents, then installs the built archive through
-filesystem mirrors with both OpenTofu and Terraform. The public registries expose
-no pre-publication dry-run API, so this local/CI gate is the publication-contract
-test. `scripts/build-release-bundle.sh` is shared by that local target and both CI
-builds, preventing the pre-flight and production artifact shapes from drifting.
-The protected release job still verifies the bundle before the private signing
-key is exposed and verifies the real GPG signature before the draft is published.
+and archive binary names, then installs the built archive through filesystem
+mirrors with both OpenTofu and Terraform. The public registries expose no
+pre-publication dry-run API, so this local/CI gate is the publication-contract
+test. Production uses the same GoReleaser configuration directly.
 
 The shared registry platform set uses standard `{OS}_{ARCH}` names. In particular,
 the 32-bit ARM build is GOARM=6 and is published as `*_arm.zip`; do not suffix the
