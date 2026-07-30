@@ -4,11 +4,12 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-### Changed
+## [0.1.6] - 2026-07-30
 
-- Reduce releases to one manually dispatched job that creates the signed tag and
-  uses GoReleaser once to build and publish the complete Terraform/OpenTofu asset
-  set; move scheduled portal checks into a separate maintenance workflow.
+### Fixed
+
+- Publish the canonical MPL-2.0 license text so OpenTofu Registry can
+  redistribute the provider documentation.
 
 ## [0.1.5] - 2026-07-25
 
@@ -24,6 +25,9 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Reduce releases to one manually dispatched job that creates the signed tag and
+  uses GoReleaser once to build and publish the complete Terraform/OpenTofu asset
+  set; move scheduled portal checks into a separate maintenance workflow.
 - Refuse mutating real-portal acceptance runs, including cleanup, unless the
   token's portal identity resolved from the account-info API matches the
   expected portal identifier.

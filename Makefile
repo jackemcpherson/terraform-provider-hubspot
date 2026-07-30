@@ -51,6 +51,7 @@ check-go:
 	@go test -run=^$ -fuzz=Fuzz -fuzztime=1x ./internal/provider
 
 check-docs:
+	@./scripts/check-license.sh
 	@test -f docs/index.md || { echo "generated provider docs missing"; exit 1; }
 	@test -f terraform-registry-manifest.json || { echo "protocol manifest missing"; exit 1; }
 	@test -f registry-addresses.txt || { echo "registry address inventory missing"; exit 1; }
