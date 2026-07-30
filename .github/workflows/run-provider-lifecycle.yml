@@ -5,15 +5,23 @@ on:
     - cron: '41 4 * * *'
   workflow_dispatch:
     inputs:
-      version:
-        description: v-prefixed SemVer to release or resume
+      operation:
+        description: Lifecycle operation to run
         required: true
+        default: janitor-report
+        type: choice
+        options:
+          - janitor-report
+          - release
+      version:
+        description: v-prefixed SemVer; required only for release
+        required: false
         type: string
 
 permissions: {}
 
 concurrency:
-  group: provider-lifecycle-${{ github.event_name }}-${{ inputs.version || github.ref }}
+  group: provider-lifecycle-${{ github.event_name }}-${{ inputs.operation || 'schedule' }}-${{ inputs.version || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -63,8 +71,10 @@ jobs:
           if-no-files-found: error
 
   janitor-report:
-    name: Scheduled archive report
-    if: github.event_name == 'schedule'
+    name: Owned CRM configuration report
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && inputs.operation == 'janitor-report')
     environment: free_properties
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -88,7 +98,7 @@ jobs:
 
   observe:
     name: Observe immutable release state
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'release'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
