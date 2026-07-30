@@ -10,6 +10,11 @@ All notable changes to this project are documented here.
   uses GoReleaser once to build and publish the complete Terraform/OpenTofu asset
   set; move scheduled portal checks into a separate maintenance workflow.
 
+### Fixed
+
+- Publish the canonical MPL-2.0 license text so OpenTofu Registry can
+  redistribute the provider documentation.
+
 ## [0.1.5] - 2026-07-25
 
 ### Added
