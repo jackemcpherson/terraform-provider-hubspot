@@ -11,7 +11,6 @@ TERRAFORM_CURRENT_VERSION := 1.15.8
 TFPLUGINDOCS_VERSION := v0.25.0
 GORELEASER_VERSION := v2.17.0
 STATICCHECK_VERSION := v0.6.1
-SYFT_VERSION := v1.33.0
 ZIZMOR_VERSION := 1.27.0
 STATICCHECK_BIN := $(TOOLS_BIN)/staticcheck
 
@@ -26,12 +25,10 @@ tools:
 	@go install honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION)
 	@go install github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs@$(TFPLUGINDOCS_VERSION)
 	@go install github.com/goreleaser/goreleaser/v2@$(GORELEASER_VERSION)
-	@go install github.com/anchore/syft/cmd/syft@$(SYFT_VERSION)
 	@./scripts/install-zizmor.sh "$(TOOLS_BIN)" "$(ZIZMOR_VERSION)"
 	@"$(STATICCHECK_BIN)" -version | grep -F '0.6.1' >/dev/null
 	@test -x "$(TOOLS_BIN)/tfplugindocs"
 	@"$(TOOLS_BIN)/goreleaser" --version | grep -F 'v2.17.0' >/dev/null
-	@go version -m "$(TOOLS_BIN)/syft" | grep -E 'github.com/anchore/syft[[:space:]]+v1.33.0' >/dev/null
 	@"$(TOOLS_BIN)/zizmor" --version | grep -F 'zizmor $(ZIZMOR_VERSION)' >/dev/null
 
 check: check-go check-docs check-release-tools check-workflows check-security engine-smoke
