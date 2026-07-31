@@ -32,11 +32,11 @@ jobs:
       HUBSPOT_ACCEPTANCE_PREFIX: tf_acc_${{ github.run_id }}_${{ github.run_attempt }}_
     steps:
       - name: Check out provider source
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
       - name: Check out exact Northstar demo
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: jackemcpherson/terraform-hubspot-instance-demo
           ref: 20efda68e25d703f73fd48da63bf7d4f20bb260b
@@ -72,7 +72,7 @@ jobs:
       HUBSPOT_ACCEPTANCE_PORTAL_ID: ${{ vars.HUBSPOT_ACCEPTANCE_PORTAL_ID }}
     steps:
       - name: Check out provider source
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
       - name: Set up provider toolchain
