@@ -338,6 +338,23 @@ type PropertyDefinition struct {
 	ModificationMetadata *ModificationMetadata `json:"modificationMetadata"`
 }
 
+// WriteWithLabel preserves every writable field while changing the authored
+// label. It is intended for safe, controlled drift probes against an existing
+// property definition.
+func (definition PropertyDefinition) WriteWithLabel(label string) PropertyWrite {
+	return PropertyWrite{
+		Name: definition.Name, Label: label, GroupName: definition.GroupName,
+		Type: definition.Type, FieldType: definition.FieldType,
+		Description: definition.Description, DisplayOrder: definition.DisplayOrder,
+		FormField: definition.FormField, Hidden: definition.Hidden,
+		HasUniqueValue: definition.HasUniqueValue, DataSensitivity: definition.DataSensitivity,
+		ExternalOptions: definition.ExternalOptions, ShowCurrencySymbol: definition.ShowCurrencySymbol,
+		CalculationFormula: definition.CalculationFormula, CurrencyPropertyName: definition.CurrencyPropertyName,
+		NumberDisplayHint: definition.NumberDisplayHint, TextDisplayHint: definition.TextDisplayHint,
+		ReferencedObjectType: definition.ReferencedObjectType, Options: definition.Options,
+	}
+}
+
 type propertyDefinitionCollection struct {
 	Results []PropertyDefinition `json:"results"`
 	Paging  *struct {

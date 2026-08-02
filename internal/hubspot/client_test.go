@@ -9,9 +9,40 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestPropertyDefinitionWriteWithLabelPreservesWritableFields(t *testing.T) {
+	description := "description"
+	displayOrder := int64(10)
+	enabled := true
+	sensitivity := "non_sensitive"
+	formula := "formula"
+	definition := PropertyDefinition{
+		Name: "property", Label: "Original", GroupName: "group", Type: "enumeration", FieldType: "select",
+		Description: &description, DisplayOrder: &displayOrder, FormField: &enabled, Hidden: &enabled,
+		HasUniqueValue: &enabled, DataSensitivity: &sensitivity, ExternalOptions: &enabled,
+		ShowCurrencySymbol: &enabled, CalculationFormula: &formula, CurrencyPropertyName: &description,
+		NumberDisplayHint: &description, TextDisplayHint: &description, ReferencedObjectType: &description,
+		Options: []PropertyOption{{Value: "value", Label: "Value", Description: &description, DisplayOrder: &displayOrder, Hidden: &enabled}},
+	}
+	want := PropertyWrite{
+		Name: definition.Name, Label: "Drifted", GroupName: definition.GroupName,
+		Type: definition.Type, FieldType: definition.FieldType,
+		Description: definition.Description, DisplayOrder: definition.DisplayOrder,
+		FormField: definition.FormField, Hidden: definition.Hidden,
+		HasUniqueValue: definition.HasUniqueValue, DataSensitivity: definition.DataSensitivity,
+		ExternalOptions: definition.ExternalOptions, ShowCurrencySymbol: definition.ShowCurrencySymbol,
+		CalculationFormula: definition.CalculationFormula, CurrencyPropertyName: definition.CurrencyPropertyName,
+		NumberDisplayHint: definition.NumberDisplayHint, TextDisplayHint: definition.TextDisplayHint,
+		ReferencedObjectType: definition.ReferencedObjectType, Options: definition.Options,
+	}
+	if got := definition.WriteWithLabel("Drifted"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("write = %#v, want %#v", got, want)
+	}
+}
 
 func TestPropertyGroupClientUsesTypedLifecycleRoutes(t *testing.T) {
 	requests := make([]string, 0, 3)

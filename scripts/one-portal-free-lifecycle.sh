@@ -22,18 +22,39 @@ lock_acquired=true
 restore_demo() {
   code=$?
   if [ "$demo_torn_down" = true ]; then
-    HUBSPOT_PORTAL_LOCK_HELD=1 "$demo_script" local plan >&2 || code=1
-    HUBSPOT_PORTAL_LOCK_HELD=1 "$demo_script" local apply >&2 || code=1
-    HUBSPOT_PORTAL_LOCK_HELD=1 "$demo_script" local verify >&2 || code=1
+    ENGINE=tofu HUBSPOT_PORTAL_LOCK_HELD=1 "$demo_script" local plan >&2 || code=1
+    ENGINE=tofu HUBSPOT_PORTAL_LOCK_HELD=1 "$demo_script" local apply >&2 || code=1
+    ENGINE=tofu HUBSPOT_PORTAL_LOCK_HELD=1 "$demo_script" local verify >&2 || code=1
   fi
   if [ "$lock_acquired" = true ]; then rmdir "$lock_dir" || code=1; fi
   exit "$code"
 }
 trap restore_demo EXIT HUP INT TERM
 
-HUBSPOT_PORTAL_LOCK_HELD=1 "$demo_script" local adopt
-HUBSPOT_PORTAL_LOCK_HELD=1 "$demo_script" local verify
-HUBSPOT_PORTAL_LOCK_HELD=1 "$demo_script" local destroy-plan
+run_demo() {
+  ENGINE=$1 HUBSPOT_PORTAL_LOCK_HELD=1 "$demo_script" local "$2"
+}
+
+run_demo tofu adopt
+run_demo tofu verify
+run_demo tofu drift
+run_demo tofu repair
+run_demo tofu refresh
+run_demo tofu adopt
+run_demo tofu verify
+run_demo tofu destroy-plan
 demo_torn_down=true
-HUBSPOT_PORTAL_LOCK_HELD=1 "$demo_script" local destroy-apply
+run_demo tofu destroy-apply
+
+run_demo terraform plan
+run_demo terraform apply
+run_demo terraform verify
+run_demo terraform drift
+run_demo terraform repair
+run_demo terraform refresh
+run_demo terraform adopt
+run_demo terraform verify
+run_demo terraform destroy-plan
+run_demo terraform destroy-apply
+
 HUBSPOT_PORTAL_LOCK_HELD=1 "$acceptance_script" "$@"

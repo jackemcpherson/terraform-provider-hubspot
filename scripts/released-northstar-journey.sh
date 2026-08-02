@@ -12,6 +12,13 @@ run_engine() {
 	ENGINE=$engine "$demo_script" registry plan
 	ENGINE=$engine "$demo_script" registry apply
 	ENGINE=$engine "$demo_script" registry verify
+	ENGINE=$engine "$demo_script" registry drift
+	ENGINE=$engine "$demo_script" registry repair
+	ENGINE=$engine "$demo_script" registry refresh
+	ENGINE=$engine "$demo_script" registry adopt
+	ENGINE=$engine "$demo_script" registry verify
+	ENGINE=$engine "$demo_script" registry destroy-plan
+	ENGINE=$engine "$demo_script" registry destroy-apply
 }
 
 run_engine terraform
