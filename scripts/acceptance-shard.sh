@@ -79,11 +79,13 @@ printf '%s\n' "$tests" | grep -q "TestAcc_${shard}_" || {
   echo "no acceptance tests registered for required shard $shard" >&2
   exit 1
 }
-printf '%s\n' "$tests" | grep -qx "TestAcc_${shard}_QuotaPreflight" || {
-  echo "no quota preflight registered for required shard $shard" >&2
+quota_test="TestAcc_${shard}_QuotaPreflight"
+if [ "$shard" = free_properties ]; then quota_test="TestAcc_${shard}_QuotaTelemetry"; fi
+printf '%s\n' "$tests" | grep -qx "$quota_test" || {
+  echo "no quota telemetry/preflight registered for required shard $shard" >&2
   exit 1
 }
-go test -tags=acceptance ./internal/acceptance -run "^TestAcc_${shard}_QuotaPreflight$" -count=1 -timeout=5m
+go test -tags=acceptance ./internal/acceptance -run "^${quota_test}$" -count=1 -timeout=5m
 go test -tags=acceptance ./internal/acceptance -run "$regex" -count=1 -timeout=20m
 status=passed
 

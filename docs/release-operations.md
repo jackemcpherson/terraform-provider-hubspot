@@ -2,9 +2,11 @@
 
 Release qualification is fail-closed. Each capability shard has its own GitHub
 Environment and `HUBSPOT_ACCESS_TOKEN`; a missing token, entitlement, scope,
-quota, acceptance test, or cleanup result fails the run. Capability manifests
-contain feature and scope families only. They must not contain Hub IDs, app IDs,
-record IDs, configuration IDs, or credentials.
+acceptance test, or cleanup result fails the run. Custom-property quota telemetry
+is advisory because the limits endpoint may omit or lag account-specific state;
+the actual create operation remains the authoritative quota check. Capability
+manifests contain feature and scope families only. They must not contain Hub IDs,
+app IDs, record IDs, configuration IDs, or credentials.
 
 v0.2 has one `free_properties` shard and one disposable portal shared with the
 Northstar demo. Run `make one-portal-free-lifecycle` only with the Free shard's

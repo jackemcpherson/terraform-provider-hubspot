@@ -47,7 +47,7 @@ func TestGenerateBuildsRegisteredProviderAndExistingModulePages(t *testing.T) {
 	}
 
 	modulePage := readFile(t, filepath.Join(output, "modules", "crm-schema.html"))
-	for _, expected := range []string{"object_type", "groups", "properties", "hubspot_property_group", "hubspot_property", "Typed inputs", "Outputs"} {
+	for _, expected := range []string{"object_type", "groups", "properties", "hubspot_property_group", "hubspot_property", "Typed inputs", "Outputs", "Complete usage", `module &#34;crm_schema&#34;`} {
 		if !strings.Contains(modulePage, expected) {
 			t.Errorf("module page missing %q", expected)
 		}

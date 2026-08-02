@@ -40,7 +40,7 @@ export TF_VAR_acceptance_prefix=${HUBSPOT_ACCEPTANCE_PREFIX:?acceptance prefix i
 
 export CAPABILITY_SHARD=$shard
 export HUBSPOT_ACCEPTANCE=1
-go test -tags=acceptance ./internal/acceptance -run '^TestAcc_free_properties_QuotaPreflight$' -count=1 -timeout=5m
+go test -tags=acceptance ./internal/acceptance -run '^TestAcc_free_properties_QuotaTelemetry$' -count=1 -timeout=5m
 
 "$engine" -chdir="$tmp" init -input=false >/dev/null
 active=true

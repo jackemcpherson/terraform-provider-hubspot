@@ -16,7 +16,7 @@ import (
 	"github.com/jackemcpherson/terraform-provider-hubspot/internal/hubspot"
 )
 
-func TestAcc_free_properties_QuotaPreflight(t *testing.T) {
+func TestAcc_free_properties_QuotaTelemetry(t *testing.T) {
 	requireAcceptanceEnabled(t)
 	token := requiredEnvironment(t, "HUBSPOT_ACCESS_TOKEN")
 	origin, err := url.Parse("https://api.hubapi.com")
@@ -27,7 +27,7 @@ func TestAcc_free_properties_QuotaPreflight(t *testing.T) {
 		BaseURL: origin, AccessToken: token, UserAgent: "terraform-provider-hubspot/acceptance-preflight",
 	})
 	if err != nil {
-		t.Fatal("configure HubSpot quota preflight")
+		t.Fatal("configure HubSpot quota telemetry")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
