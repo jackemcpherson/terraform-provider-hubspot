@@ -38,7 +38,7 @@ finish() {
 trap finish EXIT
 trap 'exit 1' HUP INT TERM
 
-test "$shard" = free_properties || { echo "v0.1 supports only the free_properties capability shard" >&2; exit 1; }
+test "$shard" = free_properties || { echo "v0.2 supports only the free_properties capability shard" >&2; exit 1; }
 
 if [ "${HUBSPOT_PORTAL_LOCK_HELD:-}" != 1 ]; then
   mkdir "$lock_dir" 2>/dev/null || { echo "HubSpot Free portal is already in use: $lock_dir" >&2; exit 1; }
@@ -50,7 +50,7 @@ printf '%s\n' "$prefix" | grep -Eq '^tf_acc_[A-Za-z0-9_]+_$' || { echo "acceptan
 test -s "$manifest"
 manifest_sha=$(shasum -a 256 "$manifest" | awk '{print $1}')
 grep -q "\"shard\":\"$shard\"" "$manifest"
-grep -q '"quota_preflight":true' "$manifest"
+grep -q '"quota_telemetry":"advisory"' "$manifest"
 if grep -Eqi 'hub[_-]?id|app[_-]?id|record[_-]?id|access[_-]?token|pat-' "$manifest"; then
   echo "capability manifest contains a forbidden identifier or credential marker" >&2
   exit 1

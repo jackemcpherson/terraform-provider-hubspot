@@ -7,7 +7,7 @@ address=${3:?provider address is required}
 version=${4:?release version is required}
 fixture="acceptance/released/$shard"
 
-test "$shard" = free_properties || { echo "v0.1 supports only the free_properties capability shard" >&2; exit 1; }
+test "$shard" = free_properties || { echo "v0.2 supports only the free_properties capability shard" >&2; exit 1; }
 case "$engine:$address" in
   terraform:registry.terraform.io/jackemcpherson/hubspot|tofu:registry.opentofu.org/jackemcpherson/hubspot) ;;
   *) echo "engine and registry address do not match" >&2; exit 1 ;;

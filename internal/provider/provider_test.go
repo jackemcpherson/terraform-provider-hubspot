@@ -5,11 +5,14 @@ package provider
 
 import (
 	"context"
+	"slices"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
@@ -52,14 +55,28 @@ func TestProviderServesProtocol6(t *testing.T) {
 	}
 }
 
-func TestProviderRegistersOnlyFreeTierTypes(t *testing.T) {
+func TestProviderRegistersExactCRMPropertySchemaTypes(t *testing.T) {
 	p := New("test")().(*Provider)
-
-	if got, want := len(p.Resources(context.Background())), 2; got != want {
-		t.Fatalf("registered resources = %d, want %d", got, want)
+	ctx := context.Background()
+	resources := make([]string, 0)
+	for _, factory := range p.Resources(ctx) {
+		var response resource.MetadataResponse
+		factory().Metadata(ctx, resource.MetadataRequest{}, &response)
+		resources = append(resources, response.TypeName)
 	}
-	if got, want := len(p.DataSources(context.Background())), 2; got != want {
-		t.Fatalf("registered data sources = %d, want %d", got, want)
+	dataSources := make([]string, 0)
+	for _, factory := range p.DataSources(ctx) {
+		var response datasource.MetadataResponse
+		factory().Metadata(ctx, datasource.MetadataRequest{}, &response)
+		dataSources = append(dataSources, response.TypeName)
+	}
+	slices.Sort(resources)
+	slices.Sort(dataSources)
+	if !slices.Equal(resources, []string{"hubspot_property", "hubspot_property_group"}) {
+		t.Fatalf("registered resources = %#v", resources)
+	}
+	if !slices.Equal(dataSources, []string{"hubspot_property_definition", "hubspot_property_definitions"}) {
+		t.Fatalf("registered data sources = %#v", dataSources)
 	}
 }
 

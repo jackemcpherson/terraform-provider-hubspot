@@ -39,10 +39,10 @@ type FakeHubSpot struct {
 	// tombstone.
 	groups map[string]map[string]*hubspot.PropertyGroup
 
-	// properties is keyed by objectType then property name and retains
-	// archived entries so archived-visibility queries (?archived=true) and
-	// archived-name reservation can be served faithfully.
-	properties map[string]map[string]*hubspot.PropertyDefinition
+	// properties is keyed by objectType then property name. Each name can
+	// have one active definition and one retained archived tombstone because
+	// the current /2026-03 API permits immediate same-name reuse.
+	properties map[string]map[string]*fakePropertyVersions
 
 	// pipelines is keyed by objectType then server-assigned pipeline id and
 	// retains archived entries for the same reason as properties.
@@ -59,7 +59,7 @@ func NewFakeHubSpot(token string, portalID int64) *FakeHubSpot {
 		token:      token,
 		portalID:   portalID,
 		groups:     make(map[string]map[string]*hubspot.PropertyGroup),
-		properties: make(map[string]map[string]*hubspot.PropertyDefinition),
+		properties: make(map[string]map[string]*fakePropertyVersions),
 		pipelines:  make(map[string]map[string]*hubspot.Pipeline),
 	}
 }
@@ -149,7 +149,7 @@ func (f *FakeHubSpot) handlePropertyGroupCollection(response http.ResponseWriter
 			writeFakeError(response, http.StatusConflict, "VALIDATION_ERROR", "PropertyGroupError.GROUP_ALREADY_EXISTS", "A property group with this name already exists.")
 			return
 		}
-		group := &hubspot.PropertyGroup{Name: body.Name, Label: body.Label, DisplayOrder: body.DisplayOrder}
+		group := &hubspot.PropertyGroup{Name: body.Name, Label: body.Label, DisplayOrder: f.groupDisplayOrder(objectType, "", body.DisplayOrder)}
 		f.groups[objectType][body.Name] = group
 		writeFakeJSON(response, http.StatusCreated, *group)
 	default:
@@ -181,7 +181,7 @@ func (f *FakeHubSpot) handlePropertyGroupItem(response http.ResponseWriter, requ
 			return
 		}
 		group.Label = body.Label
-		group.DisplayOrder = body.DisplayOrder
+		group.DisplayOrder = f.groupDisplayOrder(objectType, name, body.DisplayOrder)
 		writeFakeJSON(response, http.StatusOK, *group)
 	case http.MethodDelete:
 		if !exists {
@@ -200,8 +200,8 @@ func (f *FakeHubSpot) handlePropertyGroupItem(response http.ResponseWriter, requ
 }
 
 func (f *FakeHubSpot) groupHasActiveProperties(objectType, groupName string) bool {
-	for _, property := range f.properties[objectType] {
-		if property.GroupName == groupName && (property.Archived == nil || !*property.Archived) {
+	for _, versions := range f.properties[objectType] {
+		if versions.Active != nil && versions.Active.GroupName == groupName {
 			return true
 		}
 	}
@@ -230,6 +230,11 @@ type fakePropertyWrite struct {
 	Options              []hubspot.PropertyOption `json:"options"`
 }
 
+type fakePropertyVersions struct {
+	Active   *hubspot.PropertyDefinition
+	Archived *hubspot.PropertyDefinition
+}
+
 func (f *FakeHubSpot) handlePropertyCollection(response http.ResponseWriter, request *http.Request, objectType string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -243,8 +248,12 @@ func (f *FakeHubSpot) handlePropertyCollection(response http.ResponseWriter, req
 		sort.Strings(names)
 		results := make([]hubspot.PropertyDefinition, 0, len(names))
 		for _, name := range names {
-			property := f.properties[objectType][name]
-			if boolPtrValue(property.Archived) == archived {
+			versions := f.properties[objectType][name]
+			property := versions.Active
+			if archived {
+				property = versions.Archived
+			}
+			if property != nil {
 				results = append(results, *property)
 			}
 		}
@@ -260,29 +269,30 @@ func (f *FakeHubSpot) handlePropertyCollection(response http.ResponseWriter, req
 		}
 		name := *body.Name
 		if f.properties[objectType] == nil {
-			f.properties[objectType] = make(map[string]*hubspot.PropertyDefinition)
+			f.properties[objectType] = make(map[string]*fakePropertyVersions)
 		}
-		if existing, exists := f.properties[objectType][name]; exists {
-			if boolPtrValue(existing.Archived) {
-				writeFakeNestedError(response, http.StatusBadRequest, "VALIDATION_ERROR", "PropertyValidationError.PROPERTY_ARCHIVED_NAME_RESERVED", "Property "+name+" already exists as an archived property. Restore or purge it before reusing this name.")
-				return
-			}
+		versions, exists := f.properties[objectType][name]
+		if exists && versions.Active != nil {
 			writeFakeError(response, http.StatusConflict, "VALIDATION_ERROR", "PropertyValidationError.PROPERTY_EXISTS", "A property with this name already exists.")
 			return
+		}
+		if !exists {
+			versions = &fakePropertyVersions{}
+			f.properties[objectType][name] = versions
 		}
 		archivedFalse := false
 		definition := &hubspot.PropertyDefinition{
 			Name: name, Label: valueOr(body.Label, ""), GroupName: valueOr(body.GroupName, ""),
 			Type: valueOr(body.Type, ""), FieldType: valueOr(body.FieldType, ""),
-			Description: body.Description, DisplayOrder: body.DisplayOrder, FormField: body.FormField,
+			Description: body.Description, DisplayOrder: f.propertyDisplayOrder(objectType, valueOr(body.GroupName, ""), "", body.DisplayOrder), FormField: body.FormField,
 			Hidden: body.Hidden, HasUniqueValue: body.HasUniqueValue, DataSensitivity: body.DataSensitivity,
 			ExternalOptions: body.ExternalOptions, ShowCurrencySymbol: body.ShowCurrencySymbol,
 			CalculationFormula: body.CalculationFormula, CurrencyPropertyName: body.CurrencyPropertyName,
 			NumberDisplayHint: body.NumberDisplayHint, TextDisplayHint: body.TextDisplayHint,
-			ReferencedObjectType: body.ReferencedObjectType, Options: copyOptions(body.Options),
+			ReferencedObjectType: body.ReferencedObjectType, Options: normalizeOptionOrders(body.Options),
 			Archived: &archivedFalse,
 		}
-		f.properties[objectType][name] = definition
+		versions.Active = definition
 		writeFakeJSON(response, http.StatusCreated, *definition)
 	default:
 		writeFakeError(response, http.StatusMethodNotAllowed, "VALIDATION_ERROR", "", "Unsupported method.")
@@ -292,20 +302,28 @@ func (f *FakeHubSpot) handlePropertyCollection(response http.ResponseWriter, req
 func (f *FakeHubSpot) handlePropertyItem(response http.ResponseWriter, request *http.Request, objectType, name string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	property, exists := f.properties[objectType][name]
+	versions, exists := f.properties[objectType][name]
 	switch request.Method {
 	case http.MethodGet:
 		archived := request.URL.Query().Get("archived") == "true"
-		if !exists || boolPtrValue(property.Archived) != archived {
+		var property *hubspot.PropertyDefinition
+		if exists {
+			property = versions.Active
+			if archived {
+				property = versions.Archived
+			}
+		}
+		if property == nil {
 			writeFakeError(response, http.StatusNotFound, "OBJECT_NOT_FOUND", "", "No property definition matched this identity.")
 			return
 		}
 		writeFakeJSON(response, http.StatusOK, *property)
 	case http.MethodPatch:
-		if !exists || boolPtrValue(property.Archived) {
+		if !exists || versions.Active == nil {
 			writeFakeError(response, http.StatusNotFound, "OBJECT_NOT_FOUND", "", "No active property definition matched this identity.")
 			return
 		}
+		property := versions.Active
 		var body fakePropertyWrite
 		if !decodeFakeBody(response, request, &body) {
 			return
@@ -323,7 +341,7 @@ func (f *FakeHubSpot) handlePropertyItem(response http.ResponseWriter, request *
 			property.FieldType = *body.FieldType
 		}
 		property.Description = body.Description
-		property.DisplayOrder = body.DisplayOrder
+		property.DisplayOrder = f.propertyDisplayOrder(objectType, property.GroupName, name, body.DisplayOrder)
 		property.FormField = body.FormField
 		property.Hidden = body.Hidden
 		property.ShowCurrencySymbol = body.ShowCurrencySymbol
@@ -332,15 +350,17 @@ func (f *FakeHubSpot) handlePropertyItem(response http.ResponseWriter, request *
 		property.NumberDisplayHint = body.NumberDisplayHint
 		property.TextDisplayHint = body.TextDisplayHint
 		property.ReferencedObjectType = body.ReferencedObjectType
-		property.Options = copyOptions(body.Options)
+		property.Options = normalizeOptionOrders(body.Options)
 		writeFakeJSON(response, http.StatusOK, *property)
 	case http.MethodDelete:
-		if !exists || boolPtrValue(property.Archived) {
+		if !exists || versions.Active == nil {
 			writeFakeError(response, http.StatusNotFound, "OBJECT_NOT_FOUND", "", "No active property definition matched this identity.")
 			return
 		}
 		archivedTrue := true
-		property.Archived = &archivedTrue
+		versions.Active.Archived = &archivedTrue
+		versions.Archived = versions.Active
+		versions.Active = nil
 		response.WriteHeader(http.StatusNoContent)
 	default:
 		writeFakeError(response, http.StatusMethodNotAllowed, "VALIDATION_ERROR", "", "Unsupported method.")
@@ -567,9 +587,81 @@ func valueOr(value *string, fallback string) string {
 	return *value
 }
 
-func copyOptions(options []hubspot.PropertyOption) []hubspot.PropertyOption {
+func (f *FakeHubSpot) groupDisplayOrder(objectType, excludedName string, requested int64) int64 {
+	if requested != -1 {
+		return requested
+	}
+	last := int64(-1)
+	for name, group := range f.groups[objectType] {
+		if name != excludedName && group.DisplayOrder > last {
+			last = group.DisplayOrder
+		}
+	}
+	return last + 1
+}
+
+func (f *FakeHubSpot) propertyDisplayOrder(objectType, groupName, excludedName string, requested *int64) *int64 {
+	if requested == nil || *requested != -1 {
+		return copyInt64(requested)
+	}
+	last := int64(-1)
+	for name, versions := range f.properties[objectType] {
+		if name == excludedName || versions.Active == nil || versions.Active.GroupName != groupName || versions.Active.DisplayOrder == nil {
+			continue
+		}
+		if *versions.Active.DisplayOrder > last {
+			last = *versions.Active.DisplayOrder
+		}
+	}
+	generated := last + 1
+	return &generated
+}
+
+func normalizeOptionOrders(options []hubspot.PropertyOption) []hubspot.PropertyOption {
 	if options == nil {
 		return nil
 	}
-	return append([]hubspot.PropertyOption(nil), options...)
+	last := int64(-1)
+	for _, option := range options {
+		if option.DisplayOrder != nil && *option.DisplayOrder > last {
+			last = *option.DisplayOrder
+		}
+	}
+	result := make([]hubspot.PropertyOption, 0, len(options))
+	for _, option := range options {
+		copy := hubspot.PropertyOption{
+			Value: option.Value, Label: option.Label, Description: copyString(option.Description),
+			DisplayOrder: copyInt64(option.DisplayOrder), Hidden: copyBool(option.Hidden),
+		}
+		if copy.DisplayOrder != nil && *copy.DisplayOrder == -1 {
+			last++
+			*copy.DisplayOrder = last
+		}
+		result = append(result, copy)
+	}
+	return result
+}
+
+func copyString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
+}
+
+func copyInt64(value *int64) *int64 {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
+}
+
+func copyBool(value *bool) *bool {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
 }

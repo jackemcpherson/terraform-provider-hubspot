@@ -6,7 +6,7 @@ shard=${2:?shard is required}
 prefix=${3:-}
 confirm=${4:-}
 
-test "$shard" = free_properties || { echo "v0.1 supports only the free_properties capability shard" >&2; exit 1; }
+test "$shard" = free_properties || { echo "v0.2 supports only the free_properties capability shard" >&2; exit 1; }
 
 : "${HUBSPOT_ACCESS_TOKEN:?HUBSPOT_ACCESS_TOKEN is required}"
 export CAPABILITY_SHARD="$shard"

@@ -74,7 +74,7 @@ func propertyDefinitionAttrs(includeName bool) map[string]schema.Attribute {
 		"id":                     schema.StringAttribute{Computed: true, Description: "Canonical object_type/property_name identity.", MarkdownDescription: "Canonical `object_type/property_name` identity."},
 		"object_type":            schema.StringAttribute{Required: true, Description: "Exact CRM object type API identifier.", MarkdownDescription: "Exact HubSpot CRM object type API identifier, such as `contacts`.", Validators: []validator.String{identifierValidator{kind: "CRM object type"}}},
 		"archived":               schema.BoolAttribute{Optional: true, Computed: true, Description: "Select archived definitions instead of active definitions; defaults to false.", MarkdownDescription: "Select archived definitions instead of active definitions. Defaults to `false`."},
-		"data_sensitivity":       schema.StringAttribute{Optional: true, Computed: true, Description: "Must be non_sensitive; sensitive definition discovery is deferred from v0.1.", MarkdownDescription: "Must be `non_sensitive`. Sensitive definition discovery is deferred from v0.1.", Validators: []validator.String{freeTierSensitivityValidator{}}},
+		"data_sensitivity":       schema.StringAttribute{Optional: true, Computed: true, Description: "Must be non_sensitive; sensitive definition discovery is deferred from v0.2.", MarkdownDescription: "Must be `non_sensitive`. Sensitive definition discovery is deferred from v0.2.", Validators: []validator.String{freeTierSensitivityValidator{}}},
 		"locale":                 schema.StringAttribute{Optional: true, Description: "Optional HubSpot locale selector.", MarkdownDescription: "Optional HubSpot locale selector."},
 		"label":                  schema.StringAttribute{Computed: true, Description: "Property display label.", MarkdownDescription: "Property display label."},
 		"group_name":             schema.StringAttribute{Computed: true, Description: "Internal name of the owning property group.", MarkdownDescription: "Internal name of the owning property group."},
@@ -173,7 +173,7 @@ func (d *PropertyDefinitionsDataSource) Schema(_ context.Context, _ datasource.S
 	r.Schema = schema.Schema{Description: "Reads HubSpot CRM property definitions without reading CRM records.", Attributes: map[string]schema.Attribute{
 		"object_type":      schema.StringAttribute{Required: true, Description: "Exact CRM object type API identifier.", MarkdownDescription: "Exact HubSpot CRM object type API identifier, such as `contacts`.", Validators: []validator.String{identifierValidator{kind: "CRM object type"}}},
 		"archived":         schema.BoolAttribute{Optional: true, Computed: true, Description: "Select archived definitions instead of active definitions; defaults to false.", MarkdownDescription: "Select archived definitions instead of active definitions. Defaults to `false`."},
-		"data_sensitivity": schema.StringAttribute{Optional: true, Computed: true, Description: "Must be non_sensitive; sensitive definition discovery is deferred from v0.1.", MarkdownDescription: "Must be `non_sensitive`. Sensitive definition discovery is deferred from v0.1.", Validators: []validator.String{freeTierSensitivityValidator{}}},
+		"data_sensitivity": schema.StringAttribute{Optional: true, Computed: true, Description: "Must be non_sensitive; sensitive definition discovery is deferred from v0.2.", MarkdownDescription: "Must be `non_sensitive`. Sensitive definition discovery is deferred from v0.2.", Validators: []validator.String{freeTierSensitivityValidator{}}},
 		"locale":           schema.StringAttribute{Optional: true, Description: "Optional HubSpot locale selector.", MarkdownDescription: "Optional HubSpot locale selector."},
 		"definitions":      schema.MapAttribute{Computed: true, Description: "Definitions keyed by immutable property name; an empty map is valid.", MarkdownDescription: "Definitions keyed by immutable property name; an empty map is valid.", ElementType: types.ObjectType{AttrTypes: definitionAttrTypes()}},
 	}}
@@ -314,7 +314,7 @@ func definitionObject(m propertyDefinitionModel) attr.Value {
 type freeTierSensitivityValidator struct{}
 
 func (freeTierSensitivityValidator) Description(context.Context) string {
-	return "must be non_sensitive; sensitive property definitions are deferred from v0.1"
+	return "must be non_sensitive; sensitive property definitions are deferred from v0.2"
 }
 func (s freeTierSensitivityValidator) MarkdownDescription(ctx context.Context) string {
 	return s.Description(ctx)
@@ -325,6 +325,6 @@ func (freeTierSensitivityValidator) ValidateString(_ context.Context, request va
 	}
 	value := request.ConfigValue.ValueString()
 	if value != "non_sensitive" {
-		response.Diagnostics.AddAttributeError(request.Path, "Sensitive property definitions are deferred", "v0.1 supports only non_sensitive property definitions and discovery.")
+		response.Diagnostics.AddAttributeError(request.Path, "Sensitive property definitions are deferred", "v0.2 supports only non_sensitive property definitions and discovery.")
 	}
 }

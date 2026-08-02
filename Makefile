@@ -14,7 +14,7 @@ STATICCHECK_VERSION := v0.6.1
 ZIZMOR_VERSION := 1.27.0
 STATICCHECK_BIN := $(TOOLS_BIN)/staticcheck
 
-.PHONY: tools check check-go check-docs check-release-tools check-security check-workflows engine-smoke docs test test-race test-hermetic fuzz-seeds fmt release-preflight release-snapshot one-portal-free-lifecycle
+.PHONY: tools check check-go check-docs check-release-tools check-security check-workflows engine-smoke docs docs-portal docs-portal-serve test test-race test-hermetic fuzz-seeds fmt release-preflight release-snapshot one-portal-free-lifecycle
 
 tools:
 	@command -v go >/dev/null || { echo "go $(GO_VERSION) required; install tools before running checks"; exit 1; }
@@ -58,6 +58,7 @@ check-docs:
 	@test "$$(wc -l < registry-addresses.txt | tr -d ' ')" = 2
 	@./scripts/verify-registry-manifest.sh terraform-registry-manifest.json
 	@./scripts/check-generated-docs.sh
+	@$(MAKE) docs-portal
 
 check-release-tools:
 	@"$(TOOLS_BIN)/goreleaser" check
@@ -93,6 +94,12 @@ release-snapshot:
 docs:
 	@test -x "$(TOOLS_BIN)/tfplugindocs" || { echo "tfplugindocs $(TFPLUGINDOCS_VERSION) required; run make tools"; exit 1; }
 	@"$(TOOLS_BIN)/tfplugindocs" generate --provider-name hubspot
+
+docs-portal:
+	@go run ./cmd/docs-portal
+
+docs-portal-serve: docs-portal
+	@go run ./cmd/docs-portal-serve --dir dist/docs-portal
 
 test:
 	@go test ./...

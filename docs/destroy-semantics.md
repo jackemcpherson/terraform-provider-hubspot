@@ -35,13 +35,11 @@ endpoint, which HubSpot implements as archival). The provider reads the
 definition back afterward, requesting the archived view, and only removes it
 from state once the archived state is confirmed.
 
-Unlike property groups, an archived property definition's name is reserved:
-HubSpot rejects creating a new property with the same `object_type/name`
-while the archived definition still exists. Recreating a property under that
-name requires restoring or permanently deleting the archived definition
-through HubSpot directly; this provider does not implement either operation.
-Plan for this before destroying and reapplying a property definition under
-an unchanged name.
+An archived property definition's name can be reused immediately on the stable
+`/crm/properties/2026-03` API. Reapplying the same `object_type/name` creates a
+new active definition while the older tombstone remains available through
+archived discovery. Reuse does not restore the previous definition or migrate
+CRM record values.
 
 HubSpot-defined and read-only definitions are never destroyed by this
 provider because they cannot be created or imported as managed resources in
