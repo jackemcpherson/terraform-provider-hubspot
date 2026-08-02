@@ -78,6 +78,7 @@ type moduleDoc struct {
 	Resources []string
 	Outputs   []string
 	Sources   map[string]string
+	Usage     map[string]string
 }
 
 var (
@@ -256,7 +257,14 @@ func discoverDataSources(ctx context.Context, registrar providerRegistrar, provi
 	return entries, nil
 }
 
-func resourceAttributes(attributes map[string]resourceschema.Attribute) []attributeDoc {
+type schemaAttribute interface {
+	GetDescription() string
+	IsRequired() bool
+	IsOptional() bool
+	IsComputed() bool
+}
+
+func schemaAttributes[T schemaAttribute](attributes map[string]T) []attributeDoc {
 	result := make([]attributeDoc, 0, len(attributes))
 	for name, attribute := range attributes {
 		result = append(result, attributeDoc{Name: name, Description: attribute.GetDescription(), Mode: attributeMode(attribute.IsRequired(), attribute.IsOptional(), attribute.IsComputed())})
@@ -265,13 +273,12 @@ func resourceAttributes(attributes map[string]resourceschema.Attribute) []attrib
 	return result
 }
 
+func resourceAttributes(attributes map[string]resourceschema.Attribute) []attributeDoc {
+	return schemaAttributes(attributes)
+}
+
 func dataSourceAttributes(attributes map[string]datasourceschema.Attribute) []attributeDoc {
-	result := make([]attributeDoc, 0, len(attributes))
-	for name, attribute := range attributes {
-		result = append(result, attributeDoc{Name: name, Description: attribute.GetDescription(), Mode: attributeMode(attribute.IsRequired(), attribute.IsOptional(), attribute.IsComputed())})
-	}
-	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
-	return result
+	return schemaAttributes(attributes)
 }
 
 func attributeMode(required, optional, computed bool) string {
@@ -307,7 +314,7 @@ func discoverModules(demoRepo string) ([]moduleDoc, error) {
 		if err != nil || len(files) == 0 {
 			continue
 		}
-		module := moduleDoc{Name: directory.Name(), Sources: make(map[string]string)}
+		module := moduleDoc{Name: directory.Name(), Sources: make(map[string]string), Usage: make(map[string]string)}
 		for _, file := range files {
 			contents, readErr := os.ReadFile(file)
 			if readErr != nil {
@@ -329,6 +336,23 @@ func discoverModules(demoRepo string) ([]moduleDoc, error) {
 		sort.Strings(module.Variables)
 		sort.Strings(module.Resources)
 		sort.Strings(module.Outputs)
+		rootFiles, globErr := filepath.Glob(filepath.Join(demoRepo, "*.tf"))
+		if globErr != nil {
+			return nil, globErr
+		}
+		usesModule := false
+		rootSources := make(map[string]string, len(rootFiles))
+		for _, file := range rootFiles {
+			contents, readErr := os.ReadFile(file)
+			if readErr != nil {
+				return nil, readErr
+			}
+			rootSources[filepath.Base(file)] = string(contents)
+			usesModule = usesModule || strings.Contains(string(contents), "./modules/"+module.Name)
+		}
+		if usesModule {
+			module.Usage = rootSources
+		}
 		modules = append(modules, module)
 	}
 	sort.Slice(modules, func(i, j int) bool { return modules[i].Name < modules[j].Name })
@@ -398,16 +422,25 @@ func writeModulePage(output string, module moduleDoc, header string) error {
 	writeStringList(&body, "Resources", module.Resources)
 	writeStringList(&body, "Outputs", module.Outputs)
 	body.WriteString("<h2>Validation and dependency contract</h2><p>Inputs and validations come from the module HCL below. Property group references create implicit creation and property-first teardown ordering.</p>")
-	filenames := make([]string, 0, len(module.Sources))
-	for name := range module.Sources {
+	writeSourceFiles(&body, "Complete usage", module.Usage)
+	writeSourceFiles(&body, "Module source", module.Sources)
+	body.WriteString(`<p><a href="index.html">Back to index</a> · <a href="../crm-property-schema.html">Surface overview</a></p>`)
+	return writeFile(filepath.Join(output, "modules", module.Name+".html"), page(module.Name+" module", "../", header, body.String()))
+}
+
+func writeSourceFiles(body *strings.Builder, title string, sources map[string]string) {
+	if len(sources) == 0 {
+		return
+	}
+	fmt.Fprintf(body, "<h2>%s</h2>", title)
+	filenames := make([]string, 0, len(sources))
+	for name := range sources {
 		filenames = append(filenames, name)
 	}
 	sort.Strings(filenames)
 	for _, name := range filenames {
-		fmt.Fprintf(&body, "<h2>%s</h2><pre><code>%s</code></pre>", name, template.HTMLEscapeString(module.Sources[name]))
+		fmt.Fprintf(body, "<h3>%s</h3><pre><code>%s</code></pre>", name, template.HTMLEscapeString(sources[name]))
 	}
-	body.WriteString(`<p><a href="index.html">Back to index</a> · <a href="../crm-property-schema.html">Surface overview</a></p>`)
-	return writeFile(filepath.Join(output, "modules", module.Name+".html"), page(module.Name+" module", "../", header, body.String()))
 }
 
 func writeStringList(body *strings.Builder, title string, values []string) {

@@ -25,7 +25,9 @@ package acceptance_test
 import (
 	"fmt"
 	"net/http/httptest"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"github.com/jackemcpherson/terraform-provider-hubspot/internal/acceptance"
@@ -38,6 +40,54 @@ func hermeticServer(t *testing.T, portalID int64) string {
 	server := httptest.NewServer(acceptance.NewFakeHubSpot(hermeticToken, portalID))
 	t.Cleanup(server.Close)
 	return server.URL
+}
+
+func TestHermeticConsumerModuleLifecycle(t *testing.T) {
+	runHermeticConsumerModuleLifecycle(t, acceptance.OpenTofu, "registry.opentofu.org/jackemcpherson/hubspot")
+}
+
+func TestHermeticConsumerModuleLifecycleTerraformParity(t *testing.T) {
+	runHermeticConsumerModuleLifecycle(t, acceptance.Terraform, "registry.terraform.io/jackemcpherson/hubspot")
+}
+
+func runHermeticConsumerModuleLifecycle(t *testing.T, engine acceptance.Engine, providerSource string) {
+	t.Helper()
+	if _, err := exec.LookPath(string(engine)); err != nil {
+		t.Skipf("pinned %s executable is not installed", engine)
+	}
+	demoRepo := os.Getenv("HUBSPOT_DEMO_REPO")
+	if demoRepo == "" {
+		demoRepo = filepath.Join("..", "..", "..", "terraform-hubspot-demo")
+	}
+	moduleSource, err := filepath.Abs(filepath.Join(demoRepo, "modules", "crm-schema"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(moduleSource, "main.tf")); err != nil {
+		t.Fatalf("consumer crm-schema module is required: %v", err)
+	}
+
+	server := hermeticServer(t, 333000333)
+	t.Setenv("HUBSPOT_ACCESS_TOKEN", hermeticToken)
+	ledger := t.TempDir() + "/cleanup.jsonl"
+	acceptance.Run(t, acceptance.Options{
+		Engine: engine, Shard: acceptance.FreeProperties,
+		Prefix: "tf_acc_hermetic_", LedgerPath: ledger, ProbeBaseURL: server,
+	}, func(session *acceptance.Session) {
+		initial := hermeticConsumerModuleConfig(server, providerSource, moduleSource, false)
+		session.GetModules(initial)
+		session.Apply(initial)
+		session.RequireEmptyPlan(initial)
+
+		updated := hermeticConsumerModuleConfig(server, providerSource, moduleSource, true)
+		session.RequirePlanWarning(updated, acceptance.PropertyOptionValuesChanged)
+		session.Apply(updated)
+		session.RequireEmptyPlan(updated)
+		session.Destroy(updated)
+		session.RequirePropertyAbsent("contacts", "tf_acc_hermetic_module_text")
+		session.RequirePropertyAbsent("contacts", "tf_acc_hermetic_module_select")
+		session.RequirePropertyGroupAbsent("contacts", "tf_acc_hermetic_module_group")
+	})
 }
 
 // --- property group lifecycle ---
@@ -222,6 +272,64 @@ func runHermeticPropertyDefinitionLifecycle(t *testing.T, engine acceptance.Engi
 }
 
 // --- shared config builders ---
+
+func hermeticConsumerModuleConfig(apiBaseURL, providerSource, moduleSource string, updated bool) string {
+	groupLabel := "Hermetic module group"
+	textDescription := ""
+	options := `
+      alpha = { label = "Alpha", display_order = 10 }
+      beta  = { label = "Beta", display_order = 20 }
+`
+	if updated {
+		groupLabel = "Updated hermetic module group"
+		textDescription = "Updated through the consumer module"
+		options = `
+      alpha = { label = "Alpha updated", display_order = 10, hidden = true }
+      gamma = { label = "Gamma", description = "Added option", display_order = 30 }
+`
+	}
+	return fmt.Sprintf(`
+terraform {
+  required_providers {
+    hubspot = {
+      source = %q
+    }
+  }
+}
+
+provider "hubspot" {
+  access_token = %q
+  api_base_url = %q
+}
+
+module "schema" {
+  source      = %q
+  object_type = "contacts"
+  groups = {
+    tf_acc_hermetic_module_group = {
+      label         = %q
+      display_order = 10
+    }
+  }
+  properties = {
+    tf_acc_hermetic_module_text = {
+      label         = "Hermetic module text"
+      group         = "tf_acc_hermetic_module_group"
+      description   = %q
+      display_order = 20
+    }
+    tf_acc_hermetic_module_select = {
+      label         = "Hermetic module select"
+      group         = "tf_acc_hermetic_module_group"
+      kind          = "select"
+      display_order = 30
+      options = {%s
+      }
+    }
+  }
+}
+`, providerSource, hermeticToken, apiBaseURL, moduleSource, groupLabel, textDescription, options)
+}
 
 func hermeticPropertyGroupConfig(apiBaseURL, providerSource, name, label string, displayOrder int64) string {
 	return fmt.Sprintf(`

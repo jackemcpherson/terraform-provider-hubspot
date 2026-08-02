@@ -187,6 +187,16 @@ func (s *Session) Apply(config string) {
 	}
 }
 
+// GetModules installs local child modules for configurations that exercise a
+// real consumer module through the acceptance provider seam.
+func (s *Session) GetModules(config string) {
+	s.t.Helper()
+	s.writeConfig(config)
+	if err := s.command("get", "-no-color"); err != nil {
+		s.t.Fatalf("%s module installation failed: %v", s.engine, err)
+	}
+}
+
 func (s *Session) RequireApplyFailure(config string) {
 	s.t.Helper()
 	s.writeConfig(config)

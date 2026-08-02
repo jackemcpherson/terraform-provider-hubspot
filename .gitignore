@@ -4,6 +4,7 @@
 *.tfstate.*
 crash.log
 dist/
+.demo-source/
 bin/
 coverage.out
 acceptance-report/

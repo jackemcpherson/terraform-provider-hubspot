@@ -27,6 +27,9 @@ jobs:
       contents: read
     env:
       HUBSPOT_DEMO_REPO: ${{ github.workspace }}/.demo-source
+      DOCS_PORTAL_REQUIRE_CLEAN: '1'
+      DOCS_PORTAL_PROVIDER_COMMIT: ${{ github.sha }}
+      DOCS_PORTAL_DEMO_COMMIT: 877f25bdb5ef977649cee14d1e3914798e95fedd
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -36,7 +39,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: jackemcpherson/terraform-hubspot-instance-demo
-          ref: 5c244fd82539c96b8c07085cd926cc0f04c3ff21
+          ref: 877f25bdb5ef977649cee14d1e3914798e95fedd
           path: .demo-source
           persist-credentials: false
       - name: Set up provider toolchain
@@ -110,10 +113,19 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+    env:
+      HUBSPOT_DEMO_REPO: ${{ github.workspace }}/.demo-source
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+      - name: Check out exact consumer module
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: jackemcpherson/terraform-hubspot-instance-demo
+          ref: 877f25bdb5ef977649cee14d1e3914798e95fedd
+          path: .demo-source
           persist-credentials: false
       - name: Set up provider toolchain
         uses: ./.github/actions/setup-provider-toolchain
