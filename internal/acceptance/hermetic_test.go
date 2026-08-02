@@ -550,6 +550,8 @@ resource "hubspot_property" "select" {
   type        = "enumeration"
   field_type  = "select"
 
+  depends_on = [hubspot_property.text]
+
   options = {%s
   }
 }
