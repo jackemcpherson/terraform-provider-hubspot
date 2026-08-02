@@ -270,6 +270,28 @@ func (s *Session) RequireEmptyPlan(config string) {
 	}
 }
 
+// PullState returns the exact engine state document for compatibility fixtures.
+func (s *Session) PullState() string {
+	s.t.Helper()
+	state, err := s.commandOutput("state", "pull")
+	if err != nil {
+		s.t.Fatalf("%s state pull failed: %v", s.engine, err)
+	}
+	return state
+}
+
+// PushState installs a reviewed state fixture through the engine's state API.
+func (s *Session) PushState(state string) {
+	s.t.Helper()
+	path := filepath.Join(s.workDir, "compatibility.tfstate")
+	if err := os.WriteFile(path, []byte(state), 0o600); err != nil {
+		s.t.Fatalf("write compatibility state: %v", err)
+	}
+	if err := s.command("state", "push", "-force", path); err != nil {
+		s.t.Fatalf("%s state push failed: %v", s.engine, err)
+	}
+}
+
 func (s *Session) RequirePlanDiff(config string) {
 	s.t.Helper()
 	s.writeConfig(config)

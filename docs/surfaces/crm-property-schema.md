@@ -18,9 +18,9 @@ scopes and never reads CRM records or record values.
 ## Identity and ownership
 
 Groups and properties use canonical `object_type/name` identity. Consumer module
-map keys are immutable remote names. Option map keys are immutable CRM record
-values. Labels, descriptions, display order, visibility, grouping, and option
-presentation remain mutable desired state.
+map keys are immutable remote names. Option map keys are immutable enumeration
+option values. Labels, descriptions, display order, visibility, grouping, and
+option presentation remain mutable desired state.
 
 One `crm-schema` module instance owns one CRM object type. It derives `text` as
 HubSpot `string`/`text` and `select` as `enumeration`/`select`. Direct resources
@@ -43,7 +43,7 @@ create responses are authoritative.
 ## Exclusions
 
 Sensitive definitions, CRM record values, calculated and unique-ID properties,
-external options, references, validation rules, custom objects, additional
+external options, references, validation rules, custom object schemas, additional
 editor kinds, restoration, and permanent deletion are outside this surface.
 
 ## Northstar

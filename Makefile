@@ -14,7 +14,7 @@ STATICCHECK_VERSION := v0.6.1
 ZIZMOR_VERSION := 1.27.0
 STATICCHECK_BIN := $(TOOLS_BIN)/staticcheck
 
-.PHONY: tools check check-go check-docs check-release-tools check-security check-workflows engine-smoke docs docs-portal docs-portal-serve test test-race test-hermetic fuzz-seeds fmt release-preflight release-snapshot one-portal-free-lifecycle
+.PHONY: tools check check-go check-docs check-release-tools check-security check-workflows engine-smoke docs docs-portal docs-portal-update docs-portal-serve test test-race test-hermetic fuzz-seeds fmt release-preflight release-snapshot one-portal-free-lifecycle
 
 tools:
 	@command -v go >/dev/null || { echo "go $(GO_VERSION) required; install tools before running checks"; exit 1; }
@@ -44,6 +44,7 @@ check-go:
 	@test -x "$(STATICCHECK_BIN)" || { echo "staticcheck $(STATICCHECK_VERSION) required; run make tools"; exit 1; }
 	@"$(STATICCHECK_BIN)" ./...
 	@go test ./...
+	@go test -tags=acceptance ./cmd/northstar-lifecycle
 	@go test -tags=acceptance ./internal/acceptance -run '^Test.*AcceptanceConfigurationSyntax$$'
 	@go test -race ./...
 	@go mod tidy -diff
@@ -98,6 +99,11 @@ docs:
 
 docs-portal:
 	@go run ./cmd/docs-portal
+	@go run ./cmd/docs-portal-serve --dir dist/docs-portal --smoke
+
+docs-portal-update:
+	@DOCS_PORTAL_UPDATE=1 go run ./cmd/docs-portal
+	@go run ./cmd/docs-portal-serve --dir dist/docs-portal --smoke
 
 docs-portal-serve: docs-portal
 	@go run ./cmd/docs-portal-serve --dir dist/docs-portal

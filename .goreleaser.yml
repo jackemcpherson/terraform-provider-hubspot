@@ -12,6 +12,7 @@ builds:
     binary: '{{ .ProjectName }}_v{{ .Version }}'
     flags:
       - -trimpath
+      - -buildvcs=false
     ldflags:
       - -s -w -X main.version={{ .Version }}
     env:

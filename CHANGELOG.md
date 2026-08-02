@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here.
 
-## [Unreleased]
+## [0.2.0] - 2026-08-02
 
 ### Added
 
@@ -12,6 +12,11 @@ All notable changes to this project are documented here.
 - Exercise keyed groups, text properties, select properties, options, drift,
   import, archival, name reuse, and teardown through both real CLIs against the
   behavioral fake.
+- Commit per-engine v0.2.0 Northstar locks and run the complete local and
+  registry-installed plan, apply, drift repair, refresh, adoption, and teardown
+  journey under OpenTofu and Terraform.
+- Bind post-publication evidence to exact provider/demo commits and release
+  archive digests after both registries pass package verification.
 
 ### Changed
 
@@ -19,6 +24,10 @@ All notable changes to this project are documented here.
   authoritative and no aggregate ten-property value blocks qualification.
 - Match current `/crm/properties/2026-03` behavior by permitting immediate reuse
   of archived property names while retaining archived discovery.
+- Make documentation portal checks reject stale generated source, parse every
+  rendered HTML page, and smoke-test localhost serving.
+- Prove an authentic released-v0.1.6 property state produces empty v0.2.0 plans
+  under both supported engines.
 
 ## [0.1.6] - 2026-07-30
 

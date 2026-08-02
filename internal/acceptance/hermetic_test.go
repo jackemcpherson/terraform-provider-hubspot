@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jackemcpherson/terraform-provider-hubspot/internal/acceptance"
@@ -48,6 +49,61 @@ func TestHermeticConsumerModuleLifecycle(t *testing.T) {
 
 func TestHermeticConsumerModuleLifecycleTerraformParity(t *testing.T) {
 	runHermeticConsumerModuleLifecycle(t, acceptance.Terraform, "registry.terraform.io/jackemcpherson/hubspot")
+}
+
+func TestHermeticV016StateUpgradeCompatibility(t *testing.T) {
+	runHermeticV016StateUpgradeCompatibility(t, acceptance.OpenTofu, "registry.opentofu.org/jackemcpherson/hubspot")
+}
+
+func TestHermeticV016StateUpgradeCompatibilityTerraformParity(t *testing.T) {
+	runHermeticV016StateUpgradeCompatibility(t, acceptance.Terraform, "registry.terraform.io/jackemcpherson/hubspot")
+}
+
+func runHermeticV016StateUpgradeCompatibility(t *testing.T, engine acceptance.Engine, providerSource string) {
+	t.Helper()
+	if _, err := exec.LookPath(string(engine)); err != nil {
+		t.Skipf("pinned %s executable is not installed", engine)
+	}
+	server := hermeticServer(t, 444000444)
+	fixture, err := os.ReadFile(filepath.Join("testdata", "v0.1.6-property-state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := strings.ReplaceAll(string(fixture), "__PROVIDER_SOURCE__", providerSource)
+	config := hermeticV016CompatibilityConfig(server, providerSource)
+	t.Setenv("HUBSPOT_ACCESS_TOKEN", hermeticToken)
+	acceptance.Run(t, acceptance.Options{
+		Engine: engine, Shard: acceptance.FreeProperties,
+		Prefix: "tf_acc_hermetic_v016_", LedgerPath: t.TempDir() + "/cleanup.jsonl", ProbeBaseURL: server,
+	}, func(session *acceptance.Session) {
+		session.Apply(config)
+		session.PushState(state)
+		session.RequireEmptyPlan(config)
+		session.Destroy(config)
+	})
+}
+
+// TestCaptureV016PropertyState regenerates the committed state fixture when
+// run explicitly with a released v0.1.6 provider binary.
+func TestCaptureV016PropertyState(t *testing.T) {
+	path := os.Getenv("HUBSPOT_V016_STATE_CAPTURE")
+	if path == "" {
+		t.Skip("state capture is an explicit maintenance operation")
+	}
+	server := hermeticServer(t, 444000444)
+	t.Setenv("HUBSPOT_ACCESS_TOKEN", hermeticToken)
+	config := hermeticV016CompatibilityConfig(server, "registry.terraform.io/jackemcpherson/hubspot")
+	acceptance.Run(t, acceptance.Options{
+		Engine: acceptance.Terraform, Shard: acceptance.FreeProperties,
+		Prefix: "tf_acc_hermetic_v016_", LedgerPath: t.TempDir() + "/cleanup.jsonl", ProbeBaseURL: server,
+	}, func(session *acceptance.Session) {
+		session.Apply(config)
+		state := strings.ReplaceAll(session.PullState(), "registry.terraform.io/jackemcpherson/hubspot", "__PROVIDER_SOURCE__")
+		if err := os.WriteFile(path, []byte(state), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		session.Destroy(config)
+	})
 }
 
 func runHermeticConsumerModuleLifecycle(t *testing.T, engine acceptance.Engine, providerSource string) {
@@ -329,6 +385,39 @@ module "schema" {
   }
 }
 `, providerSource, hermeticToken, apiBaseURL, moduleSource, groupLabel, textDescription, options)
+}
+
+func hermeticV016CompatibilityConfig(apiBaseURL, providerSource string) string {
+	return fmt.Sprintf(`
+terraform {
+  required_providers {
+    hubspot = {
+      source = %q
+    }
+  }
+}
+
+provider "hubspot" {
+  access_token = %q
+  api_base_url = %q
+}
+
+resource "hubspot_property_group" "v016" {
+  object_type   = "contacts"
+  name          = "tf_acc_hermetic_v016_group"
+  label         = "v0.1.6 group"
+  display_order = 10
+}
+
+resource "hubspot_property" "v016" {
+  object_type = "contacts"
+  name        = "tf_acc_hermetic_v016_property"
+  label       = "v0.1.6 property"
+  group_name  = hubspot_property_group.v016.name
+  type        = "string"
+  field_type  = "text"
+}
+`, providerSource, hermeticToken, apiBaseURL)
 }
 
 func hermeticPropertyGroupConfig(apiBaseURL, providerSource, name, label string, displayOrder int64) string {

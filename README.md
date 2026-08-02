@@ -62,12 +62,15 @@ registration and the sibling demo's HCL:
 
 ```sh
 make docs-portal
+make docs-portal-update # after reviewed provider schema, module HCL, or portal changes
 make docs-portal-serve # localhost only
 ```
 
 Set `HUBSPOT_DEMO_REPO` when the demo is not at
 `../terraform-hubspot-demo`. Candidate gates also set exact expected commits and
 require clean inputs through the `DOCS_PORTAL_*` environment variables.
+`make docs-portal` rejects a stale committed source digest and smoke-renders the
+localhost build; `make docs-portal-update` intentionally refreshes that digest.
 
 ## Exclusions
 

@@ -79,3 +79,17 @@ The shared registry platform set uses standard `{OS}_{ARCH}` names. In particula
 the 32-bit ARM build is GOARM=6 and is published as `*_arm.zip`; do not suffix the
 archive as `armv6` or `armv7`, because OpenTofu Registry target discovery ignores
 those nonstandard architecture names.
+
+After publication, download the immutable GitHub release assets and run:
+
+```sh
+./scripts/released-provider-journey.sh v0.2.0 /path/to/release-assets
+```
+
+This completion command first proves each registry-installed package matches the
+GitHub archive, then runs both live shards, bidirectional provider-source state
+migration, and the complete dual-engine Northstar lifecycle. It writes sanitized
+evidence under `acceptance-report/` containing the exact provider commit, pinned
+demo commit, archive digest, engines, registry sources, timestamp, and cleanup
+result. The pinned demo commit contains separate read-only OpenTofu and Terraform
+locks covering all 13 released platforms.
