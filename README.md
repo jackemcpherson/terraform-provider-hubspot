@@ -1,20 +1,20 @@
 # HubSpot provider
 
 This provider manages HubSpot CRM configuration with OpenTofu or Terraform. The
-v0.1 release is a public beta and does not promise compatibility with v1.
+v0.2 release is a public beta and does not promise compatibility with v1.
 
 Managed resources:
 
 - property groups and property definitions
 
 The two property-definition data sources inspect non-sensitive schema metadata.
-The provider does not read CRM records or record values. v0.1 supports only
-non-sensitive property definitions on HubSpot Free; pipelines, custom schemas, and
-sensitive definitions are deferred.
+The provider does not read CRM records or record values. v0.2 supports ordinary
+non-sensitive CRM property schema for contacts, companies, deals, and tickets on
+HubSpot Free; pipelines, custom schemas, and sensitive definitions are deferred.
 
-HubSpot Free permits ten custom properties across the portal. Review
-[permissions, account tiers, and exclusions](docs/permissions-and-limits.md)
-before applying managed definitions.
+Observed custom-property limit telemetry is advisory, not local admission
+control. Review [permissions, account tiers, and exclusions](docs/permissions-and-limits.md)
+before applying managed definitions; remote create responses remain authoritative.
 
 ## Configure
 
@@ -57,9 +57,21 @@ Generated field references are under [docs/resources](docs/resources) and
 [docs/data-sources](docs/data-sources). Reviewed configurations are under
 [examples](examples).
 
+Generate the cumulative provider/module HTML portal from executable provider
+registration and the sibling demo's HCL:
+
+```sh
+make docs-portal
+make docs-portal-serve # localhost only
+```
+
+Set `HUBSPOT_DEMO_REPO` when the demo is not at
+`../terraform-hubspot-demo`. Candidate gates also set exact expected commits and
+require clean inputs through the `DOCS_PORTAL_*` environment variables.
+
 ## Exclusions
 
-v0.1 does not manage CRM records, record values, pipelines, custom schemas,
+v0.2 does not manage CRM records, record values, pipelines, custom schemas,
 association labels, sensitive definitions, OAuth, HubSpot-defined properties, or
 arbitrary HTTP/JSON payloads. It does not migrate state from third-party HubSpot
 providers.

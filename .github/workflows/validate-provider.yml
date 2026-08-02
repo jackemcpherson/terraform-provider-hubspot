@@ -25,10 +25,19 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: read
+    env:
+      HUBSPOT_DEMO_REPO: ${{ github.workspace }}/.demo-source
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+      - name: Check out Northstar demo for generated portal
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: jackemcpherson/terraform-hubspot-instance-demo
+          ref: release/v0.1.0-demo
+          path: .demo-source
           persist-credentials: false
       - name: Set up provider toolchain
         uses: ./.github/actions/setup-provider-toolchain

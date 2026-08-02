@@ -120,7 +120,7 @@ func TestFakeHubSpotGroupDeletionFailsWithActiveProperties(t *testing.T) {
 	}
 }
 
-func TestFakeHubSpotPropertyArchivedNameIsReserved(t *testing.T) {
+func TestFakeHubSpotPropertyArchivedNameIsImmediatelyReusable(t *testing.T) {
 	fake := acceptance.NewFakeHubSpot("sentinel", 1)
 	clients := newFakeHubSpotClients(t, fake, "sentinel")
 	ctx := context.Background()
@@ -135,15 +135,14 @@ func TestFakeHubSpotPropertyArchivedNameIsReserved(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Unlike groups, an archived property's name is reserved: recreation
-	// must fail rather than silently replace the archived definition.
-	_, err := clients.Properties.Create(ctx, "contacts", hubspot.PropertyWrite{Name: "tier", Label: "Tier again", GroupName: "marketing", Type: "string", FieldType: "text"})
-	if err == nil {
-		t.Fatal("expected archived-name reservation to reject recreation")
+	// Current /2026-03 behavior permits immediate reuse while preserving the
+	// archived definition as a historical tombstone.
+	active, err := clients.Properties.Create(ctx, "contacts", hubspot.PropertyWrite{Name: "tier", Label: "Tier again", GroupName: "marketing", Type: "string", FieldType: "text"})
+	if err != nil {
+		t.Fatalf("recreate archived property name: %v", err)
 	}
-	var apiError *hubspot.Error
-	if !errors.As(err, &apiError) || apiError.Status != 400 {
-		t.Fatalf("error = %#v, want HTTP 400", err)
+	if active.Label != "Tier again" || boolPointerValue(active.Archived) {
+		t.Fatalf("active property = %#v, want recreated active definition", active)
 	}
 
 	// The archived definition itself is still readable through the
@@ -155,9 +154,57 @@ func TestFakeHubSpotPropertyArchivedNameIsReserved(t *testing.T) {
 	if archived.Archived == nil || !*archived.Archived {
 		t.Fatal("archived property definition did not report archived=true")
 	}
-	if _, err := clients.Properties.Get(ctx, "contacts", "tier", false, "non_sensitive", ""); err == nil {
-		t.Fatal("expected the active view to omit the archived property definition")
+	if archived.Label != "Tier" {
+		t.Fatalf("archived label = %q, want original tombstone", archived.Label)
 	}
+	current, err := clients.Properties.Get(ctx, "contacts", "tier", false, "non_sensitive", "")
+	if err != nil {
+		t.Fatalf("read recreated active property: %v", err)
+	}
+	if current.Label != "Tier again" {
+		t.Fatalf("active label = %q, want recreated definition", current.Label)
+	}
+}
+
+func TestFakeHubSpotGeneratesAppendOrdersWithoutMutatingClientOptions(t *testing.T) {
+	fake := acceptance.NewFakeHubSpot("sentinel", 1)
+	clients := newFakeHubSpotClients(t, fake, "sentinel")
+	ctx := context.Background()
+
+	group, err := clients.PropertyGroups.Create(ctx, "contacts", hubspot.PropertyGroupCreate{Name: "marketing", Label: "Marketing", DisplayOrder: -1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if group.DisplayOrder < 0 {
+		t.Fatalf("group display order = %d, want generated nonnegative order", group.DisplayOrder)
+	}
+	appendOrder := int64(-1)
+	options := []hubspot.PropertyOption{
+		{Value: "alpha", Label: "Alpha", DisplayOrder: &appendOrder},
+		{Value: "beta", Label: "Beta", DisplayOrder: &appendOrder},
+	}
+	property, err := clients.Properties.Create(ctx, "contacts", hubspot.PropertyWrite{
+		Name: "tier", Label: "Tier", GroupName: "marketing", Type: "enumeration", FieldType: "select",
+		DisplayOrder: &appendOrder, Options: options,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if property.DisplayOrder == nil || *property.DisplayOrder < 0 {
+		t.Fatalf("property display order = %#v, want generated nonnegative order", property.DisplayOrder)
+	}
+	for _, option := range property.Options {
+		if option.DisplayOrder == nil || *option.DisplayOrder < 0 {
+			t.Fatalf("option display order = %#v, want generated nonnegative order", option.DisplayOrder)
+		}
+	}
+	if *options[0].DisplayOrder != -1 || *options[1].DisplayOrder != -1 {
+		t.Fatalf("client options mutated: %#v", options)
+	}
+}
+
+func boolPointerValue(value *bool) bool {
+	return value != nil && *value
 }
 
 func TestFakeHubSpotPipelineStageNormalizationCopiesClientMetadata(t *testing.T) {

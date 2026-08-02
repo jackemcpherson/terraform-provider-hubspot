@@ -172,41 +172,52 @@ func runHermeticPropertyDefinitionLifecycle(t *testing.T, engine acceptance.Engi
 		LedgerPath:   ledger,
 		ProbeBaseURL: server,
 	}, func(session *acceptance.Session) {
-		groupName := "tf_acc_hermetic_property_group"
-		name := "tf_acc_hermetic_property"
-		initial := hermeticPropertyConfig(server, providerSource, groupName, name, "Initial label")
-		session.Apply(initial)
-		session.RequireStateString("hubspot_property.test", "id", "contacts/"+name)
-		session.RequireStateString("hubspot_property.test", "label", "Initial label")
-		session.RequireEmptyPlan(initial)
+		for _, objectType := range []string{"contacts", "companies", "deals", "tickets"} {
+			groupName := "tf_acc_hermetic_" + objectType + "_group"
+			textName := "tf_acc_hermetic_" + objectType + "_text"
+			selectName := "tf_acc_hermetic_" + objectType + "_select"
+			initial := hermeticObjectSchemaConfig(server, providerSource, objectType, groupName, textName, selectName, false)
+			session.Apply(initial)
+			session.RequireStateString("hubspot_property.text", "id", objectType+"/"+textName)
+			session.RequireStateString("hubspot_property.text", "type", "string")
+			session.RequireStateString("hubspot_property.select", "field_type", "select")
+			session.RequireEmptyPlan(initial)
 
-		updated := hermeticPropertyConfig(server, providerSource, groupName, name, "Updated label")
-		session.Apply(updated)
-		session.RequireEmptyPlan(updated)
+			updated := hermeticObjectSchemaConfig(server, providerSource, objectType, groupName, textName, selectName, true)
+			session.RequirePlanWarning(updated, acceptance.PropertyOptionValuesChanged)
+			session.Apply(updated)
+			session.RequireEmptyPlan(updated)
 
-		// Drift via out-of-band fake mutation.
-		session.MutatePropertyLabel("contacts", name, "Out-of-band label")
-		session.RequirePlanDiffAttributes(updated, "hubspot_property.test", "label")
-		session.Apply(updated)
-		session.RequireEmptyPlan(updated)
+			// Drift via out-of-band fake mutation.
+			session.MutatePropertyLabel(objectType, textName, "Out-of-band label")
+			session.RequirePlanDiffAttributes(updated, "hubspot_property.text", "label")
+			session.Apply(updated)
+			session.RequireEmptyPlan(updated)
 
-		// Import round-trip.
-		session.RemoveState("hubspot_property.test")
-		session.Import("hubspot_property.test", "contacts/"+name)
-		session.RequireEmptyPlan(updated)
+			// Direct group and property import round-trips use canonical IDs.
+			session.RemoveState("hubspot_property_group.test")
+			session.Import("hubspot_property_group.test", objectType+"/"+groupName)
+			session.RemoveState("hubspot_property.text")
+			session.Import("hubspot_property.text", objectType+"/"+textName)
+			session.RequireEmptyPlan(updated)
 
-		// Destroy with archival-aware verification: remove just the
-		// property from config (destroying it) while keeping its group.
-		groupOnly := hermeticPropertyGroupOnlyConfig(server, providerSource, groupName)
-		session.Apply(groupOnly)
-		session.RequirePropertyAbsent("contacts", name)
-		session.RequirePropertyArchived("contacts", name)
+			// Refresh removes an out-of-band archived property, and apply
+			// immediately reuses its immutable name while retaining tombstone visibility.
+			session.ArchiveProperty(objectType, textName)
+			session.Refresh(updated)
+			session.RequireStateAbsent("hubspot_property.text")
+			session.Apply(updated)
+			session.RequirePropertyArchived(objectType, textName)
+			session.RequireEmptyPlan(updated)
 
-		// Archived-name reservation on re-create: unlike property groups, a
-		// property definition's name stays reserved after archival, so
-		// reapplying the original configuration must fail rather than
-		// silently recreate it.
-		session.RequireApplyFailure(updated)
+			session.Destroy(updated)
+			session.RequirePropertyAbsent(objectType, textName)
+			session.RequirePropertyAbsent(objectType, selectName)
+			session.RequirePropertyArchived(objectType, textName)
+			session.RequirePropertyArchived(objectType, selectName)
+			session.RequirePropertyGroupAbsent(objectType, groupName)
+			session.RequirePropertyGroupReusable(objectType, groupName)
+		}
 	})
 }
 
@@ -276,7 +287,31 @@ resource "hubspot_property" "blocker" {
 `, providerSource, hermeticToken, apiBaseURL, group, propertyName, groupName, dependency)
 }
 
-func hermeticPropertyGroupOnlyConfig(apiBaseURL, providerSource, groupName string) string {
+func hermeticObjectSchemaConfig(apiBaseURL, providerSource, objectType, groupName, textName, selectName string, updated bool) string {
+	groupLabel := "Hermetic property schema"
+	textLabel := "Hermetic text"
+	textDescription := ""
+	textOrder := int64(10)
+	textHidden := false
+	alphaLabel := "Alpha"
+	alphaOrder := int64(20)
+	options := `
+    alpha = { label = %q, display_order = %d }
+    beta  = { label = "Beta", display_order = 30 }
+`
+	if updated {
+		groupLabel = "Updated hermetic property schema"
+		textLabel = "Updated hermetic text"
+		textDescription = "Updated through the provider"
+		textOrder = 15
+		textHidden = true
+		alphaLabel = "Alpha updated"
+		alphaOrder = 25
+		options = `
+    alpha = { label = %q, display_order = %d, hidden = true }
+    gamma = { label = "Gamma", description = "Added option", display_order = 35 }
+`
+	}
 	return fmt.Sprintf(`
 terraform {
   required_providers {
@@ -292,41 +327,34 @@ provider "hubspot" {
 }
 
 resource "hubspot_property_group" "test" {
-  object_type = "contacts"
+  object_type = %q
   name        = %q
-  label       = "Hermetic property definitions"
-}
-`, providerSource, hermeticToken, apiBaseURL, groupName)
-}
-
-func hermeticPropertyConfig(apiBaseURL, providerSource, groupName, name, label string) string {
-	return fmt.Sprintf(`
-terraform {
-  required_providers {
-    hubspot = {
-      source = %q
-    }
-  }
+  label       = %q
+  display_order = 5
 }
 
-provider "hubspot" {
-  access_token = %q
-  api_base_url = %q
-}
-
-resource "hubspot_property_group" "test" {
-  object_type = "contacts"
-  name        = %q
-  label       = "Hermetic property definitions"
-}
-
-resource "hubspot_property" "test" {
-  object_type = "contacts"
+resource "hubspot_property" "text" {
+  object_type = %q
   name        = %q
   label       = %q
   group_name  = hubspot_property_group.test.name
   type        = "string"
   field_type  = "text"
+  description = %q
+  display_order = %d
+  hidden      = %t
 }
-`, providerSource, hermeticToken, apiBaseURL, groupName, name, label)
+
+resource "hubspot_property" "select" {
+  object_type = %q
+  name        = %q
+  label       = "Hermetic select"
+  group_name  = hubspot_property_group.test.name
+  type        = "enumeration"
+  field_type  = "select"
+
+  options = {%s
+  }
+}
+`, providerSource, hermeticToken, apiBaseURL, objectType, groupName, groupLabel, objectType, textName, textLabel, textDescription, textOrder, textHidden, objectType, selectName, fmt.Sprintf(options, alphaLabel, alphaOrder))
 }

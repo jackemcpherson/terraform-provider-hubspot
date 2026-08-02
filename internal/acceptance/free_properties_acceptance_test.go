@@ -341,8 +341,10 @@ func runStandardObjectTypeCoverage(t *testing.T, engine acceptance.Engine, regis
 			session.RequireEmptyPlan(config)
 			session.Destroy(config)
 			session.RequirePropertyAbsent(objectType, prefix+objectType+"_property")
+			session.RequirePropertyAbsent(objectType, prefix+objectType+"_select")
 			session.RequirePropertyGroupAbsent(objectType, prefix+objectType+"_group")
 			session.RequirePropertyArchived(objectType, prefix+objectType+"_property")
+			session.RequirePropertyArchived(objectType, prefix+objectType+"_select")
 			session.RequirePropertyGroupReusable(objectType, prefix+objectType+"_group")
 		}
 	})
@@ -418,7 +420,21 @@ resource "hubspot_property" "test" {
   type        = "string"
   field_type  = "text"
 }
-`, registryHost+"/jackemcpherson/hubspot", objectType, groupName, "Acceptance "+objectType+" properties", objectType, propertyName, "Acceptance "+objectType+" property")
+
+resource "hubspot_property" "select" {
+  object_type = %q
+  name        = %q
+  label       = %q
+  group_name  = hubspot_property_group.test.name
+  type        = "enumeration"
+  field_type  = "select"
+
+  options = {
+    alpha = { label = "Alpha", display_order = 10 }
+    beta  = { label = "Beta", display_order = 20 }
+  }
+}
+`, registryHost+"/jackemcpherson/hubspot", objectType, groupName, "Acceptance "+objectType+" properties", objectType, propertyName, "Acceptance "+objectType+" property", objectType, prefix+objectType+"_select", "Acceptance "+objectType+" select")
 }
 
 func livePropertyConfig(prefix string, updated bool) string {

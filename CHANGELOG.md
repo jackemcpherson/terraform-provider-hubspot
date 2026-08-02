@@ -4,6 +4,22 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Define v0.2.0 CRM property schema as one supported contacts, companies, deals,
+  and tickets configuration surface with a narrow `text`/`select` Northstar
+  consumer module contract.
+- Exercise keyed groups, text properties, select properties, options, drift,
+  import, archival, name reuse, and teardown through both real CLIs against the
+  behavioral fake.
+
+### Changed
+
+- Treat custom-property limit telemetry as advisory; remote create responses are
+  authoritative and no aggregate ten-property value blocks qualification.
+- Match current `/crm/properties/2026-03` behavior by permitting immediate reuse
+  of archived property names while retaining archived discovery.
+
 ## [0.1.6] - 2026-07-30
 
 ### Fixed

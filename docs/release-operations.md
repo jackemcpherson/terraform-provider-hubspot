@@ -6,7 +6,7 @@ quota, acceptance test, or cleanup result fails the run. Capability manifests
 contain feature and scope families only. They must not contain Hub IDs, app IDs,
 record IDs, configuration IDs, or credentials.
 
-v0.1 has one `free_properties` shard and one disposable portal shared with the
+v0.2 has one `free_properties` shard and one disposable portal shared with the
 Northstar demo. Run `make one-portal-free-lifecycle` only with the Free shard's
 protected token and a valid acceptance prefix. It saves no CRM records: it applies
 the demo's reviewed destroy plan after adopting and verifying its known identities,

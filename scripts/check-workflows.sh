@@ -56,6 +56,10 @@ grep -q '^  push:' "$quality"
 grep -q '^  schedule:' "$quality"
 grep -q '^    name: Required$' "$quality"
 grep -q 'make release-preflight' "$quality"
+grep -q 'HUBSPOT_DEMO_REPO:.*\.demo-source' "$quality"
+grep -q 'repository: jackemcpherson/terraform-hubspot-instance-demo' "$quality"
+grep -q '^docs-portal:' Makefile
+grep -q '^docs-portal-serve: docs-portal' Makefile
 grep -q 'ossf/scorecard-action@' "$quality"
 grep -q '^check:.*check-security' Makefile
 grep -q 'govulncheck@v1.1.4' Makefile

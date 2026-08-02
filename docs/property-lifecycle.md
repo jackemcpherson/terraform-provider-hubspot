@@ -15,14 +15,16 @@ Changing `type` or `field_type` updates the existing definition, emits a warning
 and can change how HubSpot interprets record values. Review the plan and the
 affected data before applying. The provider does not inspect those values.
 Unique-value, sensitivity, referenced object type, object type, and internal name
-changes replace the resource. v0.1 accepts only
+changes replace the resource. v0.2 accepts only
 `data_sensitivity = "non_sensitive"`; sensitive and highly-sensitive definitions
 are deferred.
 
 Destroy archives a property and removes it from state after a confirming read.
-The provider has no restore operation. HubSpot-defined and read-only definitions
-cannot be imported as managed resources; use the property-definition data sources
-to inspect them.
+The same internal name can be created again immediately; archived discovery
+continues to expose the tombstone. Reuse is creation, not restoration, and does
+not migrate CRM record values. HubSpot-defined and read-only definitions cannot
+be imported as managed resources; use the property-definition data sources to
+inspect them.
 
 The singular data source reports a missing definition. The collection returns a
 map keyed by internal property name and may return an empty map. `archived = true`
