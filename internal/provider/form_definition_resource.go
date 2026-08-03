@@ -218,7 +218,9 @@ func (r *FormDefinitionResource) Create(ctx context.Context, request resource.Cr
 	}
 	created, err := r.client.Create(ctx, input)
 	if created.ID == "" {
-		if err != nil {
+		if err != nil && !isAmbiguous(err) {
+			response.Diagnostics.AddError("Unable to create Form definition", err.Error())
+		} else if err != nil {
 			response.Diagnostics.AddError("Form definition creation outcome is unknown", "HubSpot did not return a generated form ID. Inspect active forms in HubSpot and import the exact generated ID if creation succeeded; the provider did not search by name. Original error: "+err.Error())
 		} else {
 			response.Diagnostics.AddError("Form definition creation outcome is unknown", "HubSpot omitted the generated form ID. Inspect active forms in HubSpot and import the exact generated ID if creation succeeded; the provider did not search by name.")

@@ -160,6 +160,17 @@ func TestFormDefinitionImportIDRequiresCanonicalGeneratedUUID(t *testing.T) {
 	}
 }
 
+func TestFormDefinitionCreateErrorClassification(t *testing.T) {
+	known := &hubspot.Error{Operation: "form-create", Status: 400}
+	if isAmbiguous(known) {
+		t.Fatal("known HTTP rejection classified as an ambiguous create")
+	}
+	unknown := &hubspot.Error{Operation: "form-create", Ambiguous: true}
+	if !isAmbiguous(unknown) {
+		t.Fatal("transport-ambiguous create was not classified as ambiguous")
+	}
+}
+
 func supportedFormDefinitionForTest(t *testing.T) hubspot.FormDefinition {
 	t.Helper()
 	write, diagnostics := formWriteFromModel(context.Background(), supportedFormModelForTest())
