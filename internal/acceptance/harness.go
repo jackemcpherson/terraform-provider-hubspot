@@ -491,6 +491,38 @@ func (s *Session) OpaqueStateMapNestedStrings(address, mapAttribute, nestedAttri
 	return result
 }
 
+func (s *Session) OpaqueOutputStringMap(name string) map[string]string {
+	s.t.Helper()
+	output, err := s.commandOutput("output", "-json", name)
+	if err != nil {
+		s.t.Fatalf("%s output inspection failed: %v", s.engine, err)
+	}
+	values := make(map[string]string)
+	if err := json.Unmarshal([]byte(output), &values); err != nil {
+		s.t.Fatalf("decode %s string-map output %s", s.engine, name)
+	}
+	return values
+}
+
+func (s *Session) RequireStateAddresses(expected ...string) {
+	s.t.Helper()
+	output, err := s.commandOutput("state", "list")
+	if err != nil {
+		s.t.Fatalf("%s state address inspection failed: %v", s.engine, err)
+	}
+	actual := strings.Fields(output)
+	sort.Strings(actual)
+	sort.Strings(expected)
+	if len(actual) != len(expected) {
+		s.t.Fatalf("state addresses = %v, want %v", actual, expected)
+	}
+	for index := range expected {
+		if actual[index] != expected[index] {
+			s.t.Fatalf("state addresses = %v, want %v", actual, expected)
+		}
+	}
+}
+
 func (s *Session) RequireStateAbsent(address string) {
 	s.t.Helper()
 	output, err := s.commandOutput("show", "-json", "-no-color")

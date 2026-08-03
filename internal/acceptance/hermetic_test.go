@@ -29,6 +29,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -112,17 +113,7 @@ func runHermeticConsumerModuleLifecycle(t *testing.T, engine acceptance.Engine, 
 	if _, err := exec.LookPath(string(engine)); err != nil {
 		t.Skipf("pinned %s executable is not installed", engine)
 	}
-	demoRepo := os.Getenv("HUBSPOT_DEMO_REPO")
-	if demoRepo == "" {
-		demoRepo = filepath.Join("..", "..", "..", "terraform-hubspot-demo")
-	}
-	moduleSource, err := filepath.Abs(filepath.Join(demoRepo, "modules", "crm-schema"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(moduleSource, "main.tf")); err != nil {
-		t.Fatalf("consumer crm-schema module is required: %v", err)
-	}
+	moduleSource := consumerModuleSource(t, "crm-schema")
 
 	server := hermeticServer(t, 333000333)
 	t.Setenv("HUBSPOT_ACCESS_TOKEN", hermeticToken)
@@ -145,6 +136,186 @@ func runHermeticConsumerModuleLifecycle(t *testing.T, engine acceptance.Engine, 
 		session.RequirePropertyAbsent("contacts", "tf_acc_hermetic_module_select")
 		session.RequirePropertyGroupAbsent("contacts", "tf_acc_hermetic_module_group")
 	})
+}
+
+func TestHermeticFormDefinitionModuleLifecycle(t *testing.T) {
+	runHermeticFormDefinitionModuleLifecycle(t, acceptance.OpenTofu, "registry.opentofu.org/jackemcpherson/hubspot")
+}
+
+func TestHermeticFormDefinitionModuleLifecycleTerraformParity(t *testing.T) {
+	runHermeticFormDefinitionModuleLifecycle(t, acceptance.Terraform, "registry.terraform.io/jackemcpherson/hubspot")
+}
+
+func runHermeticFormDefinitionModuleLifecycle(t *testing.T, engine acceptance.Engine, providerSource string) {
+	t.Helper()
+	if _, err := exec.LookPath(string(engine)); err != nil {
+		t.Skipf("pinned %s executable is not installed", engine)
+	}
+	moduleSource := consumerModuleSource(t, "form-definition")
+	fake := acceptance.NewFakeHubSpot(hermeticToken, 333000334)
+	server := httptest.NewServer(fake)
+	t.Cleanup(server.Close)
+	clients := newFakeHubSpotClients(t, fake, hermeticToken)
+	t.Setenv("HUBSPOT_ACCESS_TOKEN", hermeticToken)
+	validForms := `{
+    default_form = {
+      name = "Default module form"
+    }
+    override_form = {
+      name = "Override module form"
+      email = {
+        label                  = "Work email"
+        description            = "Updated contact email"
+        placeholder            = "work@example.com"
+        required               = false
+        blocked_email_domains  = ["example.com"]
+        use_default_block_list = false
+      }
+      configuration = {
+        language                         = "en"
+        allow_link_to_reset_known_values = true
+        pre_populate_known_values        = true
+        recaptcha_enabled                = false
+        thank_you_text                   = "Updated thank you"
+      }
+      display_options = {
+        submit_button_text = "Send"
+        style = {
+          label_text_size          = "14px"
+          label_text_color         = "#123456"
+          legal_consent_text_size  = "13px"
+          legal_consent_text_color = "#234567"
+          help_text_size           = "12px"
+          help_text_color          = "#345678"
+          font_family              = "Helvetica Neue, sans-serif"
+          background_width         = "95.5%"
+          submit_font_color        = "#456789"
+          submit_alignment         = "center"
+          submit_size              = "10px 20px"
+          submit_color             = "#00a4bd"
+        }
+      }
+    }
+  }`
+	valid := hermeticFormModuleConfig(server.URL, providerSource, moduleSource, validForms)
+	acceptance.Run(t, acceptance.Options{
+		Engine: engine, Shard: acceptance.FreeProperties,
+		Prefix: "tf_acc_hermetic_form_module_", LedgerPath: t.TempDir() + "/cleanup.jsonl", ProbeBaseURL: server.URL,
+	}, func(session *acceptance.Session) {
+		session.GetModules(valid)
+		invalidKey := hermeticFormModuleConfig(server.URL, providerSource, moduleSource, `{
+    "Bad-Key" = { name = "Invalid key" }
+  }`)
+		session.RequirePlanFailure(invalidKey, "Invalid value for variable")
+		duplicateNames := hermeticFormModuleConfig(server.URL, providerSource, moduleSource, `{
+    first  = { name = "Duplicate remote name" }
+    second = { name = "Duplicate remote name" }
+  }`)
+		session.RequirePlanFailure(duplicateNames, "Invalid value for variable")
+		malformedPresentation := hermeticFormModuleConfig(server.URL, providerSource, moduleSource, `{
+    malformed = {
+      name = "Malformed presentation"
+      display_options = { style = { submit_color = "#fff" } }
+    }
+  }`)
+		session.RequirePlanFailure(malformedPresentation, "Invalid form color")
+
+		session.Apply(valid)
+		session.RequireEmptyPlan(valid)
+		session.RequireStateAddresses(
+			`module.forms.hubspot_form_definition.this["default_form"]`,
+			`module.forms.hubspot_form_definition.this["override_form"]`,
+		)
+		ids := session.OpaqueOutputStringMap("form_ids")
+		if len(ids) != 2 || ids["default_form"] == "" || ids["override_form"] == "" || ids["default_form"] == ids["override_form"] {
+			t.Fatalf("module ID output did not preserve stable keyed identities: %v", ids)
+		}
+
+		ctx := context.Background()
+		defaultForm, err := clients.Forms.Get(ctx, ids["default_form"])
+		if err != nil {
+			t.Fatal(err)
+		}
+		expectedDefault := fakeFormWrite()
+		expectedDefault.Name = "Default module form"
+		expectedDefault.FieldGroups[0].Fields[0].Label = "Email address"
+		if !reflect.DeepEqual(defaultForm.FormDefinitionWrite, expectedDefault) {
+			t.Fatalf("module defaults = %#v, want %#v", defaultForm.FormDefinitionWrite, expectedDefault)
+		}
+
+		overrideForm, err := clients.Forms.Get(ctx, ids["override_form"])
+		if err != nil {
+			t.Fatal(err)
+		}
+		expectedOverride := fakeFormWrite()
+		expectedOverride.Name = "Override module form"
+		field := &expectedOverride.FieldGroups[0].Fields[0]
+		field.Label = "Work email"
+		field.Description = "Updated contact email"
+		field.Placeholder = "work@example.com"
+		field.Required = false
+		field.Validation.BlockedEmailDomains = []string{"example.com"}
+		field.Validation.UseDefaultBlockList = false
+		expectedOverride.Configuration.AllowLinkToResetKnownValues = true
+		expectedOverride.Configuration.PrePopulateKnownValues = true
+		expectedOverride.Configuration.RecaptchaEnabled = false
+		expectedOverride.Configuration.PostSubmitAction.Value = "Updated thank you"
+		expectedOverride.DisplayOptions.SubmitButtonText = "Send"
+		expectedOverride.DisplayOptions.Style.LabelTextSize = "14px"
+		expectedOverride.DisplayOptions.Style.LabelTextColor = "#123456"
+		expectedOverride.DisplayOptions.Style.LegalConsentTextSize = "13px"
+		expectedOverride.DisplayOptions.Style.LegalConsentTextColor = "#234567"
+		expectedOverride.DisplayOptions.Style.HelpTextSize = "12px"
+		expectedOverride.DisplayOptions.Style.HelpTextColor = "#345678"
+		expectedOverride.DisplayOptions.Style.FontFamily = "Helvetica Neue, sans-serif"
+		expectedOverride.DisplayOptions.Style.BackgroundWidth = "95.5%"
+		expectedOverride.DisplayOptions.Style.SubmitFontColor = "#456789"
+		expectedOverride.DisplayOptions.Style.SubmitAlignment = "center"
+		expectedOverride.DisplayOptions.Style.SubmitSize = "10px 20px"
+		expectedOverride.DisplayOptions.Style.SubmitColor = "#00a4bd"
+		if !reflect.DeepEqual(overrideForm.FormDefinitionWrite, expectedOverride) {
+			t.Fatalf("module overrides = %#v, want %#v", overrideForm.FormDefinitionWrite, expectedOverride)
+		}
+
+		renamedForms := strings.Replace(validForms, "default_form", "primary_form", 1)
+		renamed := hermeticFormModuleConfig(server.URL, providerSource, moduleSource, renamedForms) + `
+moved {
+  from = module.forms.hubspot_form_definition.this["default_form"]
+  to   = module.forms.hubspot_form_definition.this["primary_form"]
+}
+`
+		createCount := fake.FormCreateCount()
+		session.Apply(renamed)
+		session.RequireStateAddresses(
+			`module.forms.hubspot_form_definition.this["override_form"]`,
+			`module.forms.hubspot_form_definition.this["primary_form"]`,
+		)
+		renamedIDs := session.OpaqueOutputStringMap("form_ids")
+		if renamedIDs["primary_form"] != ids["default_form"] || fake.FormCreateCount() != createCount {
+			t.Fatal("explicit moved block did not preserve the generated form identity")
+		}
+
+		session.Destroy(renamed)
+		if active := fake.ActiveFormIDs(); len(active) != 0 {
+			t.Fatalf("module destroy left active forms: %v", active)
+		}
+	})
+}
+
+func consumerModuleSource(t *testing.T, name string) string {
+	t.Helper()
+	demoRepo := os.Getenv("HUBSPOT_DEMO_REPO")
+	if demoRepo == "" {
+		demoRepo = filepath.Join("..", "..", "..", "terraform-hubspot-demo")
+	}
+	moduleSource, err := filepath.Abs(filepath.Join(demoRepo, "modules", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(moduleSource, "main.tf")); err != nil {
+		t.Fatalf("consumer %s module is required: %v", name, err)
+	}
+	return moduleSource
 }
 
 // --- property group lifecycle ---
@@ -777,6 +948,32 @@ module "schema" {
   }
 }
 `, providerSource, hermeticToken, apiBaseURL, moduleSource, groupLabel, textDescription, options)
+}
+
+func hermeticFormModuleConfig(apiBaseURL, providerSource, moduleSource, forms string) string {
+	return fmt.Sprintf(`
+terraform {
+  required_providers {
+    hubspot = {
+      source = %q
+    }
+  }
+}
+
+provider "hubspot" {
+  access_token = %q
+  api_base_url = %q
+}
+
+module "forms" {
+  source = %q
+  forms  = %s
+}
+
+output "form_ids" {
+  value = module.forms.ids
+}
+`, providerSource, hermeticToken, apiBaseURL, moduleSource, forms)
 }
 
 func hermeticV016CompatibilityConfig(apiBaseURL, providerSource string) string {
