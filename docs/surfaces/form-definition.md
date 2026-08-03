@@ -41,10 +41,14 @@ non-replayed PATCH containing only changed supported top-level subtrees, reads
 the exact ID back, and reports convergence only when every planned managed value
 matches. A semantic no-op sends no PATCH.
 
-Create sends one non-replayed POST. If HubSpot returns a generated ID before the
-response or verification fails, that ID remains in state for refresh or exact
-import. If no ID is known, identify the active form in HubSpot and import its
-exact generated ID; the provider never guesses from name or payload similarity.
+Create sends one non-replayed POST. The wire request supplies HubSpot's required
+creation and update timestamps plus `archived = false`; this service metadata is
+not Terraform desired state and is never included in PATCH. HubSpot's returned
+`[""]` sentinel for no blocked email domains is normalized to the configured
+empty list. If HubSpot returns a generated ID before the response or verification
+fails, that ID remains in state for refresh or exact import. If no ID is known,
+identify the active form in HubSpot and import its exact generated ID; the
+provider never guesses from name or payload similarity.
 
 ## Import, external archive, and destroy
 

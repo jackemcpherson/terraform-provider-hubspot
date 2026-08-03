@@ -13,22 +13,27 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestFormClientUsesGeneratedIDLifecycleRoutes(t *testing.T) {
 	wantWrite := canonicalFormWriteForTest()
+	wantTimestamp := time.Date(2026, time.August, 3, 6, 30, 45, 0, time.UTC)
 	requests := make([]string, 0, 4)
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		requests = append(requests, request.Method+" "+request.URL.RequestURI())
 		writer.Header().Set("Content-Type", "application/json")
 		switch request.Method {
 		case http.MethodPost:
-			var got FormDefinitionWrite
+			var got formDefinitionCreate
 			if err := json.NewDecoder(request.Body).Decode(&got); err != nil {
 				t.Fatalf("decode create payload: %v", err)
 			}
-			if !reflect.DeepEqual(got, wantWrite) {
-				t.Fatalf("create payload = %#v, want %#v", got, wantWrite)
+			if !reflect.DeepEqual(got.FormDefinitionWrite, wantWrite) {
+				t.Fatalf("create desired state = %#v, want %#v", got.FormDefinitionWrite, wantWrite)
+			}
+			if got.CreatedAt != wantTimestamp.Format(time.RFC3339) || got.UpdatedAt != wantTimestamp.Format(time.RFC3339) || got.Archived {
+				t.Fatalf("create service metadata = %#v", got)
 			}
 			writer.WriteHeader(http.StatusCreated)
 			io.WriteString(writer, `{"id":"generated-form-7","name":"Managed form","formType":"hubspot"}`)
@@ -41,7 +46,9 @@ func TestFormClientUsesGeneratedIDLifecycleRoutes(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := &FormClient{transport: newTestTransport(t, server.URL)}
+	transport := newTestTransport(t, server.URL)
+	transport.clock = func() time.Time { return wantTimestamp }
+	client := &FormClient{transport: transport}
 	created, err := client.Create(context.Background(), wantWrite)
 	if err != nil {
 		t.Fatal(err)
@@ -109,6 +116,24 @@ func TestFormClientPatchContainsOnlySelectedManagedSubtrees(t *testing.T) {
 		if strings.Contains(string(payload), `"`+excluded+`"`) {
 			t.Fatalf("patch included excluded field %q: %s", excluded, payload)
 		}
+	}
+}
+
+func TestFormClientNormalizesEmptyBlockedDomainSentinel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		io.WriteString(writer, `{"id":"generated-form-7","fieldGroups":[{"fields":[{"validation":{"blockedEmailDomains":[""]}}]}]}`)
+	}))
+	defer server.Close()
+
+	client := &FormClient{transport: newTestTransport(t, server.URL)}
+	form, err := client.Get(context.Background(), "generated-form-7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := form.FieldGroups[0].Fields[0].Validation.BlockedEmailDomains
+	if !reflect.DeepEqual(got, []string{}) {
+		t.Fatalf("blocked email domains = %#v, want empty list", got)
 	}
 }
 

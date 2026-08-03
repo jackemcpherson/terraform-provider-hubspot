@@ -29,6 +29,9 @@ All notable changes to this project are documented here.
 - Align post-publication release observation with the minimal release
   architecture by verifying the registered signing identity and exact GitHub
   asset digests without requiring provenance attestations.
+- Supply the current Forms v3 API's required create-only timestamps and archive
+  marker without promoting service metadata into Terraform state or PATCH, and
+  normalize its empty blocked-domain response sentinel.
 
 ## [0.2.0] - 2026-08-02
 

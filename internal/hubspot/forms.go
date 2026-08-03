@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 )
 
 // FormClient owns the typed Forms v3 lifecycle boundary. Form identity is
@@ -32,6 +33,15 @@ type FormDefinitionWrite struct {
 	Configuration       FormConfiguration       `json:"configuration"`
 	DisplayOptions      FormDisplayOptions      `json:"displayOptions"`
 	LegalConsentOptions FormLegalConsentOptions `json:"legalConsentOptions"`
+}
+
+// formDefinitionCreate carries service-required creation metadata without
+// promoting it into Terraform desired state or subsequent PATCH requests.
+type formDefinitionCreate struct {
+	FormDefinitionWrite
+	CreatedAt string `json:"createdAt"`
+	UpdatedAt string `json:"updatedAt"`
+	Archived  bool   `json:"archived"`
 }
 
 // FormDefinitionPatch is intentionally limited to the four supported mutable
@@ -137,12 +147,20 @@ type formDefinitionPage struct {
 func formsPath() string { return "/marketing/v3/forms" }
 
 func (c *FormClient) Create(ctx context.Context, input FormDefinitionWrite) (FormDefinition, error) {
-	body, err := json.Marshal(input)
+	timestamp := c.transport.clock().UTC().Format(time.RFC3339)
+	body, err := json.Marshal(formDefinitionCreate{
+		FormDefinitionWrite: input,
+		CreatedAt:           timestamp,
+		UpdatedAt:           timestamp,
+		Archived:            false,
+	})
 	if err != nil {
 		return FormDefinition{}, err
 	}
 	var out FormDefinition
-	if err := c.transport.Do(ctx, Operation{Name: "form-create", Method: http.MethodPost, Path: formsPath(), Replay: ReplayNever}, bytes.NewReader(body), &out); err != nil {
+	err = c.transport.Do(ctx, Operation{Name: "form-create", Method: http.MethodPost, Path: formsPath(), Replay: ReplayNever}, bytes.NewReader(body), &out)
+	normalizeFormDefinition(&out)
+	if err != nil {
 		// A success response can be truncated after its generated ID. Preserve
 		// that identity so the resource can recover by exact-ID read-back.
 		return out, err
@@ -179,11 +197,13 @@ func (c *FormClient) List(ctx context.Context, archived bool) ([]FormDefinition,
 		}, nil, &page); err != nil {
 			return nil, err
 		}
-		for _, form := range page.Results {
+		for index := range page.Results {
+			form := &page.Results[index]
+			normalizeFormDefinition(form)
 			if form.ID == "" {
 				return nil, errors.New("HubSpot form list response omitted id")
 			}
-			results = append(results, form)
+			results = append(results, *form)
 		}
 		next := page.Paging.Next.After
 		if next == "" {
@@ -212,6 +232,7 @@ func (c *FormClient) Update(ctx context.Context, id string, input FormDefinition
 	if err := c.transport.Do(ctx, Operation{Name: "form-update", Method: http.MethodPatch, Path: formsPath() + "/" + url.PathEscape(id), Replay: ReplayNever}, bytes.NewReader(body), &out); err != nil {
 		return FormDefinition{}, err
 	}
+	normalizeFormDefinition(&out)
 	if out.ID == "" {
 		return FormDefinition{}, errors.New("HubSpot form response omitted id")
 	}
@@ -235,10 +256,22 @@ func (c *FormClient) get(ctx context.Context, id string, archived bool) (FormDef
 	if err := c.transport.Do(ctx, Operation{Name: operation, Method: http.MethodGet, Path: path, Replay: ReplaySafe}, nil, &out); err != nil {
 		return FormDefinition{}, err
 	}
+	normalizeFormDefinition(&out)
 	if out.ID == "" {
 		return FormDefinition{}, errors.New("HubSpot form response omitted id")
 	}
 	return out, nil
+}
+
+func normalizeFormDefinition(form *FormDefinition) {
+	for groupIndex := range form.FieldGroups {
+		for fieldIndex := range form.FieldGroups[groupIndex].Fields {
+			domains := form.FieldGroups[groupIndex].Fields[fieldIndex].Validation.BlockedEmailDomains
+			if len(domains) == 1 && domains[0] == "" {
+				form.FieldGroups[groupIndex].Fields[fieldIndex].Validation.BlockedEmailDomains = []string{}
+			}
+		}
+	}
 }
 
 func (c *FormClient) Archive(ctx context.Context, id string) error {
