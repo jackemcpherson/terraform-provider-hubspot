@@ -48,7 +48,7 @@ func (p *Provider) Metadata(_ context.Context, _ provider.MetadataRequest, respo
 
 func (p *Provider) Schema(_ context.Context, _ provider.SchemaRequest, response *provider.SchemaResponse) {
 	response.Schema = schema.Schema{
-		Description: "OpenTofu-first provider for declarative HubSpot CRM configuration.",
+		Description: "OpenTofu-first provider for declarative HubSpot configuration.",
 		Attributes: map[string]schema.Attribute{
 			"access_token": schema.StringAttribute{
 				Optional:            true,

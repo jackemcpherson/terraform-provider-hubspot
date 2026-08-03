@@ -1,16 +1,18 @@
 # HubSpot provider
 
-This provider manages HubSpot CRM configuration with OpenTofu or Terraform. The
-v0.2 release is a public beta and does not promise compatibility with v1.
+This provider manages HubSpot configuration with OpenTofu or Terraform. The
+v0.3 release is a public beta and does not promise compatibility with v1.
 
 Managed resources:
 
 - property groups and property definitions
+- narrowly typed contact email Form definitions
 
 The two property-definition data sources inspect non-sensitive schema metadata.
-The provider does not read CRM records or record values. v0.2 supports ordinary
-non-sensitive CRM property schema for contacts, companies, deals, and tickets on
-HubSpot Free; pipelines, custom schemas, and sensitive definitions are deferred.
+The provider does not read CRM records, record values, form submissions, or
+responses. v0.3 supports ordinary non-sensitive CRM property schema plus one
+contact email Form definition aggregate on HubSpot Free; pipelines, custom
+schemas, and sensitive definitions are deferred.
 
 Observed custom-property limit telemetry is advisory, not local admission
 control. Review [permissions, account tiers, and exclusions](docs/permissions-and-limits.md)
@@ -48,6 +50,7 @@ Terraform users can change the source to
 - [Permissions, account tiers, and exclusions](docs/permissions-and-limits.md)
 - [Imports and drift](docs/imports-and-drift.md)
 - [Property lifecycle](docs/property-lifecycle.md)
+- [Form definition surface](docs/surfaces/form-definition.md)
 - [Destroy semantics](docs/destroy-semantics.md)
 - [State portability](docs/state-portability.md)
 - [Troubleshooting](docs/troubleshooting.md)
@@ -74,10 +77,11 @@ localhost build; `make docs-portal-update` intentionally refreshes that digest.
 
 ## Exclusions
 
-v0.2 does not manage CRM records, record values, pipelines, custom schemas,
-association labels, sensitive definitions, OAuth, HubSpot-defined properties, or
-arbitrary HTTP/JSON payloads. It does not migrate state from third-party HubSpot
-providers.
+v0.3 does not manage CRM records, record values, form submissions, pipelines,
+custom schemas, association labels, sensitive definitions, OAuth, consent,
+notification or automation behavior, non-email fields, HubSpot-defined
+properties, or arbitrary HTTP/JSON payloads. It does not migrate state from
+third-party HubSpot providers.
 
 ## Development
 

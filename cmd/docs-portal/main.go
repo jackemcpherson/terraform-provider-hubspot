@@ -25,7 +25,7 @@ func main() {
 	}
 	version := os.Getenv("DOCS_PORTAL_VERSION")
 	if version == "" {
-		version = "0.2.0"
+		version = "0.3.0"
 	}
 	config := docsportal.Config{
 		Provider: providerimpl.New(version)(), ProviderRepo: root, DemoRepo: demo,

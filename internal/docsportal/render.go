@@ -26,15 +26,13 @@ func resetOutput(output string) error {
 
 func renderPortal(config Config, metadata manifest, resources, dataSources []providerType, modules []moduleDoc) error {
 	header := provenanceHeader(metadata)
-	if err := writeFile(filepath.Join(config.OutputDir, "index.html"), page("CRM property schema portal", "", header, `<h1>HubSpot configuration surfaces</h1><p><a href="crm-property-schema.html">CRM property schema</a></p><nav><a href="resources/index.html">Resources</a> · <a href="data-sources/index.html">Data sources</a> · <a href="modules/index.html">Consumer modules</a> · <a href="provenance.json">Provenance</a></nav>`)); err != nil {
+	if err := writeFile(filepath.Join(config.OutputDir, "index.html"), page("HubSpot configuration portal", "", header, `<h1>HubSpot configuration surfaces</h1><ul><li><a href="crm-property-schema.html">CRM property schema</a></li><li><a href="form-definition.html">Form definition</a></li></ul><nav><a href="resources/index.html">Resources</a> · <a href="data-sources/index.html">Data sources</a> · <a href="modules/index.html">Consumer modules</a> · <a href="provenance.json">Provenance</a></nav>`)); err != nil {
 		return err
 	}
-	overview, err := os.ReadFile(filepath.Join(config.ProviderRepo, "docs", "surfaces", "crm-property-schema.md"))
-	if err != nil {
-		return fmt.Errorf("CRM property schema overview: %w", err)
+	if err := writeSurfaceOverview(config, "crm-property-schema", "CRM property schema", `<a href="resources/index.html">Provider resources</a> · <a href="data-sources/index.html">Property discovery</a> · <a href="modules/crm-schema.html">crm-schema module</a>`, header); err != nil {
+		return err
 	}
-	overviewBody := `<h1>CRM property schema</h1><pre class="prose">` + template.HTMLEscapeString(string(overview)) + `</pre><p><a href="resources/index.html">Provider resources</a> · <a href="data-sources/index.html">Property discovery</a> · <a href="modules/crm-schema.html">crm-schema module</a></p>`
-	if err := writeFile(filepath.Join(config.OutputDir, "crm-property-schema.html"), page("CRM property schema", "", header, overviewBody)); err != nil {
+	if err := writeSurfaceOverview(config, "form-definition", "Form definition", `<a href="resources/hubspot_form_definition.html">hubspot_form_definition resource</a> · <a href="modules/form-definition.html">form-definition module</a>`, header); err != nil {
 		return err
 	}
 	if err := writeProviderIndex(config.OutputDir, "resources", "Resources", resources, header); err != nil {
@@ -64,6 +62,15 @@ func renderPortal(config Config, metadata manifest, resources, dataSources []pro
 	return nil
 }
 
+func writeSurfaceOverview(config Config, slug, title, links, header string) error {
+	overview, err := os.ReadFile(filepath.Join(config.ProviderRepo, "docs", "surfaces", slug+".md"))
+	if err != nil {
+		return fmt.Errorf("%s overview: %w", title, err)
+	}
+	body := `<h1>` + template.HTMLEscapeString(title) + `</h1><pre class="prose">` + template.HTMLEscapeString(string(overview)) + `</pre><p>` + links + `</p>`
+	return writeFile(filepath.Join(config.OutputDir, slug+".html"), page(title, "", header, body))
+}
+
 func writeProviderIndex(output, directory, title string, entries []providerType, header string) error {
 	var body strings.Builder
 	fmt.Fprintf(&body, "<h1>%s</h1><ul>", template.HTMLEscapeString(title))
@@ -85,10 +92,10 @@ func writeProviderPage(output, directory string, entry providerType, header, lif
 		fmt.Fprintf(&body, `<h2>Example</h2><pre><code>%s</code></pre>`, template.HTMLEscapeString(entry.Example))
 	}
 	if strings.HasPrefix(directory, "resources") {
-		body.WriteString(`<h2>Import</h2><p>Use exact <code>object_type/name</code> identity.</p>`)
+		body.WriteString(resourceImport(entry.Name))
 	}
 	body.WriteString(lifecycle)
-	body.WriteString(`<p><a href="index.html">Back to index</a> · <a href="../crm-property-schema.html">Surface overview</a></p>`)
+	body.WriteString(`<p><a href="index.html">Back to index</a> · <a href="../` + providerSurface(entry.Name) + `.html">Surface overview</a></p>`)
 	return writeFile(filepath.Join(output, directory, entry.Name+".html"), page(entry.Name, "../", header, body.String()))
 }
 
@@ -108,10 +115,13 @@ func writeModulePage(output string, module moduleDoc, header string) error {
 	writeStringList(&body, "Typed inputs", module.Variables)
 	writeStringList(&body, "Resources", module.Resources)
 	writeStringList(&body, "Outputs", module.Outputs)
-	body.WriteString("<h2>Validation and dependency contract</h2><p>Inputs and validations come from the module HCL below. Property group references create implicit creation and property-first teardown ordering.</p>")
+	body.WriteString(moduleContract(module.Name))
+	if module.Guide != "" {
+		fmt.Fprintf(&body, `<h2>Module guidance</h2><pre class="prose">%s</pre>`, template.HTMLEscapeString(module.Guide))
+	}
 	writeSourceFiles(&body, "Complete usage", module.Usage)
 	writeSourceFiles(&body, "Module source", module.Sources)
-	body.WriteString(`<p><a href="index.html">Back to index</a> · <a href="../crm-property-schema.html">Surface overview</a></p>`)
+	body.WriteString(`<p><a href="index.html">Back to index</a> · <a href="../` + moduleSurface(module.Name) + `.html">Surface overview</a></p>`)
 	return writeFile(filepath.Join(output, "modules", module.Name+".html"), page(module.Name+" module", "../", header, body.String()))
 }
 
@@ -139,10 +149,41 @@ func writeStringList(body *strings.Builder, title string, values []string) {
 }
 
 func resourceLifecycle(name string) string {
+	if name == "hubspot_form_definition" {
+		return "<h2>Lifecycle</h2><p>Refresh and bounded PATCH use the exact generated UUID. Unsupported structure fails closed. Destroy verifies active absence and the same Archived form definition; external archive or complete disappearance plans a new UUID.</p>"
+	}
 	if name == "hubspot_property_group" {
 		return "<h2>Lifecycle</h2><p>Refresh observes label and ordering drift. Destroy archives only after active properties are gone. Active absence permits immediate name reuse.</p>"
 	}
 	return "<h2>Lifecycle</h2><p>Refresh observes scalar and option drift. Destroy archives, confirms the tombstone, and permits immediate same-name creation. Option-value removal does not migrate CRM record values.</p>"
+}
+
+func resourceImport(name string) string {
+	if name == "hubspot_form_definition" {
+		return `<h2>Import</h2><p>Import one supported active form by its exact lowercase generated UUID. Names, URLs, composite identifiers, and Archived form definitions are rejected without mutation.</p>`
+	}
+	return `<h2>Import</h2><p>Use exact <code>object_type/name</code> identity.</p>`
+}
+
+func providerSurface(name string) string {
+	if name == "hubspot_form_definition" {
+		return "form-definition"
+	}
+	return "crm-property-schema"
+}
+
+func moduleSurface(name string) string {
+	if name == "form-definition" {
+		return "form-definition"
+	}
+	return "crm-property-schema"
+}
+
+func moduleContract(name string) string {
+	if name == "form-definition" {
+		return "<h2>Validation and dependency contract</h2><p>Stable map keys own generated identities; names are unique mutable presentation within one module instance. Defaults and typed overrides come from the HCL below. The built-in contacts email Property definition is a semantic prerequisite, not a crm-schema module dependency.</p>"
+	}
+	return "<h2>Validation and dependency contract</h2><p>Inputs and validations come from the module HCL below. Property group references create implicit creation and property-first teardown ordering.</p>"
 }
 
 func provenanceHeader(metadata manifest) string {

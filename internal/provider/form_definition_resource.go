@@ -87,8 +87,8 @@ func (r *FormDefinitionResource) Metadata(_ context.Context, _ resource.Metadata
 func (r *FormDefinitionResource) Schema(_ context.Context, _ resource.SchemaRequest, response *resource.SchemaResponse) {
 	response.Schema = schema.Schema{
 		Version:             0,
-		Description:         "Manages one narrowly typed HubSpot marketing form definition by its generated ID.",
-		MarkdownDescription: "Manages one narrowly typed HubSpot marketing form definition by its generated `id`.",
+		Description:         "Manages one narrowly typed HubSpot Form definition by its generated ID.",
+		MarkdownDescription: "Manages one narrowly typed HubSpot Form definition by its generated `id`.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:            true,

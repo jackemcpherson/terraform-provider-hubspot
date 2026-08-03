@@ -41,6 +41,7 @@ type moduleDoc struct {
 	Outputs   []string
 	Sources   map[string]string
 	Usage     map[string]string
+	Guide     string
 }
 
 var (
@@ -136,7 +137,10 @@ func discoverModules(demoRepo string) ([]moduleDoc, error) {
 		if err != nil || len(files) == 0 {
 			continue
 		}
-		module := moduleDoc{Name: directory.Name(), Sources: make(map[string]string), Usage: make(map[string]string)}
+		module := moduleDoc{
+			Name: directory.Name(), Sources: make(map[string]string), Usage: make(map[string]string),
+			Guide: readOptional(filepath.Join(path, "README.md")),
+		}
 		for _, file := range files {
 			contents, readErr := os.ReadFile(file)
 			if readErr != nil {
@@ -174,6 +178,20 @@ func discoverModules(demoRepo string) ([]moduleDoc, error) {
 		}
 		if usesModule {
 			module.Usage = rootSources
+		}
+		exampleFiles, globErr := filepath.Glob(filepath.Join(demoRepo, "examples", module.Name, "*.tf"))
+		if globErr != nil {
+			return nil, globErr
+		}
+		if len(exampleFiles) > 0 {
+			module.Usage = make(map[string]string, len(exampleFiles))
+			for _, file := range exampleFiles {
+				contents, readErr := os.ReadFile(file)
+				if readErr != nil {
+					return nil, readErr
+				}
+				module.Usage[filepath.Base(file)] = string(contents)
+			}
 		}
 		modules = append(modules, module)
 	}

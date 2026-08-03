@@ -1,10 +1,10 @@
 # Authentication and aliases
 
-Create a HubSpot static app with the least set of schema permissions needed by
-your configuration. Put its access token in `HUBSPOT_ACCESS_TOKEN`; an empty
-provider block reads that variable. `access_token` is sensitive when supplied as
-a provider argument, but environment-based authentication keeps it out of HCL
-and state.
+Create a HubSpot static app with the least set of configuration permissions
+needed by your resources and data sources. Put its access token in
+`HUBSPOT_ACCESS_TOKEN`; an empty provider block reads that variable.
+`access_token` is sensitive when supplied as a provider argument, but
+environment-based authentication keeps it out of HCL and state.
 
 Provider configuration does not contact HubSpot. The first resource or data
 source request reports a missing or rejected token.

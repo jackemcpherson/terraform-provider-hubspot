@@ -1,12 +1,10 @@
 # Destroy semantics
 
-`terraform destroy` (or removing a resource block and applying) never deletes
-CRM configuration outright. HubSpot's schema APIs only support archival:
-archived CRM configuration is removed from active use, not absent. It stops
-appearing in default listings and stops accepting new values, but the
-underlying record HubSpot holds for it is retained. Neither managed resource
-in this provider has a restore operation; reversing an archive requires
-HubSpot's own UI or API outside this provider.
+`terraform destroy` (or removing a resource block and applying) archives the
+managed configuration surfaces in this provider rather than purging them.
+Archived configuration is removed from active use while the underlying HubSpot
+record is retained. No managed resource in this provider has a restore
+operation; reversal, where HubSpot supports it at all, is outside the provider.
 
 ## hubspot_property_group
 
@@ -48,3 +46,19 @@ the first place; see [property lifecycle](property-lifecycle.md).
 **Non-destructive alternative:** `tofu state rm hubspot_property.<name>` (or
 `terraform state rm ...`) removes the resource from Terraform state without
 contacting HubSpot. The definition stays active and unmanaged.
+
+## hubspot_form_definition
+
+Destroy archives the exact generated form UUID. The provider verifies active
+absence and the same UUID in the archived view before removing state. An already
+archived or permanently absent identity completes idempotently; an ambiguous
+archive retains state unless that terminal evidence is available.
+
+Archival stops new submissions and cannot be restored through this provider.
+HubSpot retains the Archived form definition as a tombstone for about three
+months. Reapplying declared configuration creates a new generated UUID; it does
+not restore the tombstone.
+
+**Non-destructive alternative:** `tofu state rm
+hubspot_form_definition.<name>` (or `terraform state rm ...`) leaves the active
+form in HubSpot without provider ownership.
