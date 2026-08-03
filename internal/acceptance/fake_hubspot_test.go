@@ -53,6 +53,53 @@ func TestFakeHubSpotAccountInfoReportsConfiguredPortal(t *testing.T) {
 	}
 }
 
+func TestFakeHubSpotFormLifecycleUsesGeneratedIDAndTerminalArchive(t *testing.T) {
+	fake := acceptance.NewFakeHubSpot("sentinel", 1)
+	clients := newFakeHubSpotClients(t, fake, "sentinel")
+	ctx := context.Background()
+
+	created, err := clients.Forms.Create(ctx, fakeFormWrite())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.ID != "form-1" || created.Archived {
+		t.Fatalf("created form = %#v", created)
+	}
+	active, err := clients.Forms.Get(ctx, created.ID)
+	if err != nil || active.ID != created.ID || active.Name != "Managed form" {
+		t.Fatalf("active form = %#v, %v", active, err)
+	}
+	if err := clients.Forms.Archive(ctx, created.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := clients.Forms.Get(ctx, created.ID); err == nil {
+		t.Fatal("archived form remained visible in the active view")
+	}
+	archived, err := clients.Forms.GetArchived(ctx, created.ID)
+	if err != nil || archived.ID != created.ID || !archived.Archived {
+		t.Fatalf("archived form = %#v, %v", archived, err)
+	}
+	if err := clients.Forms.Archive(ctx, created.ID); err == nil {
+		t.Fatal("terminal archive accepted a second delete")
+	}
+}
+
+func fakeFormWrite() hubspot.FormDefinitionWrite {
+	return hubspot.FormDefinitionWrite{
+		FormType: "hubspot", Name: "Managed form",
+		FieldGroups: []hubspot.FormFieldGroup{{GroupType: "default_group", RichTextType: "text", Fields: []hubspot.FormField{{
+			ObjectTypeID: "0-1", Name: "email", DependentFields: []hubspot.FormDependentField{}, Label: "Email",
+			FieldType: "email", Required: true, Validation: hubspot.FormFieldValidation{BlockedEmailDomains: []string{}, UseDefaultBlockList: true},
+		}}}},
+		Configuration: hubspot.FormConfiguration{
+			Editable: true, PostSubmitAction: hubspot.FormPostSubmitAction{Type: "thank_you", Value: "Thank you"},
+			Language: "en", Cloneable: true, RecaptchaEnabled: true, Archivable: true, NotifyRecipients: []string{},
+		},
+		DisplayOptions:      hubspot.FormDisplayOptions{Theme: "default_style", SubmitButtonText: "Submit", Style: hubspot.FormStyle{}},
+		LegalConsentOptions: hubspot.FormLegalConsentOptions{Type: "none"},
+	}
+}
+
 func TestFakeHubSpotPropertyGroupArchivalIsNotDeletionButBecomesUnreadable(t *testing.T) {
 	fake := acceptance.NewFakeHubSpot("sentinel", 1)
 	clients := newFakeHubSpotClients(t, fake, "sentinel")

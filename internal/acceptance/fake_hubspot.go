@@ -18,7 +18,7 @@ import (
 )
 
 // FakeHubSpot is a stateful in-process fake of the HubSpot API surfaces this
-// provider uses: property groups, property definitions, pipelines and
+// provider uses: property groups, property definitions, pipelines, forms,
 // stages, and account-info. Construct one fresh instance per test with
 // NewFakeHubSpot and serve it with httptest.NewServer; all state access is
 // mutex-guarded so it tolerates concurrent requests from the Terraform CLI.
@@ -49,6 +49,11 @@ type FakeHubSpot struct {
 	pipelines      map[string]map[string]*hubspot.Pipeline
 	nextPipelineID int
 	nextStageID    int
+
+	// forms retains both active definitions and archived tombstones under the
+	// generated Forms v3 ID. Archived visibility is selected explicitly.
+	forms      map[string]*hubspot.FormDefinition
+	nextFormID int
 }
 
 // NewFakeHubSpot returns a fake with fresh, empty state authenticating
@@ -61,6 +66,7 @@ func NewFakeHubSpot(token string, portalID int64) *FakeHubSpot {
 		groups:     make(map[string]map[string]*hubspot.PropertyGroup),
 		properties: make(map[string]map[string]*fakePropertyVersions),
 		pipelines:  make(map[string]map[string]*hubspot.Pipeline),
+		forms:      make(map[string]*hubspot.FormDefinition),
 	}
 }
 
@@ -79,9 +85,84 @@ func (f *FakeHubSpot) ServeHTTP(response http.ResponseWriter, request *http.Requ
 		f.handleProperties(response, request, segments[3:])
 	case len(segments) >= 4 && segments[0] == "crm" && segments[1] == "pipelines" && segments[2] == "2026-03":
 		f.handlePipelines(response, request, segments[3:])
+	case len(segments) >= 3 && segments[0] == "marketing" && segments[1] == "v3" && segments[2] == "forms":
+		f.handleForms(response, request, segments[3:])
 	default:
 		writeFakeError(response, http.StatusNotFound, "OBJECT_NOT_FOUND", "", "No route matched this request.")
 	}
+}
+
+// --- form definitions ---
+
+func (f *FakeHubSpot) handleForms(response http.ResponseWriter, request *http.Request, rest []string) {
+	switch len(rest) {
+	case 0:
+		f.handleFormCollection(response, request)
+	case 1:
+		f.handleFormItem(response, request, rest[0])
+	default:
+		writeFakeError(response, http.StatusNotFound, "OBJECT_NOT_FOUND", "", "No route matched this request.")
+	}
+}
+
+func (f *FakeHubSpot) handleFormCollection(response http.ResponseWriter, request *http.Request) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if request.Method != http.MethodPost {
+		writeFakeError(response, http.StatusMethodNotAllowed, "VALIDATION_ERROR", "", "Unsupported method.")
+		return
+	}
+	var body hubspot.FormDefinitionWrite
+	if !decodeFakeBody(response, request, &body) {
+		return
+	}
+	if !supportedFakeForm(body) {
+		writeFakeError(response, http.StatusBadRequest, "VALIDATION_ERROR", "", "The form did not match the supported typed definition.")
+		return
+	}
+	f.nextFormID++
+	id := "form-" + strconv.Itoa(f.nextFormID)
+	form := &hubspot.FormDefinition{ID: id, Archived: false, FormDefinitionWrite: body}
+	f.forms[id] = form
+	writeFakeJSON(response, http.StatusCreated, *form)
+}
+
+func (f *FakeHubSpot) handleFormItem(response http.ResponseWriter, request *http.Request, id string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	form, exists := f.forms[id]
+	switch request.Method {
+	case http.MethodGet:
+		archived := request.URL.Query().Get("archived") == "true"
+		if !exists || form.Archived != archived {
+			writeFakeError(response, http.StatusNotFound, "OBJECT_NOT_FOUND", "", "No form definition matched this identity.")
+			return
+		}
+		writeFakeJSON(response, http.StatusOK, *form)
+	case http.MethodDelete:
+		if !exists || form.Archived {
+			writeFakeError(response, http.StatusNotFound, "OBJECT_NOT_FOUND", "", "No active form definition matched this identity.")
+			return
+		}
+		form.Archived = true
+		response.WriteHeader(http.StatusNoContent)
+	default:
+		writeFakeError(response, http.StatusMethodNotAllowed, "VALIDATION_ERROR", "", "Unsupported method.")
+	}
+}
+
+func supportedFakeForm(form hubspot.FormDefinitionWrite) bool {
+	if form.FormType != "hubspot" || form.Name == "" || len(form.FieldGroups) != 1 ||
+		form.FieldGroups[0].GroupType != "default_group" || form.FieldGroups[0].RichTextType != "text" ||
+		len(form.FieldGroups[0].Fields) != 1 {
+		return false
+	}
+	field := form.FieldGroups[0].Fields[0]
+	return field.ObjectTypeID == "0-1" && !field.Hidden && field.Name == "email" && field.FieldType == "email" &&
+		len(field.DependentFields) == 0 && !form.Configuration.CreateNewContactForNewEmail && form.Configuration.Editable &&
+		form.Configuration.PostSubmitAction.Type == "thank_you" && form.Configuration.Cloneable && !form.Configuration.NotifyContactOwner &&
+		form.Configuration.Archivable && len(form.Configuration.NotifyRecipients) == 0 && !form.DisplayOptions.RenderRawHTML &&
+		form.DisplayOptions.Theme == "default_style" && form.LegalConsentOptions.Type == "none"
 }
 
 func (f *FakeHubSpot) authenticated(request *http.Request) bool {

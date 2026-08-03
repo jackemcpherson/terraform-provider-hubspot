@@ -138,6 +138,31 @@ func (s *Session) RequirePipelineArchived(objectType, compositeID string) {
 	}
 }
 
+func (s *Session) RequireFormArchived(id string) {
+	s.t.Helper()
+	clients, err := s.probeClients()
+	if err != nil {
+		s.t.Fatalf("configure sanitized form terminal probe: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	if _, err := clients.Forms.Get(ctx, id); err == nil {
+		s.t.Fatal("form terminal probe found active configuration after archive")
+	} else {
+		var apiError *hubspot.Error
+		if !errors.As(err, &apiError) || apiError.Status != 404 {
+			s.t.Fatalf("verify active form absence: %s", SanitizedHubSpotError(err))
+		}
+	}
+	form, err := clients.Forms.GetArchived(ctx, id)
+	if err != nil {
+		s.t.Fatalf("verify archived form terminal state: %s", SanitizedHubSpotError(err))
+	}
+	if form.ID != id || !form.Archived {
+		s.t.Fatal("form terminal probe did not verify the exact archived generated ID")
+	}
+}
+
 func (s *Session) MutatePropertyGroupLabel(objectType, name, label string) {
 	s.MutatePropertyGroup(objectType, name, label, nil)
 }

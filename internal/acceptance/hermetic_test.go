@@ -156,6 +156,38 @@ func TestHermeticPropertyGroupLifecycleTerraformParity(t *testing.T) {
 	runHermeticPropertyGroupLifecycle(t, acceptance.Terraform, "registry.terraform.io/jackemcpherson/hubspot")
 }
 
+// --- form definition lifecycle ---
+
+func TestHermeticFormDefinitionLifecycle(t *testing.T) {
+	runHermeticFormDefinitionLifecycle(t, acceptance.OpenTofu, "registry.opentofu.org/jackemcpherson/hubspot")
+}
+
+func TestHermeticFormDefinitionLifecycleTerraformParity(t *testing.T) {
+	runHermeticFormDefinitionLifecycle(t, acceptance.Terraform, "registry.terraform.io/jackemcpherson/hubspot")
+}
+
+func runHermeticFormDefinitionLifecycle(t *testing.T, engine acceptance.Engine, providerSource string) {
+	t.Helper()
+	if _, err := exec.LookPath(string(engine)); err != nil {
+		t.Skipf("pinned %s executable is not installed", engine)
+	}
+	server := hermeticServer(t, 555000555)
+	t.Setenv("HUBSPOT_ACCESS_TOKEN", hermeticToken)
+	config := hermeticFormDefinitionConfig(server, providerSource)
+	acceptance.Run(t, acceptance.Options{
+		Engine: engine, Shard: acceptance.FreeProperties,
+		Prefix: "tf_acc_hermetic_form_", LedgerPath: t.TempDir() + "/cleanup.jsonl", ProbeBaseURL: server,
+	}, func(session *acceptance.Session) {
+		session.Apply(config)
+		session.RequireStateStringPrefix("hubspot_form_definition.test", "id", "form-")
+		id := session.OpaqueStateString("hubspot_form_definition.test", "id")
+		session.RequireEmptyPlan(config)
+		session.Destroy(config)
+		session.RequireStateAbsent("hubspot_form_definition.test")
+		session.RequireFormArchived(id)
+	})
+}
+
 func runHermeticPropertyGroupLifecycle(t *testing.T, engine acceptance.Engine, providerSource string) {
 	t.Helper()
 	if _, err := exec.LookPath(string(engine)); err != nil {
@@ -328,6 +360,64 @@ func runHermeticPropertyDefinitionLifecycle(t *testing.T, engine acceptance.Engi
 }
 
 // --- shared config builders ---
+
+func hermeticFormDefinitionConfig(apiBaseURL, providerSource string) string {
+	return fmt.Sprintf(`
+terraform {
+  required_providers {
+    hubspot = {
+      source = %q
+    }
+  }
+}
+
+provider "hubspot" {
+  access_token = %q
+  api_base_url = %q
+}
+
+resource "hubspot_form_definition" "test" {
+  name = "Hermetic managed form"
+
+  field_groups = [{
+    fields = [{
+      label                  = "Email address"
+      description            = "Contact email"
+      placeholder            = "name@example.com"
+      required               = true
+      blocked_email_domains  = []
+      use_default_block_list = true
+    }]
+  }]
+
+  configuration = {
+    language                         = "en"
+    allow_link_to_reset_known_values = false
+    pre_populate_known_values        = false
+    recaptcha_enabled                = true
+    thank_you_text                   = "Thank you"
+  }
+
+  display_options = {
+    submit_button_text = "Submit"
+    style = {
+      label_text_size          = "13px"
+      label_text_color         = "#33475b"
+      legal_consent_text_size  = "12px"
+      legal_consent_text_color = "#33475b"
+      help_text_size           = "11px"
+      help_text_color          = "#516f90"
+      font_family              = "Arial, sans-serif"
+      background_width         = "100%%"
+      submit_font_color        = "#ffffff"
+      submit_alignment         = "left"
+      submit_size              = "12px 24px"
+      submit_color             = "#ff7a59"
+    }
+  }
+}
+`, providerSource, hermeticToken, apiBaseURL)
+}
 
 func hermeticConsumerModuleConfig(apiBaseURL, providerSource, moduleSource string, updated bool) string {
 	groupLabel := "Hermetic module group"

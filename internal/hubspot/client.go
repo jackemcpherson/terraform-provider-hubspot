@@ -25,6 +25,7 @@ type ClientSet struct {
 	Pipelines      *PipelineClient
 	Schemas        *SchemaClient
 	AccountInfo    *AccountInfoClient
+	Forms          *FormClient
 }
 
 func NewClientSet(config TransportConfig) (*ClientSet, error) {
@@ -38,6 +39,7 @@ func NewClientSet(config TransportConfig) (*ClientSet, error) {
 		Pipelines:      &PipelineClient{transport: transport},
 		Schemas:        &SchemaClient{transport: transport},
 		AccountInfo:    &AccountInfoClient{transport: transport},
+		Forms:          &FormClient{transport: transport},
 	}, nil
 }
 
