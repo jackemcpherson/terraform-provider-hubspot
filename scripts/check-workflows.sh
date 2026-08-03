@@ -148,7 +148,7 @@ test "$(grep -c 'contents: write' "$release")" -eq 1 || { echo 'release needs on
 grep -q 'checks: read' "$release"
 grep -q 'goreleaser/goreleaser-action@' "$release"
 grep -q 'version: v2.17.0' "$release"
-grep -q 'args: release --clean' "$release"
+grep -q 'args: release --clean --release-notes docs/releases/v0.3.0.md' "$release"
 grep -q 'git tag -s' "$release"
 grep -q 'git push .*refs/tags/' "$release"
 test "$(grep -c 'GPG_PRIVATE_KEY:.*secrets.GPG_PRIVATE_KEY' "$release")" -eq 1 || {

@@ -60,7 +60,7 @@ signs:
       - '${artifact}'
 
 changelog:
-  disable: true
+  disable: false
 
 release:
   extra_files:

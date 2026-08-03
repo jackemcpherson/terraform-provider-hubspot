@@ -2,7 +2,27 @@
 
 All notable changes to this project are documented here.
 
-## [Unreleased]
+## [0.3.0] - 2026-08-03
+
+### Added
+
+- Manage one narrowly typed active contact email Form definition through
+  `hubspot_form_definition`, with generated-ID import, supported presentation
+  reconciliation, and verified terminal archival.
+- Publish the stable-keyed `form-definition` consumer module, generated resource
+  reference, executable examples, and cumulative Northstar configuration.
+- Prove the Forms lifecycle under OpenTofu and Terraform through the behavioral
+  fake, protected capability shard, cumulative candidate journey, and one
+  identity-preserving post-publication state migration between registry sources.
+
+### Changed
+
+- Generalize portal locking, protected credentials, maintenance reporting, and
+  manual cleanup across CRM property schema, Forms, and the union-scoped
+  cumulative Northstar lifecycle.
+- Keep the v0.3.0 contract deliberately narrow: one contact email field,
+  no-consent presentation, no submissions, notifications, automation, arbitrary
+  fields, or restore/purge promise.
 
 ### Fixed
 

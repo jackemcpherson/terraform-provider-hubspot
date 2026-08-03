@@ -1,7 +1,7 @@
 # HubSpot provider
 
 This provider manages HubSpot configuration with OpenTofu or Terraform. The
-v0.3 release is a public beta and does not promise compatibility with v1.
+v0.3.0 release is a public beta and does not promise compatibility with v1.
 
 Managed resources:
 
@@ -10,7 +10,7 @@ Managed resources:
 
 The two property-definition data sources inspect non-sensitive schema metadata.
 The provider does not read CRM records, record values, form submissions, or
-responses. v0.3 supports ordinary non-sensitive CRM property schema plus one
+responses. v0.3.0 supports ordinary non-sensitive CRM property schema plus one
 contact email Form definition aggregate on HubSpot Free; pipelines, custom
 schemas, and sensitive definitions are deferred.
 
@@ -77,7 +77,7 @@ localhost build; `make docs-portal-update` intentionally refreshes that digest.
 
 ## Exclusions
 
-v0.3 does not manage CRM records, record values, form submissions, pipelines,
+v0.3.0 does not manage CRM records, record values, form submissions, pipelines,
 custom schemas, association labels, sensitive definitions, OAuth, consent,
 notification or automation behavior, non-email fields, HubSpot-defined
 properties, or arbitrary HTTP/JSON payloads. It does not migrate state from

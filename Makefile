@@ -53,6 +53,7 @@ check-go:
 
 check-docs:
 	@./scripts/check-license.sh
+	@./scripts/check-release-candidate.sh
 	@test -f docs/index.md || { echo "generated provider docs missing"; exit 1; }
 	@test -f terraform-registry-manifest.json || { echo "protocol manifest missing"; exit 1; }
 	@test -f registry-addresses.txt || { echo "registry address inventory missing"; exit 1; }

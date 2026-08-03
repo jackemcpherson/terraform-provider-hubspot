@@ -129,7 +129,10 @@ validates the Registry manifest schema, exact archive/manifest/checksum closure,
 and archive binary names, then installs the built archive through filesystem
 mirrors with both OpenTofu and Terraform. The public registries expose no
 pre-publication dry-run API, so this local/CI gate is the publication-contract
-test. Production uses the same GoReleaser configuration directly.
+test. Production uses the same GoReleaser configuration directly. The protected
+job passes the reviewed `docs/releases/v0.3.0.md` file as custom release notes.
+GoReleaser changelog processing must remain enabled because its
+`--release-notes` input is ignored when changelog generation is disabled.
 
 The shared registry platform set uses standard `{OS}_{ARCH}` names. In particular,
 the 32-bit ARM build is GOARM=6 and is published as `*_arm.zip`; do not suffix the
