@@ -236,6 +236,14 @@ func (s *Session) Destroy(config string) {
 	}
 }
 
+func (s *Session) RequireDestroyFailure(config string) {
+	s.t.Helper()
+	s.writeConfig(config)
+	if err := s.command("destroy", "-auto-approve", "-input=false", "-no-color"); err == nil {
+		s.t.Fatal("acceptance destroy unexpectedly succeeded")
+	}
+}
+
 func (s *Session) RequireValidationFailure(config, title string) {
 	s.t.Helper()
 	s.writeConfig(config)

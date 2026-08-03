@@ -137,6 +137,29 @@ func TestFormDefinitionPatchSelectsOnlyChangedTopLevelSubtrees(t *testing.T) {
 	}
 }
 
+func TestFormDefinitionImportIDRequiresCanonicalGeneratedUUID(t *testing.T) {
+	valid := []string{
+		"01234567-89ab-cdef-0123-456789abcdef",
+		"ffffffff-ffff-ffff-ffff-ffffffffffff",
+	}
+	invalid := []string{
+		"", "managed-form", "form-1", "hubspot/01234567-89ab-cdef-0123-456789abcdef",
+		"https://api.hubapi.com/marketing/v3/forms/01234567-89ab-cdef-0123-456789abcdef",
+		" 01234567-89ab-cdef-0123-456789abcdef", "01234567-89AB-CDEF-0123-456789ABCDEF",
+		"0123456789abcdef0123456789abcdef", "01234567-89ab-cdef-0123-456789abcdeg",
+	}
+	for _, id := range valid {
+		if !validFormImportID(id) {
+			t.Errorf("valid generated ID %q rejected", id)
+		}
+	}
+	for _, id := range invalid {
+		if validFormImportID(id) {
+			t.Errorf("invalid generated ID %q accepted", id)
+		}
+	}
+}
+
 func supportedFormDefinitionForTest(t *testing.T) hubspot.FormDefinition {
 	t.Helper()
 	write, diagnostics := formWriteFromModel(context.Background(), supportedFormModelForTest())

@@ -20,7 +20,10 @@ var (
 	formPercentPattern    = regexp.MustCompile(`^` + formPositiveNumber + `%$`)
 	formSubmitSizePattern = regexp.MustCompile(`^` + formPositiveNumber + `px ` + formPositiveNumber + `px$`)
 	formDomainPattern     = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$`)
+	formImportIDPattern   = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 )
+
+func validFormImportID(id string) bool { return formImportIDPattern.MatchString(id) }
 
 type formRequiredTextValidator struct{ kind string }
 

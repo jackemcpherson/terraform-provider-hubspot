@@ -5,10 +5,13 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -23,6 +26,8 @@ import (
 // fixed structural and behavioral fields are provider-owned rather than part
 // of the practitioner's configuration contract.
 type FormDefinitionResource struct{ client *hubspot.FormClient }
+
+var _ resource.ResourceWithImportState = (*FormDefinitionResource)(nil)
 
 type formDefinitionResourceModel struct {
 	ID             types.String `tfsdk:"id"`
@@ -212,17 +217,35 @@ func (r *FormDefinitionResource) Create(ctx context.Context, request resource.Cr
 		return
 	}
 	created, err := r.client.Create(ctx, input)
-	if err != nil {
-		appendHubSpotDiagnostic(&response.Diagnostics, "Form definition creation failed", err)
+	if created.ID == "" {
+		if err != nil {
+			response.Diagnostics.AddError("Form definition creation outcome is unknown", "HubSpot did not return a generated form ID. Inspect active forms in HubSpot and import the exact generated ID if creation succeeded; the provider did not search by name. Original error: "+err.Error())
+		} else {
+			response.Diagnostics.AddError("Form definition creation outcome is unknown", "HubSpot omitted the generated form ID. Inspect active forms in HubSpot and import the exact generated ID if creation succeeded; the provider did not search by name.")
+		}
 		return
 	}
-	verified, err := r.client.Get(ctx, created.ID)
-	if err != nil {
-		appendHubSpotDiagnostic(&response.Diagnostics, "Form definition creation verification failed", err)
+	if !validFormImportID(created.ID) {
+		response.Diagnostics.AddError("Form definition creation identity is invalid", "HubSpot returned a non-canonical generated ID. No state was written and the provider did not search by name.")
+		return
+	}
+	recovery := plan
+	recovery.ID = types.StringValue(created.ID)
+	response.Diagnostics.Append(response.State.Set(ctx, &recovery)...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+	verified, verifyErr := r.client.Get(ctx, created.ID)
+	if verifyErr != nil {
+		if err != nil {
+			response.Diagnostics.AddError("Form definition creation outcome requires recovery", "HubSpot returned generated ID "+created.ID+" with an ambiguous create response, and exact-ID read-back failed. The generated ID was retained in state; retry refresh or import that exact ID. Create error: "+err.Error()+". Verification error: "+verifyErr.Error())
+		} else {
+			response.Diagnostics.AddError("Form definition creation outcome requires recovery", "HubSpot returned generated ID "+created.ID+", but exact-ID read-back failed. The generated ID was retained in state; retry refresh or import that exact ID. Verification error: "+verifyErr.Error())
+		}
 		return
 	}
 	if verified.ID != created.ID || verified.Archived {
-		response.Diagnostics.AddError("Form definition creation was not verified", "HubSpot did not return the same active generated form ID; state was not recorded.")
+		response.Diagnostics.AddError("Form definition creation was not verified", "HubSpot did not return the same active generated form ID; the generated ID was retained in state for exact recovery.")
 		return
 	}
 	model, diagnostics := formModelFromDefinition(verified)
@@ -231,8 +254,11 @@ func (r *FormDefinitionResource) Create(ctx context.Context, request resource.Cr
 		return
 	}
 	if !formModelsEqualManaged(model, plan) {
-		response.Diagnostics.AddError("Form definition creation was not verified", "HubSpot did not return every planned managed value; state was not recorded.")
+		response.Diagnostics.AddError("Form definition creation was not verified", "HubSpot did not return every planned managed value; the generated ID was retained in state for exact recovery.")
 		return
+	}
+	if err != nil {
+		response.Diagnostics.AddWarning("Create response was ambiguous", "HubSpot returned a create error, but exact read-back of the generated ID matched every planned managed value.")
 	}
 	response.Diagnostics.Append(response.State.Set(ctx, &model)...)
 }
@@ -246,7 +272,20 @@ func (r *FormDefinitionResource) Read(ctx context.Context, request resource.Read
 	form, err := r.client.Get(ctx, state.ID.ValueString())
 	if err != nil {
 		if isNotFound(err) {
-			response.State.RemoveResource(ctx)
+			archived, archivedErr := r.client.GetArchived(ctx, state.ID.ValueString())
+			if archivedErr == nil {
+				if archived.ID != state.ID.ValueString() || !archived.Archived {
+					response.Diagnostics.AddError("Form definition absence was not verified", "The archived view returned a different or active identity; prior state was retained.")
+					return
+				}
+				response.State.RemoveResource(ctx)
+				return
+			}
+			if isNotFound(archivedErr) {
+				response.State.RemoveResource(ctx)
+				return
+			}
+			appendHubSpotDiagnostic(&response.Diagnostics, "Form definition archived-view refresh failed", archivedErr)
 			return
 		}
 		appendHubSpotDiagnostic(&response.Diagnostics, "Form definition refresh failed", err)
@@ -321,35 +360,127 @@ func (r *FormDefinitionResource) Delete(ctx context.Context, request resource.De
 		return
 	}
 	id := state.ID.ValueString()
+	presence, err := r.formPresence(ctx, id)
+	if err != nil {
+		appendHubSpotDiagnostic(&response.Diagnostics, "Form definition archival preflight failed", err)
+		return
+	}
+	if presence == formPresenceArchived || presence == formPresenceAbsent {
+		response.State.RemoveResource(ctx)
+		return
+	}
 	archiveErr := r.client.Archive(ctx, id)
-	if active, activeErr := r.client.Get(ctx, id); activeErr == nil {
-		response.Diagnostics.AddError("Form definition archival was not verified", "HubSpot still returned active form "+active.ID+" after archival; state was retained.")
-		return
-	} else if !isNotFound(activeErr) {
+	presence, verifyErr := r.waitForFormTerminal(ctx, id)
+	if verifyErr != nil {
 		if archiveErr != nil {
 			appendHubSpotDiagnostic(&response.Diagnostics, "Form definition archival failed", archiveErr)
 		} else {
-			appendHubSpotDiagnostic(&response.Diagnostics, "Form definition active-absence verification failed", activeErr)
+			appendHubSpotDiagnostic(&response.Diagnostics, "Form definition archival verification failed", verifyErr)
 		}
 		return
 	}
-	archived, archivedErr := r.client.GetArchived(ctx, id)
-	if archivedErr != nil {
-		if archiveErr != nil {
-			appendHubSpotDiagnostic(&response.Diagnostics, "Form definition archival failed", archiveErr)
-		} else {
-			appendHubSpotDiagnostic(&response.Diagnostics, "Form definition archival verification failed", archivedErr)
-		}
-		return
-	}
-	if archived.ID != id || !archived.Archived {
-		response.Diagnostics.AddError("Form definition archival was not verified", "HubSpot did not return the exact generated ID in archived state; state was retained.")
+	if presence != formPresenceArchived && presence != formPresenceAbsent {
+		response.Diagnostics.AddError("Form definition archival was not verified", "HubSpot did not prove exact active absence or terminal archived state; prior state was retained.")
 		return
 	}
 	if archiveErr != nil {
 		response.Diagnostics.AddWarning("Archive response was ambiguous", "HubSpot returned an archive error, but exact active absence and the same archived form ID were verified.")
 	}
 	response.State.RemoveResource(ctx)
+}
+
+type formPresence int
+
+const (
+	formPresenceActive formPresence = iota
+	formPresenceArchived
+	formPresenceAbsent
+)
+
+func (r *FormDefinitionResource) formPresence(ctx context.Context, id string) (formPresence, error) {
+	active, err := r.client.Get(ctx, id)
+	if err == nil {
+		if active.ID != id || active.Archived {
+			return formPresenceActive, errors.New("active form identity was not exact")
+		}
+		return formPresenceActive, nil
+	}
+	if !isNotFound(err) {
+		return formPresenceActive, err
+	}
+	archived, archivedErr := r.client.GetArchived(ctx, id)
+	if archivedErr == nil {
+		if archived.ID != id || !archived.Archived {
+			return formPresenceArchived, errors.New("archived form identity was not exact")
+		}
+		return formPresenceArchived, nil
+	}
+	if isNotFound(archivedErr) {
+		return formPresenceAbsent, nil
+	}
+	return formPresenceAbsent, archivedErr
+}
+
+func (r *FormDefinitionResource) waitForFormTerminal(ctx context.Context, id string) (formPresence, error) {
+	const attempts = 5
+	for attempt := 0; attempt < attempts; attempt++ {
+		presence, err := r.formPresence(ctx, id)
+		if err != nil {
+			return presence, err
+		}
+		if presence != formPresenceActive {
+			return presence, nil
+		}
+		if attempt+1 < attempts {
+			timer := time.NewTimer(100 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return formPresenceActive, ctx.Err()
+			case <-timer.C:
+			}
+		}
+	}
+	return formPresenceActive, errors.New("form remained active after bounded archive verification")
+}
+
+func (r *FormDefinitionResource) ImportState(ctx context.Context, request resource.ImportStateRequest, response *resource.ImportStateResponse) {
+	if !validFormImportID(request.ID) {
+		response.Diagnostics.AddAttributeError(path.Root("id"), "Invalid form definition import ID", "Use one exact lowercase generated form UUID. Names, URLs, and composite identifiers are not accepted.")
+		return
+	}
+	form, err := r.client.Get(ctx, request.ID)
+	if err != nil {
+		if !isNotFound(err) {
+			appendHubSpotDiagnostic(&response.Diagnostics, "Form definition import failed", err)
+			return
+		}
+		archived, archivedErr := r.client.GetArchived(ctx, request.ID)
+		if archivedErr == nil {
+			if archived.ID == request.ID && archived.Archived {
+				response.Diagnostics.AddAttributeError(path.Root("id"), "Archived form definition cannot be imported", "Import requires the exact generated ID of an active supported Form definition.")
+				return
+			}
+			response.Diagnostics.AddAttributeError(path.Root("id"), "Form definition import identity mismatch", "HubSpot did not return the exact archived generated ID; no state was written.")
+			return
+		}
+		if isNotFound(archivedErr) {
+			response.Diagnostics.AddAttributeError(path.Root("id"), "Form definition was not found", "Neither the active nor archived view contained the exact generated form ID; no state was written.")
+			return
+		}
+		appendHubSpotDiagnostic(&response.Diagnostics, "Form definition archived-view import check failed", archivedErr)
+		return
+	}
+	if form.ID != request.ID || form.Archived {
+		response.Diagnostics.AddAttributeError(path.Root("id"), "Form definition import identity mismatch", "HubSpot did not return the same active generated form ID; no state was written.")
+		return
+	}
+	model, diagnostics := formModelFromDefinition(form)
+	response.Diagnostics.Append(diagnostics...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+	response.Diagnostics.Append(response.State.Set(ctx, &model)...)
 }
 
 func formWriteFromModel(ctx context.Context, model formDefinitionResourceModel) (hubspot.FormDefinitionWrite, diag.Diagnostics) {

@@ -56,13 +56,31 @@ type FakeHubSpot struct {
 	forms            map[string]*fakeFormDefinition
 	nextFormID       int
 	nextFormRevision int64
+	formCreateCount  int
+	nextFormFault    FormFault
+	failActiveReads  int
 }
 
 type fakeFormDefinition struct {
 	definition      hubspot.FormDefinition
 	unknownMetadata map[string]any
 	patchCount      int
+	deleteCount     int
 }
+
+// FormFault selects one deterministic, one-shot ambiguous outcome for Forms
+// lifecycle recovery tests.
+type FormFault string
+
+const (
+	FormFaultCreateUnknown      FormFault = "create_unknown"
+	FormFaultCreateKnown        FormFault = "create_known"
+	FormFaultCreateUnverifiable FormFault = "create_unverifiable"
+	FormFaultUpdateApplied      FormFault = "update_applied"
+	FormFaultUpdateNotApplied   FormFault = "update_not_applied"
+	FormFaultArchiveApplied     FormFault = "archive_applied"
+	FormFaultArchiveNotApplied  FormFault = "archive_not_applied"
+)
 
 // NewFakeHubSpot returns a fake with fresh, empty state authenticating
 // exactly one bearer token and reporting portalID from its account-info
@@ -129,12 +147,27 @@ func (f *FakeHubSpot) handleFormCollection(response http.ResponseWriter, request
 		return
 	}
 	f.nextFormID++
-	id := "form-" + strconv.Itoa(f.nextFormID)
+	id := fmt.Sprintf("00000000-0000-4000-8000-%012d", f.nextFormID)
 	timestamp := f.advanceFormTimestamp()
 	form := &fakeFormDefinition{definition: hubspot.FormDefinition{
 		ID: id, Archived: false, CreatedAt: timestamp, UpdatedAt: timestamp, FormDefinitionWrite: body,
 	}}
 	f.forms[id] = form
+	f.formCreateCount++
+	switch f.nextFormFault {
+	case FormFaultCreateUnknown:
+		f.nextFormFault = ""
+		writeFakeError(response, http.StatusServiceUnavailable, "TEMPORARY_UNAVAILABLE", "", "The create outcome is ambiguous.")
+		return
+	case FormFaultCreateKnown, FormFaultCreateUnverifiable:
+		if f.nextFormFault == FormFaultCreateUnverifiable {
+			f.failActiveReads++
+		}
+		f.nextFormFault = ""
+		response.WriteHeader(http.StatusCreated)
+		fmt.Fprintf(response, `{"id":%q,"archived":"invalid"}`, id)
+		return
+	}
 	writeFakeFormJSON(response, http.StatusCreated, form)
 }
 
@@ -145,6 +178,11 @@ func (f *FakeHubSpot) handleFormItem(response http.ResponseWriter, request *http
 	switch request.Method {
 	case http.MethodGet:
 		archived := request.URL.Query().Get("archived") == "true"
+		if !archived && f.failActiveReads > 0 {
+			f.failActiveReads--
+			writeFakeError(response, http.StatusBadRequest, "VALIDATION_ERROR", "", "The active form read could not be verified.")
+			return
+		}
 		if !exists || form.definition.Archived != archived {
 			writeFakeError(response, http.StatusNotFound, "OBJECT_NOT_FOUND", "", "No form definition matched this identity.")
 			return
@@ -180,16 +218,37 @@ func (f *FakeHubSpot) handleFormItem(response http.ResponseWriter, request *http
 			writeFakeError(response, http.StatusBadRequest, "VALIDATION_ERROR", "", "The patch did not preserve the supported typed definition.")
 			return
 		}
-		form.definition = candidate
 		form.patchCount++
+		if f.nextFormFault == FormFaultUpdateNotApplied {
+			f.nextFormFault = ""
+			writeFakeError(response, http.StatusServiceUnavailable, "TEMPORARY_UNAVAILABLE", "", "The update outcome is ambiguous.")
+			return
+		}
+		form.definition = candidate
 		form.definition.UpdatedAt = f.advanceFormTimestamp()
+		if f.nextFormFault == FormFaultUpdateApplied {
+			f.nextFormFault = ""
+			writeFakeError(response, http.StatusServiceUnavailable, "TEMPORARY_UNAVAILABLE", "", "The update outcome is ambiguous.")
+			return
+		}
 		writeFakeFormJSON(response, http.StatusOK, form)
 	case http.MethodDelete:
 		if !exists || form.definition.Archived {
 			writeFakeError(response, http.StatusNotFound, "OBJECT_NOT_FOUND", "", "No active form definition matched this identity.")
 			return
 		}
+		form.deleteCount++
+		if f.nextFormFault == FormFaultArchiveNotApplied {
+			f.nextFormFault = ""
+			writeFakeError(response, http.StatusServiceUnavailable, "TEMPORARY_UNAVAILABLE", "", "The archive outcome is ambiguous.")
+			return
+		}
 		form.definition.Archived = true
+		if f.nextFormFault == FormFaultArchiveApplied {
+			f.nextFormFault = ""
+			writeFakeError(response, http.StatusServiceUnavailable, "TEMPORARY_UNAVAILABLE", "", "The archive outcome is ambiguous.")
+			return
+		}
 		response.WriteHeader(http.StatusNoContent)
 	default:
 		writeFakeError(response, http.StatusMethodNotAllowed, "VALIDATION_ERROR", "", "Unsupported method.")
@@ -223,6 +282,50 @@ func (f *FakeHubSpot) FormPatchCount(id string) int {
 		return form.patchCount
 	}
 	return 0
+}
+
+func (f *FakeHubSpot) FormCreateCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.formCreateCount
+}
+
+func (f *FakeHubSpot) FormDeleteCount(id string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if form := f.forms[id]; form != nil {
+		return form.deleteCount
+	}
+	return 0
+}
+
+func (f *FakeHubSpot) ActiveFormIDs() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	ids := make([]string, 0, len(f.forms))
+	for id, form := range f.forms {
+		if !form.definition.Archived {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+func (f *FakeHubSpot) FailNextFormOperation(fault FormFault) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.nextFormFault = fault
+}
+
+func (f *FakeHubSpot) DisappearForm(id string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, exists := f.forms[id]; !exists {
+		return false
+	}
+	delete(f.forms, id)
+	return true
 }
 
 func (f *FakeHubSpot) DriftFormPresentation(id string) bool {
@@ -268,6 +371,17 @@ func (f *FakeHubSpot) InjectUnsupportedFormStructure(id string) bool {
 		return false
 	}
 	form.definition.FieldGroups[0].Fields = append(form.definition.FieldGroups[0].Fields, form.definition.FieldGroups[0].Fields[0])
+	return true
+}
+
+func (f *FakeHubSpot) InjectNonHubSpotForm(id string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	form := f.forms[id]
+	if form == nil || form.definition.Archived {
+		return false
+	}
+	form.definition.FormType = "legacy"
 	return true
 }
 

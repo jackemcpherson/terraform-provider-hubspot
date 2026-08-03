@@ -23,6 +23,7 @@
 package acceptance_test
 
 import (
+	"context"
 	"fmt"
 	"net/http/httptest"
 	"os"
@@ -166,6 +167,114 @@ func TestHermeticFormDefinitionLifecycleTerraformParity(t *testing.T) {
 	runHermeticFormDefinitionLifecycle(t, acceptance.Terraform, "registry.terraform.io/jackemcpherson/hubspot")
 }
 
+func TestHermeticFormDefinitionRecovery(t *testing.T) {
+	runHermeticFormDefinitionRecovery(t, acceptance.OpenTofu, "registry.opentofu.org/jackemcpherson/hubspot")
+}
+
+func TestHermeticFormDefinitionRecoveryTerraformParity(t *testing.T) {
+	runHermeticFormDefinitionRecovery(t, acceptance.Terraform, "registry.terraform.io/jackemcpherson/hubspot")
+}
+
+func runHermeticFormDefinitionRecovery(t *testing.T, engine acceptance.Engine, providerSource string) {
+	t.Helper()
+	if _, err := exec.LookPath(string(engine)); err != nil {
+		t.Skipf("pinned %s executable is not installed", engine)
+	}
+	fake := acceptance.NewFakeHubSpot(hermeticToken, 555000556)
+	server := httptest.NewServer(fake)
+	t.Cleanup(server.Close)
+	clients := newFakeHubSpotClients(t, fake, hermeticToken)
+	t.Setenv("HUBSPOT_ACCESS_TOKEN", hermeticToken)
+	initial := hermeticFormDefinitionConfig(server.URL, providerSource, false)
+	updated := hermeticFormDefinitionConfig(server.URL, providerSource, true)
+	const address = "hubspot_form_definition.test"
+	acceptance.Run(t, acceptance.Options{
+		Engine: engine, Shard: acceptance.FreeProperties,
+		Prefix: "tf_acc_hermetic_form_recovery_", LedgerPath: t.TempDir() + "/cleanup.jsonl", ProbeBaseURL: server.URL,
+	}, func(session *acceptance.Session) {
+		fake.FailNextFormOperation(acceptance.FormFaultCreateUnknown)
+		session.RequireApplyFailure(initial)
+		if fake.FormCreateCount() != 1 {
+			t.Fatalf("ambiguous create was sent %d times, want exactly once", fake.FormCreateCount())
+		}
+		unknownIDs := fake.ActiveFormIDs()
+		if len(unknownIDs) != 1 {
+			t.Fatalf("ambiguous create produced active IDs %v", unknownIDs)
+		}
+		session.RequireStateAbsent(address)
+		session.Import(address, unknownIDs[0])
+		session.RequireEmptyPlan(initial)
+
+		fake.FailNextFormOperation(acceptance.FormFaultUpdateApplied)
+		session.Apply(updated)
+		if got := fake.FormPatchCount(unknownIDs[0]); got != 1 {
+			t.Fatalf("applied ambiguous update sent %d PATCH requests, want 1", got)
+		}
+		session.RequireEmptyPlan(updated)
+
+		fake.FailNextFormOperation(acceptance.FormFaultUpdateNotApplied)
+		session.RequireApplyFailure(initial)
+		session.RequireStateString(address, "name", "Hermetic managed form updated")
+		if got := fake.FormPatchCount(unknownIDs[0]); got != 2 {
+			t.Fatalf("unapplied ambiguous update sent %d PATCH requests, want 2 total", got)
+		}
+		session.Apply(initial)
+		if got := fake.FormPatchCount(unknownIDs[0]); got != 3 {
+			t.Fatalf("explicit update retry sent %d PATCH requests, want 3 total", got)
+		}
+
+		fake.FailNextFormOperation(acceptance.FormFaultArchiveNotApplied)
+		session.RequireDestroyFailure(initial)
+		session.RequireStateString(address, "id", unknownIDs[0])
+		if got := fake.FormDeleteCount(unknownIDs[0]); got != 1 {
+			t.Fatalf("unapplied ambiguous archive sent %d DELETE requests, want 1", got)
+		}
+		fake.FailNextFormOperation(acceptance.FormFaultArchiveApplied)
+		session.Destroy(initial)
+		session.RequireStateAbsent(address)
+		if got := fake.FormDeleteCount(unknownIDs[0]); got != 2 {
+			t.Fatalf("explicit archive retry sent %d DELETE requests, want 2 total", got)
+		}
+
+		fake.FailNextFormOperation(acceptance.FormFaultCreateKnown)
+		session.Apply(initial)
+		knownID := session.OpaqueStateString(address, "id")
+		if fake.FormCreateCount() != 2 || knownID == unknownIDs[0] {
+			t.Fatal("known-ID ambiguous create did not recover exactly once")
+		}
+		session.RequireEmptyPlan(initial)
+		if err := clients.Forms.Archive(context.Background(), knownID); err != nil {
+			t.Fatal(err)
+		}
+		session.Destroy(initial)
+		if fake.FormDeleteCount(knownID) != 1 {
+			t.Fatal("destroy replayed DELETE for an already archived form")
+		}
+
+		fake.FailNextFormOperation(acceptance.FormFaultCreateUnverifiable)
+		session.RequireApplyFailure(initial)
+		if fake.FormCreateCount() != 3 {
+			t.Fatalf("unverifiable create was sent %d times, want exactly three total creates", fake.FormCreateCount())
+		}
+		session.RequireStateStringPrefix(address, "id", "00000000-0000-4000-8000-")
+		unverifiableID := session.OpaqueStateString(address, "id")
+		session.RemoveState(address)
+		session.Import(address, unverifiableID)
+		session.RequireEmptyPlan(initial)
+		if !fake.DisappearForm(unverifiableID) {
+			t.Fatal("remove recovered form from both views")
+		}
+		session.Destroy(initial)
+		session.Destroy(initial)
+		if fake.FormDeleteCount(unverifiableID) != 0 {
+			t.Fatal("destroy sent DELETE for a permanently absent form")
+		}
+		if active := fake.ActiveFormIDs(); len(active) != 0 {
+			t.Fatalf("active forms remained after recovery cleanup: %v", active)
+		}
+	})
+}
+
 func runHermeticFormDefinitionLifecycle(t *testing.T, engine acceptance.Engine, providerSource string) {
 	t.Helper()
 	if _, err := exec.LookPath(string(engine)); err != nil {
@@ -174,6 +283,7 @@ func runHermeticFormDefinitionLifecycle(t *testing.T, engine acceptance.Engine, 
 	fake := acceptance.NewFakeHubSpot(hermeticToken, 555000555)
 	server := httptest.NewServer(fake)
 	t.Cleanup(server.Close)
+	clients := newFakeHubSpotClients(t, fake, hermeticToken)
 	t.Setenv("HUBSPOT_ACCESS_TOKEN", hermeticToken)
 	initial := hermeticFormDefinitionConfig(server.URL, providerSource, false)
 	acceptance.Run(t, acceptance.Options{
@@ -181,7 +291,7 @@ func runHermeticFormDefinitionLifecycle(t *testing.T, engine acceptance.Engine, 
 		Prefix: "tf_acc_hermetic_form_", LedgerPath: t.TempDir() + "/cleanup.jsonl", ProbeBaseURL: server.URL,
 	}, func(session *acceptance.Session) {
 		session.Apply(initial)
-		session.RequireStateStringPrefix("hubspot_form_definition.test", "id", "form-")
+		session.RequireStateStringPrefix("hubspot_form_definition.test", "id", "00000000-0000-4000-8000-")
 		id := session.OpaqueStateString("hubspot_form_definition.test", "id")
 		session.RequireEmptyPlan(initial)
 		if got := fake.FormPatchCount(id); got != 0 {
@@ -242,9 +352,89 @@ func runHermeticFormDefinitionLifecycle(t *testing.T, engine acceptance.Engine, 
 			t.Fatal("clear unsupported form structure")
 		}
 
+		const address = "hubspot_form_definition.test"
+		session.RemoveState(address)
+		session.Import(address, id)
+		session.RequireEmptyPlan(updated)
+		session.RemoveState(address)
+		for _, invalidID := range []string{
+			"Hermetic managed form updated",
+			id + "/presentation",
+			server.URL + "/marketing/v3/forms/" + id,
+			"ABCDEFAB-CDEF-ABCD-EFAB-CDEFABCDEFAB",
+		} {
+			session.RequireImportFailure(updated, address, invalidID, "Invalid form definition import ID")
+		}
+
+		ctx := context.Background()
+		duplicateOne, err := clients.Forms.Create(ctx, fakeFormWrite())
+		if err != nil {
+			t.Fatal(err)
+		}
+		duplicateTwo, err := clients.Forms.Create(ctx, fakeFormWrite())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if duplicateOne.ID == duplicateTwo.ID || duplicateOne.Name != duplicateTwo.Name {
+			t.Fatal("duplicate active form names did not retain distinct generated identities")
+		}
+		archivedFixture, err := clients.Forms.Create(ctx, fakeFormWrite())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := clients.Forms.Archive(ctx, archivedFixture.ID); err != nil {
+			t.Fatal(err)
+		}
+		unsupportedFixture, err := clients.Forms.Create(ctx, fakeFormWrite())
+		if err != nil || !fake.InjectUnsupportedFormStructure(unsupportedFixture.ID) {
+			t.Fatal("create unsupported import fixture")
+		}
+		nonHubSpotFixture, err := clients.Forms.Create(ctx, fakeFormWrite())
+		if err != nil || !fake.InjectNonHubSpotForm(nonHubSpotFixture.ID) {
+			t.Fatal("create non-HubSpot import fixture")
+		}
+		createCount := fake.FormCreateCount()
+		session.RequireImportFailure(updated, address, archivedFixture.ID, "Archived form definition cannot be imported")
+		session.RequireImportFailure(updated, address, unsupportedFixture.ID, "Unsupported HubSpot form definition")
+		session.RequireImportFailure(updated, address, nonHubSpotFixture.ID, "Unsupported HubSpot form definition")
+		if fake.FormCreateCount() != createCount || fake.FormPatchCount(unsupportedFixture.ID) != 0 || fake.FormPatchCount(nonHubSpotFixture.ID) != 0 {
+			t.Fatal("failed import mutated remote form definitions")
+		}
+		session.Import(address, id)
+		session.RequireEmptyPlan(updated)
+		for _, fixtureID := range []string{duplicateOne.ID, duplicateTwo.ID, unsupportedFixture.ID, nonHubSpotFixture.ID} {
+			if err := clients.Forms.Archive(ctx, fixtureID); err != nil {
+				t.Fatalf("archive import fixture %s: %v", fixtureID, err)
+			}
+		}
+
+		if err := clients.Forms.Archive(ctx, id); err != nil {
+			t.Fatal(err)
+		}
+		session.Refresh(updated)
+		session.RequireStateAbsent(address)
+		session.Apply(updated)
+		recreatedAfterArchive := session.OpaqueStateString(address, "id")
+		if recreatedAfterArchive == id {
+			t.Fatal("external archival reused the prior generated form ID")
+		}
+		if !fake.DisappearForm(recreatedAfterArchive) {
+			t.Fatal("remove form from both active and archived views")
+		}
+		session.Refresh(updated)
+		session.RequireStateAbsent(address)
+		session.Apply(updated)
+		recreatedAfterAbsence := session.OpaqueStateString(address, "id")
+		if recreatedAfterAbsence == recreatedAfterArchive {
+			t.Fatal("complete disappearance reused the missing generated form ID")
+		}
 		session.Destroy(updated)
-		session.RequireStateAbsent("hubspot_form_definition.test")
-		session.RequireFormArchived(id)
+		session.Destroy(updated)
+		session.RequireStateAbsent(address)
+		session.RequireFormArchived(recreatedAfterAbsence)
+		if active := fake.ActiveFormIDs(); len(active) != 0 {
+			t.Fatalf("active forms remained after cleanup: %v", active)
+		}
 	})
 }
 

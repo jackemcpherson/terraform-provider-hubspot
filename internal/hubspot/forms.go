@@ -133,7 +133,9 @@ func (c *FormClient) Create(ctx context.Context, input FormDefinitionWrite) (For
 	}
 	var out FormDefinition
 	if err := c.transport.Do(ctx, Operation{Name: "form-create", Method: http.MethodPost, Path: formsPath(), Replay: ReplayNever}, bytes.NewReader(body), &out); err != nil {
-		return FormDefinition{}, err
+		// A success response can be truncated after its generated ID. Preserve
+		// that identity so the resource can recover by exact-ID read-back.
+		return out, err
 	}
 	if out.ID == "" {
 		return FormDefinition{}, errors.New("HubSpot form response omitted id")

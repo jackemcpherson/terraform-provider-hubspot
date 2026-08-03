@@ -126,6 +126,24 @@ func TestFormClientRejectsResponsesWithoutGeneratedID(t *testing.T) {
 	}
 }
 
+func TestFormClientPreservesGeneratedIDFromMalformedSuccessResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		writer.WriteHeader(http.StatusCreated)
+		io.WriteString(writer, `{"id":"01234567-89ab-cdef-0123-456789abcdef","archived":"invalid"}`)
+	}))
+	defer server.Close()
+
+	client := &FormClient{transport: newTestTransport(t, server.URL)}
+	created, err := client.Create(context.Background(), canonicalFormWriteForTest())
+	if err == nil {
+		t.Fatal("create accepted malformed success response")
+	}
+	if created.ID != "01234567-89ab-cdef-0123-456789abcdef" {
+		t.Fatalf("generated ID = %q", created.ID)
+	}
+}
+
 func canonicalFormWriteForTest() FormDefinitionWrite {
 	return FormDefinitionWrite{
 		FormType: "hubspot",
