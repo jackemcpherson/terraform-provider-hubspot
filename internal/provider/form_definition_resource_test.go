@@ -7,6 +7,7 @@ import (
 	"context"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -50,6 +51,127 @@ func TestFormDefinitionResourceSchemaIsExactExplicitContract(t *testing.T) {
 		"background_width", "font_family", "help_text_color", "help_text_size", "label_text_color", "label_text_size",
 		"legal_consent_text_color", "legal_consent_text_size", "submit_alignment", "submit_color", "submit_font_color", "submit_size",
 	)
+}
+
+func TestFormDefinitionRejectsEveryUnsupportedOwnedShape(t *testing.T) {
+	tests := []struct {
+		name     string
+		category string
+		mutate   func(*hubspot.FormDefinition)
+	}{
+		{name: "form type", category: "form type", mutate: func(form *hubspot.FormDefinition) { form.FormType = "captured" }},
+		{name: "additional group", category: "field group", mutate: func(form *hubspot.FormDefinition) { form.FieldGroups = append(form.FieldGroups, form.FieldGroups[0]) }},
+		{name: "group type", category: "field group", mutate: func(form *hubspot.FormDefinition) { form.FieldGroups[0].GroupType = "rich_text" }},
+		{name: "rich text", category: "field group", mutate: func(form *hubspot.FormDefinition) { form.FieldGroups[0].RichText = "unsafe" }},
+		{name: "additional field", category: "email field", mutate: func(form *hubspot.FormDefinition) {
+			form.FieldGroups[0].Fields = append(form.FieldGroups[0].Fields, form.FieldGroups[0].Fields[0])
+		}},
+		{name: "object type", category: "email field", mutate: func(form *hubspot.FormDefinition) { form.FieldGroups[0].Fields[0].ObjectTypeID = "0-2" }},
+		{name: "property name", category: "email field", mutate: func(form *hubspot.FormDefinition) { form.FieldGroups[0].Fields[0].Name = "firstname" }},
+		{name: "field type", category: "email field", mutate: func(form *hubspot.FormDefinition) { form.FieldGroups[0].Fields[0].FieldType = "text" }},
+		{name: "hidden field", category: "email field", mutate: func(form *hubspot.FormDefinition) { form.FieldGroups[0].Fields[0].Hidden = true }},
+		{name: "dependent field", category: "dependent field", mutate: func(form *hubspot.FormDefinition) {
+			form.FieldGroups[0].Fields[0].DependentFields = []hubspot.FormDependentField{{}}
+		}},
+		{name: "default value", category: "default value", mutate: func(form *hubspot.FormDefinition) { form.FieldGroups[0].Fields[0].DefaultValue = "unsafe" }},
+		{name: "consent", category: "consent", mutate: func(form *hubspot.FormDefinition) { form.LegalConsentOptions.Type = "explicit_consent_to_process" }},
+		{name: "notification recipient", category: "notification", mutate: func(form *hubspot.FormDefinition) {
+			form.Configuration.NotifyRecipients = []string{"private@example.com"}
+		}},
+		{name: "owner notification", category: "notification", mutate: func(form *hubspot.FormDefinition) { form.Configuration.NotifyContactOwner = true }},
+		{name: "lifecycle automation", category: "lifecycle", mutate: func(form *hubspot.FormDefinition) {
+			form.Configuration.LifecycleStages = []hubspot.FormLifecycleStage{{ObjectTypeID: "0-1", Value: "lead"}}
+		}},
+		{name: "contact creation", category: "contact creation", mutate: func(form *hubspot.FormDefinition) { form.Configuration.CreateNewContactForNewEmail = true }},
+		{name: "post submit redirect", category: "post-submit", mutate: func(form *hubspot.FormDefinition) { form.Configuration.PostSubmitAction.Type = "redirect_url" }},
+		{name: "raw HTML", category: "rendering", mutate: func(form *hubspot.FormDefinition) { form.DisplayOptions.RenderRawHTML = true }},
+		{name: "theme", category: "theme", mutate: func(form *hubspot.FormDefinition) { form.DisplayOptions.Theme = "canvas" }},
+		{name: "custom CSS", category: "CSS", mutate: func(form *hubspot.FormDefinition) { form.DisplayOptions.CSSClass = "unsafe" }},
+		{name: "not editable", category: "capability", mutate: func(form *hubspot.FormDefinition) { form.Configuration.Editable = false }},
+		{name: "not cloneable", category: "capability", mutate: func(form *hubspot.FormDefinition) { form.Configuration.Cloneable = false }},
+		{name: "not archivable", category: "capability", mutate: func(form *hubspot.FormDefinition) { form.Configuration.Archivable = false }},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			form := supportedFormDefinitionForTest(t)
+			test.mutate(&form)
+			_, diagnostics := formModelFromDefinition(form)
+			if !diagnostics.HasError() {
+				t.Fatal("unsupported remote shape was accepted")
+			}
+			text := diagnostics[0].Summary() + " " + diagnostics[0].Detail()
+			if !strings.Contains(strings.ToLower(text), strings.ToLower(test.category)) {
+				t.Fatalf("diagnostic %q omitted category %q", text, test.category)
+			}
+			if strings.Contains(text, form.ID) || strings.Contains(text, form.Name) {
+				t.Fatalf("diagnostic exposed form identity or content: %q", text)
+			}
+		})
+	}
+}
+
+func TestFormDefinitionPatchSelectsOnlyChangedTopLevelSubtrees(t *testing.T) {
+	state := supportedFormModelForTest()
+	noOp, changed, diagnostics := formPatchFromModels(context.Background(), state, state)
+	if diagnostics.HasError() || changed || !reflect.DeepEqual(noOp, hubspot.FormDefinitionPatch{}) {
+		t.Fatalf("semantic no-op patch = %#v, changed=%v, diagnostics=%#v", noOp, changed, diagnostics)
+	}
+
+	plan := supportedFormModelForTest()
+	plan.Name = types.StringValue("Updated form")
+	display := formDisplayOptionsModel{
+		SubmitButtonText: types.StringValue("Send"),
+		Style:            formStyleValue(supportedFormStyleModelForTest()),
+	}
+	plan.DisplayOptions = formDisplayOptionsValue(display)
+	patch, changed, diagnostics := formPatchFromModels(context.Background(), state, plan)
+	if diagnostics.HasError() || !changed {
+		t.Fatalf("changed patch diagnostics=%#v changed=%v", diagnostics, changed)
+	}
+	if patch.Name == nil || *patch.Name != "Updated form" || patch.DisplayOptions == nil {
+		t.Fatalf("patch omitted changed subtrees: %#v", patch)
+	}
+	if patch.FieldGroups != nil || patch.Configuration != nil {
+		t.Fatalf("patch included unchanged subtrees: %#v", patch)
+	}
+}
+
+func supportedFormDefinitionForTest(t *testing.T) hubspot.FormDefinition {
+	t.Helper()
+	write, diagnostics := formWriteFromModel(context.Background(), supportedFormModelForTest())
+	if diagnostics.HasError() {
+		t.Fatalf("build supported form: %#v", diagnostics)
+	}
+	return hubspot.FormDefinition{ID: "generated-sensitive-id", FormDefinitionWrite: write}
+}
+
+func supportedFormModelForTest() formDefinitionResourceModel {
+	return formDefinitionResourceModel{
+		Name: types.StringValue("Managed form"),
+		FieldGroups: formFieldGroupsValue([]formFieldGroupModel{{Fields: formFieldsValue([]formFieldModel{{
+			Label: types.StringValue("Email address"), Description: types.StringValue("Contact email"), Placeholder: types.StringValue("name@example.com"),
+			Required: types.BoolValue(true), BlockedEmailDomains: types.ListValueMust(types.StringType, nil), UseDefaultBlockList: types.BoolValue(true),
+		}})}}),
+		Configuration: formConfigurationValue(formConfigurationModel{
+			Language: types.StringValue("en"), AllowLinkToResetKnownValues: types.BoolValue(false), PrePopulateKnownValues: types.BoolValue(false),
+			RecaptchaEnabled: types.BoolValue(true), ThankYouText: types.StringValue("Thank you"),
+		}),
+		DisplayOptions: formDisplayOptionsValue(formDisplayOptionsModel{
+			SubmitButtonText: types.StringValue("Submit"), Style: formStyleValue(supportedFormStyleModelForTest()),
+		}),
+	}
+}
+
+func supportedFormStyleModelForTest() formStyleModel {
+	return formStyleModel{
+		LabelTextSize: types.StringValue("13px"), LabelTextColor: types.StringValue("#33475b"),
+		LegalConsentTextSize: types.StringValue("12px"), LegalConsentTextColor: types.StringValue("#33475b"),
+		HelpTextSize: types.StringValue("11px"), HelpTextColor: types.StringValue("#516f90"),
+		FontFamily: types.StringValue("Arial, sans-serif"), BackgroundWidth: types.StringValue("100%"),
+		SubmitFontColor: types.StringValue("#ffffff"), SubmitAlignment: types.StringValue("left"),
+		SubmitSize: types.StringValue("12px 24px"), SubmitColor: types.StringValue("#ff7a59"),
+	}
 }
 
 func TestFormDefinitionWriteOwnsNarrowInvariants(t *testing.T) {

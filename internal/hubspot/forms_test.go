@@ -4,12 +4,14 @@
 package hubspot
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -67,6 +69,46 @@ func TestFormClientUsesGeneratedIDLifecycleRoutes(t *testing.T) {
 	}
 	if !reflect.DeepEqual(requests, wantRequests) {
 		t.Fatalf("requests = %#v, want %#v", requests, wantRequests)
+	}
+}
+
+func TestFormClientPatchContainsOnlySelectedManagedSubtrees(t *testing.T) {
+	var payload []byte
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPatch || request.URL.RequestURI() != "/marketing/v3/forms/generated-form-7" {
+			t.Fatalf("unexpected request: %s %s", request.Method, request.URL.RequestURI())
+		}
+		payload, _ = io.ReadAll(request.Body)
+		writer.Header().Set("Content-Type", "application/json")
+		io.WriteString(writer, `{"id":"generated-form-7","name":"Updated"}`)
+	}))
+	defer server.Close()
+
+	name := "Updated"
+	display := canonicalFormWriteForTest().DisplayOptions
+	display.SubmitButtonText = "Send"
+	client := &FormClient{transport: newTestTransport(t, server.URL)}
+	updated, err := client.Update(context.Background(), "generated-form-7", FormDefinitionPatch{
+		Name: &name, DisplayOptions: &display,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ID != "generated-form-7" {
+		t.Fatalf("updated ID = %q", updated.ID)
+	}
+
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &document); err != nil {
+		t.Fatal(err)
+	}
+	if len(document) != 2 || !bytes.Equal(document["name"], []byte(`"Updated"`)) || len(document["displayOptions"]) == 0 {
+		t.Fatalf("bounded patch = %s", payload)
+	}
+	for _, excluded := range []string{"id", "formType", "createdAt", "updatedAt", "archived", "configuration", "fieldGroups", "legalConsentOptions"} {
+		if strings.Contains(string(payload), `"`+excluded+`"`) {
+			t.Fatalf("patch included excluded field %q: %s", excluded, payload)
+		}
 	}
 }
 

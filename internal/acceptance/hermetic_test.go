@@ -171,18 +171,78 @@ func runHermeticFormDefinitionLifecycle(t *testing.T, engine acceptance.Engine, 
 	if _, err := exec.LookPath(string(engine)); err != nil {
 		t.Skipf("pinned %s executable is not installed", engine)
 	}
-	server := hermeticServer(t, 555000555)
+	fake := acceptance.NewFakeHubSpot(hermeticToken, 555000555)
+	server := httptest.NewServer(fake)
+	t.Cleanup(server.Close)
 	t.Setenv("HUBSPOT_ACCESS_TOKEN", hermeticToken)
-	config := hermeticFormDefinitionConfig(server, providerSource)
+	initial := hermeticFormDefinitionConfig(server.URL, providerSource, false)
 	acceptance.Run(t, acceptance.Options{
 		Engine: engine, Shard: acceptance.FreeProperties,
-		Prefix: "tf_acc_hermetic_form_", LedgerPath: t.TempDir() + "/cleanup.jsonl", ProbeBaseURL: server,
+		Prefix: "tf_acc_hermetic_form_", LedgerPath: t.TempDir() + "/cleanup.jsonl", ProbeBaseURL: server.URL,
 	}, func(session *acceptance.Session) {
-		session.Apply(config)
+		session.Apply(initial)
 		session.RequireStateStringPrefix("hubspot_form_definition.test", "id", "form-")
 		id := session.OpaqueStateString("hubspot_form_definition.test", "id")
-		session.RequireEmptyPlan(config)
-		session.Destroy(config)
+		session.RequireEmptyPlan(initial)
+		if got := fake.FormPatchCount(id); got != 0 {
+			t.Fatalf("semantic no-op sent %d PATCH requests", got)
+		}
+
+		invalid := []struct {
+			old, replacement, title string
+		}{
+			{`name = "Hermetic managed form"`, `name = " "`, "Invalid form presentation"},
+			{`blocked_email_domains  = []`, `blocked_email_domains  = ["https://example.com"]`, "Invalid blocked email domain"},
+			{`language                         = "en"`, `language                         = "fr"`, "Unsupported form language"},
+			{`submit_alignment         = "left"`, `submit_alignment         = "right"`, "Unsupported submit alignment"},
+			{`submit_color             = "#ff7a59"`, `submit_color             = "#fff"`, "Invalid form color"},
+			{`font_family              = "Arial, sans-serif"`, `font_family              = "Arial; color: red"`, "Invalid form font family"},
+			{`background_width         = "100%"`, `background_width         = "0%"`, "Invalid form percentage width"},
+			{`label_text_size          = "13px"`, `label_text_size          = "0px"`, "Invalid form pixel size"},
+			{`submit_size              = "12px 24px"`, `submit_size              = "12px"`, "Invalid form submit size"},
+		}
+		for _, test := range invalid {
+			session.RequirePlanFailure(strings.Replace(initial, test.old, test.replacement, 1), test.title)
+		}
+
+		updated := hermeticFormDefinitionConfig(server.URL, providerSource, true)
+		session.Apply(updated)
+		session.RequireEmptyPlan(updated)
+		if got := fake.FormPatchCount(id); got != 1 {
+			t.Fatalf("bounded managed update sent %d PATCH requests, want 1", got)
+		}
+
+		if !fake.DriftFormPresentation(id) {
+			t.Fatal("inject supported form drift")
+		}
+		session.RequirePlanDiffAttributes(updated, "hubspot_form_definition.test", "configuration", "display_options", "field_groups", "name")
+		session.Apply(updated)
+		session.RequireEmptyPlan(updated)
+		if got := fake.FormPatchCount(id); got != 2 {
+			t.Fatalf("drift repair sent %d total PATCH requests, want 2", got)
+		}
+
+		if !fake.AddFormUnknownMetadata(id) {
+			t.Fatal("inject harmless form metadata")
+		}
+		session.RequireEmptyPlan(updated)
+		if got := fake.FormPatchCount(id); got != 2 {
+			t.Fatalf("harmless metadata caused a PATCH; count = %d", got)
+		}
+
+		if !fake.InjectUnsupportedFormStructure(id) {
+			t.Fatal("inject unsupported form structure")
+		}
+		session.RequirePlanFailure(updated, "Unsupported HubSpot form definition")
+		session.RequireStateString("hubspot_form_definition.test", "name", "Hermetic managed form updated")
+		if got := fake.FormPatchCount(id); got != 2 {
+			t.Fatalf("unsupported drift caused a PATCH; count = %d", got)
+		}
+		if !fake.ClearUnsupportedFormStructure(id) {
+			t.Fatal("clear unsupported form structure")
+		}
+
+		session.Destroy(updated)
 		session.RequireStateAbsent("hubspot_form_definition.test")
 		session.RequireFormArchived(id)
 	})
@@ -361,7 +421,57 @@ func runHermeticPropertyDefinitionLifecycle(t *testing.T, engine acceptance.Engi
 
 // --- shared config builders ---
 
-func hermeticFormDefinitionConfig(apiBaseURL, providerSource string) string {
+func hermeticFormDefinitionConfig(apiBaseURL, providerSource string, updated bool) string {
+	name := "Hermetic managed form"
+	label := "Email address"
+	description := "Contact email"
+	placeholder := "name@example.com"
+	required := true
+	blockedDomains := "[]"
+	useDefaultBlockList := true
+	allowReset := false
+	prePopulate := false
+	recaptcha := true
+	thankYou := "Thank you"
+	submitText := "Submit"
+	labelSize := "13px"
+	labelColor := "#33475b"
+	legalSize := "12px"
+	legalColor := "#33475b"
+	helpSize := "11px"
+	helpColor := "#516f90"
+	fontFamily := "Arial, sans-serif"
+	backgroundWidth := "100%"
+	submitFontColor := "#ffffff"
+	submitAlignment := "left"
+	submitSize := "12px 24px"
+	submitColor := "#ff7a59"
+	if updated {
+		name = "Hermetic managed form updated"
+		label = "Work email"
+		description = "Updated contact email"
+		placeholder = "work@example.com"
+		required = false
+		blockedDomains = `["example.com"]`
+		useDefaultBlockList = false
+		allowReset = true
+		prePopulate = true
+		recaptcha = false
+		thankYou = "Updated thank you"
+		submitText = "Send"
+		labelSize = "14px"
+		labelColor = "#123456"
+		legalSize = "13px"
+		legalColor = "#234567"
+		helpSize = "12px"
+		helpColor = "#345678"
+		fontFamily = "Helvetica Neue, sans-serif"
+		backgroundWidth = "95.5%"
+		submitFontColor = "#456789"
+		submitAlignment = "center"
+		submitSize = "10px 20px"
+		submitColor = "#00a4bd"
+	}
 	return fmt.Sprintf(`
 terraform {
   required_providers {
@@ -377,46 +487,48 @@ provider "hubspot" {
 }
 
 resource "hubspot_form_definition" "test" {
-  name = "Hermetic managed form"
+  name = %q
 
   field_groups = [{
     fields = [{
-      label                  = "Email address"
-      description            = "Contact email"
-      placeholder            = "name@example.com"
-      required               = true
-      blocked_email_domains  = []
-      use_default_block_list = true
+      label                  = %q
+      description            = %q
+      placeholder            = %q
+      required               = %t
+      blocked_email_domains  = %s
+      use_default_block_list = %t
     }]
   }]
 
   configuration = {
     language                         = "en"
-    allow_link_to_reset_known_values = false
-    pre_populate_known_values        = false
-    recaptcha_enabled                = true
-    thank_you_text                   = "Thank you"
+    allow_link_to_reset_known_values = %t
+    pre_populate_known_values        = %t
+    recaptcha_enabled                = %t
+    thank_you_text                   = %q
   }
 
   display_options = {
-    submit_button_text = "Submit"
+    submit_button_text = %q
     style = {
-      label_text_size          = "13px"
-      label_text_color         = "#33475b"
-      legal_consent_text_size  = "12px"
-      legal_consent_text_color = "#33475b"
-      help_text_size           = "11px"
-      help_text_color          = "#516f90"
-      font_family              = "Arial, sans-serif"
-      background_width         = "100%%"
-      submit_font_color        = "#ffffff"
-      submit_alignment         = "left"
-      submit_size              = "12px 24px"
-      submit_color             = "#ff7a59"
+      label_text_size          = %q
+      label_text_color         = %q
+      legal_consent_text_size  = %q
+      legal_consent_text_color = %q
+      help_text_size           = %q
+      help_text_color          = %q
+      font_family              = %q
+      background_width         = %q
+      submit_font_color        = %q
+      submit_alignment         = %q
+      submit_size              = %q
+      submit_color             = %q
     }
   }
 }
-`, providerSource, hermeticToken, apiBaseURL)
+`, providerSource, hermeticToken, apiBaseURL, name, label, description, placeholder, required, blockedDomains, useDefaultBlockList,
+		allowReset, prePopulate, recaptcha, thankYou, submitText, labelSize, labelColor, legalSize, legalColor, helpSize, helpColor,
+		fontFamily, backgroundWidth, submitFontColor, submitAlignment, submitSize, submitColor)
 }
 
 func hermeticConsumerModuleConfig(apiBaseURL, providerSource, moduleSource string, updated bool) string {

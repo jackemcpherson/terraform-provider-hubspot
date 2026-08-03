@@ -84,6 +84,66 @@ func TestFakeHubSpotFormLifecycleUsesGeneratedIDAndTerminalArchive(t *testing.T)
 	}
 }
 
+func TestFakeHubSpotFormPatchIsPartialAndAdvancesTimestamp(t *testing.T) {
+	fake := acceptance.NewFakeHubSpot("sentinel", 1)
+	clients := newFakeHubSpotClients(t, fake, "sentinel")
+	ctx := context.Background()
+	created, err := clients.Forms.Create(ctx, fakeFormWrite())
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := "Updated form"
+	display := created.DisplayOptions
+	display.SubmitButtonText = "Send"
+	updated, err := clients.Forms.Update(ctx, created.ID, hubspot.FormDefinitionPatch{Name: &name, DisplayOptions: &display})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Name != name || updated.DisplayOptions.SubmitButtonText != "Send" {
+		t.Fatalf("updated form = %#v", updated)
+	}
+	if updated.Configuration.Language != created.Configuration.Language || updated.FieldGroups[0].Fields[0].Label != created.FieldGroups[0].Fields[0].Label {
+		t.Fatal("partial PATCH changed an omitted managed subtree")
+	}
+	if updated.UpdatedAt == created.UpdatedAt {
+		t.Fatal("PATCH did not advance updatedAt")
+	}
+	if got := fake.FormPatchCount(created.ID); got != 1 {
+		t.Fatalf("PATCH count = %d, want 1", got)
+	}
+}
+
+func TestFakeHubSpotFormDriftHooksAndUnknownMetadata(t *testing.T) {
+	fake := acceptance.NewFakeHubSpot("sentinel", 1)
+	clients := newFakeHubSpotClients(t, fake, "sentinel")
+	ctx := context.Background()
+	created, err := clients.Forms.Create(ctx, fakeFormWrite())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fake.DriftFormPresentation(created.ID) || !fake.AddFormUnknownMetadata(created.ID) {
+		t.Fatal("fake did not apply supported drift and unknown metadata hooks")
+	}
+	drifted, err := clients.Forms.Get(ctx, created.ID)
+	if err != nil || drifted.Name == created.Name {
+		t.Fatalf("supported drift = %#v, %v", drifted, err)
+	}
+	if !fake.InjectUnsupportedFormStructure(created.ID) {
+		t.Fatal("fake did not apply unsupported structure hook")
+	}
+	unsupported, err := clients.Forms.Get(ctx, created.ID)
+	if err != nil || len(unsupported.FieldGroups[0].Fields) != 2 {
+		t.Fatalf("unsupported drift = %#v, %v", unsupported, err)
+	}
+	if !fake.ClearUnsupportedFormStructure(created.ID) {
+		t.Fatal("fake did not clear unsupported structure hook")
+	}
+	restored, err := clients.Forms.Get(ctx, created.ID)
+	if err != nil || len(restored.FieldGroups[0].Fields) != 1 {
+		t.Fatalf("restored form = %#v, %v", restored, err)
+	}
+}
+
 func fakeFormWrite() hubspot.FormDefinitionWrite {
 	return hubspot.FormDefinitionWrite{
 		FormType: "hubspot", Name: "Managed form",

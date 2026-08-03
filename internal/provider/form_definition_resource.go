@@ -5,6 +5,7 @@ package provider
 
 import (
 	"context"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -90,7 +91,7 @@ func (r *FormDefinitionResource) Schema(_ context.Context, _ resource.SchemaRequ
 				MarkdownDescription: "HubSpot-generated form identifier used for exact reads and terminal archival.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
-			"name": requiredString("Form display name; it is presentation, not identity."),
+			"name": requiredString("Form display name; it is presentation, not identity.", formRequiredTextValidator{kind: "form name"}),
 			"field_groups": schema.ListNestedAttribute{
 				Required:            true,
 				Description:         "Ordered form field groups; exactly one default group is supported.",
@@ -103,11 +104,11 @@ func (r *FormDefinitionResource) Schema(_ context.Context, _ resource.SchemaRequ
 						MarkdownDescription: "Ordered group fields. Exactly one provider-owned contacts `email` field is supported.",
 						Validators:          []validator.List{exactlyOneListValidator{subject: "fields"}},
 						NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
-							"label":                  requiredString("Visible label for the email field."),
-							"description":            requiredString("Visible help description for the email field."),
-							"placeholder":            requiredString("Visible placeholder for the email field."),
+							"label":                  requiredString("Visible label for the email field.", formRequiredTextValidator{kind: "email label"}),
+							"description":            requiredString("Visible help description for the email field.", formRequiredTextValidator{kind: "email description"}),
+							"placeholder":            requiredString("Visible placeholder for the email field.", formRequiredTextValidator{kind: "email placeholder"}),
 							"required":               requiredBool("Whether the email field must be completed before submission."),
-							"blocked_email_domains":  requiredStringList("Explicit ordered email-domain block list; an empty list blocks no additional domains."),
+							"blocked_email_domains":  requiredStringList("Explicit ordered email-domain block list; an empty list blocks no additional domains.", formBlockedEmailDomainsValidator{}),
 							"use_default_block_list": requiredBool("Whether HubSpot's default email-domain block list is applied."),
 						}},
 					},
@@ -118,11 +119,11 @@ func (r *FormDefinitionResource) Schema(_ context.Context, _ resource.SchemaRequ
 				Description:         "Explicit supported form behavior; unsupported automation, notifications, and contact creation remain disabled.",
 				MarkdownDescription: "Explicit supported form behavior. Automation, notifications, and new-contact creation remain provider-owned and disabled.",
 				Attributes: map[string]schema.Attribute{
-					"language":                         requiredString("Language code used to render the form."),
+					"language":                         requiredString("Language code used to render the form.", formLanguageValidator{}),
 					"allow_link_to_reset_known_values": requiredBool("Whether visitors may reset pre-filled known values."),
 					"pre_populate_known_values":        requiredBool("Whether known contact values are pre-populated."),
 					"recaptcha_enabled":                requiredBool("Whether HubSpot reCAPTCHA protection is enabled."),
-					"thank_you_text":                   requiredString("Text rendered after a successful submission; the action type is fixed to thank_you."),
+					"thank_you_text":                   requiredString("Text rendered after a successful submission; the action type is fixed to thank_you.", formRequiredTextValidator{kind: "thank-you text"}),
 				},
 			},
 			"display_options": schema.SingleNestedAttribute{
@@ -130,24 +131,24 @@ func (r *FormDefinitionResource) Schema(_ context.Context, _ resource.SchemaRequ
 				Description:         "Explicit safe-rendering presentation options; raw HTML remains disabled and the default theme is fixed.",
 				MarkdownDescription: "Explicit safe-rendering presentation options. Raw HTML remains disabled and theme is fixed to `default_style`.",
 				Attributes: map[string]schema.Attribute{
-					"submit_button_text": requiredString("Visible submit button text."),
+					"submit_button_text": requiredString("Visible submit button text.", formRequiredTextValidator{kind: "submit button text"}),
 					"style": schema.SingleNestedAttribute{
 						Required:            true,
 						Description:         "Explicit visual style values for the safely rendered form.",
 						MarkdownDescription: "Explicit visual style values for the safely rendered form.",
 						Attributes: map[string]schema.Attribute{
-							"label_text_size":          requiredString("CSS size for field labels."),
-							"label_text_color":         requiredString("CSS color for field labels."),
-							"legal_consent_text_size":  requiredString("CSS size for legal consent text, retained even though consent is disabled."),
-							"legal_consent_text_color": requiredString("CSS color for legal consent text, retained even though consent is disabled."),
-							"help_text_size":           requiredString("CSS size for help text."),
-							"help_text_color":          requiredString("CSS color for help text."),
-							"font_family":              requiredString("CSS font family for form text."),
-							"background_width":         requiredString("CSS width for the form background."),
-							"submit_font_color":        requiredString("CSS color for submit button text."),
-							"submit_alignment":         requiredString("Alignment for the submit button."),
-							"submit_size":              requiredString("CSS padding for the submit button."),
-							"submit_color":             requiredString("CSS color for the submit button."),
+							"label_text_size":          requiredString("CSS size for field labels.", formPixelSizeValidator{}),
+							"label_text_color":         requiredString("CSS color for field labels.", formColorValidator{}),
+							"legal_consent_text_size":  requiredString("CSS size for legal consent text, retained even though consent is disabled.", formPixelSizeValidator{}),
+							"legal_consent_text_color": requiredString("CSS color for legal consent text, retained even though consent is disabled.", formColorValidator{}),
+							"help_text_size":           requiredString("CSS size for help text.", formPixelSizeValidator{}),
+							"help_text_color":          requiredString("CSS color for help text.", formColorValidator{}),
+							"font_family":              requiredString("CSS font family for form text.", formFontFamilyValidator{}),
+							"background_width":         requiredString("CSS width for the form background.", formPercentageSizeValidator{}),
+							"submit_font_color":        requiredString("CSS color for submit button text.", formColorValidator{}),
+							"submit_alignment":         requiredString("Alignment for the submit button.", formAlignmentValidator{}),
+							"submit_size":              requiredString("CSS padding for the submit button.", formSubmitSizeValidator{}),
+							"submit_color":             requiredString("CSS color for the submit button.", formColorValidator{}),
 						},
 					},
 				},
@@ -156,16 +157,16 @@ func (r *FormDefinitionResource) Schema(_ context.Context, _ resource.SchemaRequ
 	}
 }
 
-func requiredString(description string) schema.StringAttribute {
-	return schema.StringAttribute{Required: true, Description: description, MarkdownDescription: description}
+func requiredString(description string, validators ...validator.String) schema.StringAttribute {
+	return schema.StringAttribute{Required: true, Description: description, MarkdownDescription: description, Validators: validators}
 }
 
 func requiredBool(description string) schema.BoolAttribute {
 	return schema.BoolAttribute{Required: true, Description: description, MarkdownDescription: description}
 }
 
-func requiredStringList(description string) schema.ListAttribute {
-	return schema.ListAttribute{Required: true, ElementType: types.StringType, Description: description, MarkdownDescription: description}
+func requiredStringList(description string, validators ...validator.List) schema.ListAttribute {
+	return schema.ListAttribute{Required: true, ElementType: types.StringType, Description: description, MarkdownDescription: description, Validators: validators}
 }
 
 type exactlyOneListValidator struct{ subject string }
@@ -229,6 +230,10 @@ func (r *FormDefinitionResource) Create(ctx context.Context, request resource.Cr
 	if response.Diagnostics.HasError() {
 		return
 	}
+	if !formModelsEqualManaged(model, plan) {
+		response.Diagnostics.AddError("Form definition creation was not verified", "HubSpot did not return every planned managed value; state was not recorded.")
+		return
+	}
 	response.Diagnostics.Append(response.State.Set(ctx, &model)...)
 }
 
@@ -259,8 +264,54 @@ func (r *FormDefinitionResource) Read(ctx context.Context, request resource.Read
 	response.Diagnostics.Append(response.State.Set(ctx, &model)...)
 }
 
-func (r *FormDefinitionResource) Update(_ context.Context, _ resource.UpdateRequest, response *resource.UpdateResponse) {
-	response.Diagnostics.AddError("Form definition update is unavailable", "Form definition updates are not supported by this resource version.")
+func (r *FormDefinitionResource) Update(ctx context.Context, request resource.UpdateRequest, response *resource.UpdateResponse) {
+	var plan, state formDefinitionResourceModel
+	response.Diagnostics.Append(request.Plan.Get(ctx, &plan)...)
+	response.Diagnostics.Append(request.State.Get(ctx, &state)...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+	if state.ID.IsNull() || state.ID.IsUnknown() || state.ID.ValueString() == "" {
+		response.Diagnostics.AddError("Form definition identity missing", "The generated form ID was absent from state; no update was sent.")
+		return
+	}
+	patch, changed, diagnostics := formPatchFromModels(ctx, state, plan)
+	response.Diagnostics.Append(diagnostics...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+	if !changed {
+		plan.ID = state.ID
+		response.Diagnostics.Append(response.State.Set(ctx, &plan)...)
+		return
+	}
+	_, updateErr := r.client.Update(ctx, state.ID.ValueString(), patch)
+	verified, verifyErr := r.client.Get(ctx, state.ID.ValueString())
+	if verifyErr != nil {
+		if updateErr != nil {
+			appendHubSpotDiagnostic(&response.Diagnostics, "Form definition update failed", updateErr)
+		} else {
+			appendHubSpotDiagnostic(&response.Diagnostics, "Form definition update verification failed", verifyErr)
+		}
+		return
+	}
+	model, diagnostics := formModelFromDefinition(verified)
+	response.Diagnostics.Append(diagnostics...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+	if verified.ID != state.ID.ValueString() || verified.Archived || !formModelsEqualManaged(model, plan) {
+		if updateErr != nil {
+			appendHubSpotDiagnostic(&response.Diagnostics, "Form definition update failed", updateErr)
+		} else {
+			response.Diagnostics.AddError("Form definition update was not verified", "HubSpot did not return the same active ID with every planned managed value; prior state was retained.")
+		}
+		return
+	}
+	if updateErr != nil {
+		response.Diagnostics.AddWarning("Update response was ambiguous", "HubSpot returned an update error, but exact read-back matched every planned managed value.")
+	}
+	response.Diagnostics.Append(response.State.Set(ctx, &model)...)
 }
 
 func (r *FormDefinitionResource) Delete(ctx context.Context, request resource.DeleteRequest, response *resource.DeleteResponse) {
@@ -366,10 +417,36 @@ func formWriteFromModel(ctx context.Context, model formDefinitionResourceModel) 
 	}, diagnostics
 }
 
+func formPatchFromModels(ctx context.Context, state, plan formDefinitionResourceModel) (hubspot.FormDefinitionPatch, bool, diag.Diagnostics) {
+	planned, diagnostics := formWriteFromModel(ctx, plan)
+	if diagnostics.HasError() {
+		return hubspot.FormDefinitionPatch{}, false, diagnostics
+	}
+	patch := hubspot.FormDefinitionPatch{}
+	if !state.Name.Equal(plan.Name) {
+		patch.Name = &planned.Name
+	}
+	if !state.FieldGroups.Equal(plan.FieldGroups) {
+		patch.FieldGroups = &planned.FieldGroups
+	}
+	if !state.Configuration.Equal(plan.Configuration) {
+		patch.Configuration = &planned.Configuration
+	}
+	if !state.DisplayOptions.Equal(plan.DisplayOptions) {
+		patch.DisplayOptions = &planned.DisplayOptions
+	}
+	changed := patch.Name != nil || patch.FieldGroups != nil || patch.Configuration != nil || patch.DisplayOptions != nil
+	return patch, changed, diagnostics
+}
+
+func formModelsEqualManaged(left, right formDefinitionResourceModel) bool {
+	return left.Name.Equal(right.Name) && left.FieldGroups.Equal(right.FieldGroups) &&
+		left.Configuration.Equal(right.Configuration) && left.DisplayOptions.Equal(right.DisplayOptions)
+}
+
 func formModelFromDefinition(form hubspot.FormDefinition) (formDefinitionResourceModel, diag.Diagnostics) {
-	var diagnostics diag.Diagnostics
-	if len(form.FieldGroups) != 1 || len(form.FieldGroups[0].Fields) != 1 {
-		diagnostics.AddError("Unsupported HubSpot form shape", "HubSpot did not return exactly one field group containing exactly one field; state was retained.")
+	diagnostics := validateSupportedFormDefinition(form)
+	if diagnostics.HasError() {
 		return formDefinitionResourceModel{}, diagnostics
 	}
 	field := form.FieldGroups[0].Fields[0]
@@ -398,6 +475,103 @@ func formModelFromDefinition(form hubspot.FormDefinition) (formDefinitionResourc
 			}),
 		}),
 	}, diagnostics
+}
+
+func validateSupportedFormDefinition(form hubspot.FormDefinition) diag.Diagnostics {
+	var diagnostics diag.Diagnostics
+	addUnsupported := func(category, detail string) diag.Diagnostics {
+		diagnostics.AddError("Unsupported HubSpot form definition", "Unsupported "+category+": "+detail+" State was retained and no mutation was sent.")
+		return diagnostics
+	}
+	if form.FormType != "hubspot" {
+		return addUnsupported("form type", "only the live-proven hubspot form type is managed.")
+	}
+	if len(form.FieldGroups) != 1 {
+		return addUnsupported("field group structure", "exactly one default field group is required.")
+	}
+	group := form.FieldGroups[0]
+	if group.GroupType != "default_group" || group.RichTextType != "text" || group.RichText != "" {
+		return addUnsupported("field group structure", "the default non-rich-text group shape changed.")
+	}
+	if len(group.Fields) != 1 {
+		return addUnsupported("email field structure", "exactly one contact email field is required.")
+	}
+	field := group.Fields[0]
+	if field.ObjectTypeID != "0-1" || field.Name != "email" || field.FieldType != "email" || field.Hidden {
+		return addUnsupported("email field structure", "the contact email identity or visibility changed.")
+	}
+	if len(field.DependentFields) != 0 {
+		return addUnsupported("dependent field structure", "dependent fields are outside the managed contract.")
+	}
+	if field.DefaultValue != "" {
+		return addUnsupported("default value", "runtime field defaults are outside the managed contract.")
+	}
+	if form.LegalConsentOptions.Type != "none" {
+		return addUnsupported("consent model", "only the no-consent model is supported.")
+	}
+	configuration := form.Configuration
+	if len(configuration.NotifyRecipients) != 0 || configuration.NotifyContactOwner {
+		return addUnsupported("notification configuration", "form notifications are outside the managed contract.")
+	}
+	if len(configuration.LifecycleStages) != 0 {
+		return addUnsupported("lifecycle automation", "lifecycle-stage mutation is outside the managed contract.")
+	}
+	if configuration.CreateNewContactForNewEmail {
+		return addUnsupported("contact creation behavior", "new-contact creation is outside the managed contract.")
+	}
+	if configuration.PostSubmitAction.Type != "thank_you" {
+		return addUnsupported("post-submit action", "only the thank-you display action is supported.")
+	}
+	if !configuration.Editable || !configuration.Cloneable || !configuration.Archivable {
+		return addUnsupported("capability flags", "the required editable, cloneable, or archivable capability changed.")
+	}
+	if form.DisplayOptions.RenderRawHTML {
+		return addUnsupported("rendering mode", "raw HTML is outside the managed contract.")
+	}
+	if form.DisplayOptions.Theme != "default_style" {
+		return addUnsupported("theme", "only default_style is supported.")
+	}
+	if form.DisplayOptions.CSSClass != "" {
+		return addUnsupported("CSS configuration", "custom CSS classes are outside the managed contract.")
+	}
+	if !validRemotePresentation(form) {
+		return addUnsupported("presentation values", "one or more returned managed values are outside the narrow typed contract.")
+	}
+	return diagnostics
+}
+
+func validRemotePresentation(form hubspot.FormDefinition) bool {
+	field := form.FieldGroups[0].Fields[0]
+	configuration := form.Configuration
+	display := form.DisplayOptions
+	style := display.Style
+	for _, value := range []string{form.Name, field.Label, field.Description, field.Placeholder, configuration.PostSubmitAction.Value, display.SubmitButtonText} {
+		if value == "" || value != strings.TrimSpace(value) {
+			return false
+		}
+	}
+	if configuration.Language != "en" || (style.SubmitAlignment != "left" && style.SubmitAlignment != "center") {
+		return false
+	}
+	for _, color := range []string{style.LabelTextColor, style.LegalConsentTextColor, style.HelpTextColor, style.SubmitFontColor, style.SubmitColor} {
+		if !formColorPattern.MatchString(color) {
+			return false
+		}
+	}
+	for _, size := range []string{style.LabelTextSize, style.LegalConsentTextSize, style.HelpTextSize} {
+		if !formPixelSizePattern.MatchString(size) {
+			return false
+		}
+	}
+	if !formFontFamilyPattern.MatchString(style.FontFamily) || !formPercentPattern.MatchString(style.BackgroundWidth) || !formSubmitSizePattern.MatchString(style.SubmitSize) {
+		return false
+	}
+	for _, domain := range field.Validation.BlockedEmailDomains {
+		if len(domain) > 253 || !formDomainPattern.MatchString(domain) {
+			return false
+		}
+	}
+	return true
 }
 
 func formFieldGroupsValue(groups []formFieldGroupModel) types.List {

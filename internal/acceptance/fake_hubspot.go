@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jackemcpherson/terraform-provider-hubspot/internal/hubspot"
 )
@@ -52,8 +53,15 @@ type FakeHubSpot struct {
 
 	// forms retains both active definitions and archived tombstones under the
 	// generated Forms v3 ID. Archived visibility is selected explicitly.
-	forms      map[string]*hubspot.FormDefinition
-	nextFormID int
+	forms            map[string]*fakeFormDefinition
+	nextFormID       int
+	nextFormRevision int64
+}
+
+type fakeFormDefinition struct {
+	definition      hubspot.FormDefinition
+	unknownMetadata map[string]any
+	patchCount      int
 }
 
 // NewFakeHubSpot returns a fake with fresh, empty state authenticating
@@ -66,7 +74,7 @@ func NewFakeHubSpot(token string, portalID int64) *FakeHubSpot {
 		groups:     make(map[string]map[string]*hubspot.PropertyGroup),
 		properties: make(map[string]map[string]*fakePropertyVersions),
 		pipelines:  make(map[string]map[string]*hubspot.Pipeline),
-		forms:      make(map[string]*hubspot.FormDefinition),
+		forms:      make(map[string]*fakeFormDefinition),
 	}
 }
 
@@ -122,9 +130,12 @@ func (f *FakeHubSpot) handleFormCollection(response http.ResponseWriter, request
 	}
 	f.nextFormID++
 	id := "form-" + strconv.Itoa(f.nextFormID)
-	form := &hubspot.FormDefinition{ID: id, Archived: false, FormDefinitionWrite: body}
+	timestamp := f.advanceFormTimestamp()
+	form := &fakeFormDefinition{definition: hubspot.FormDefinition{
+		ID: id, Archived: false, CreatedAt: timestamp, UpdatedAt: timestamp, FormDefinitionWrite: body,
+	}}
 	f.forms[id] = form
-	writeFakeJSON(response, http.StatusCreated, *form)
+	writeFakeFormJSON(response, http.StatusCreated, form)
 }
 
 func (f *FakeHubSpot) handleFormItem(response http.ResponseWriter, request *http.Request, id string) {
@@ -134,21 +145,141 @@ func (f *FakeHubSpot) handleFormItem(response http.ResponseWriter, request *http
 	switch request.Method {
 	case http.MethodGet:
 		archived := request.URL.Query().Get("archived") == "true"
-		if !exists || form.Archived != archived {
+		if !exists || form.definition.Archived != archived {
 			writeFakeError(response, http.StatusNotFound, "OBJECT_NOT_FOUND", "", "No form definition matched this identity.")
 			return
 		}
-		writeFakeJSON(response, http.StatusOK, *form)
-	case http.MethodDelete:
-		if !exists || form.Archived {
+		writeFakeFormJSON(response, http.StatusOK, form)
+	case http.MethodPatch:
+		if !exists || form.definition.Archived {
 			writeFakeError(response, http.StatusNotFound, "OBJECT_NOT_FOUND", "", "No active form definition matched this identity.")
 			return
 		}
-		form.Archived = true
+		var patch hubspot.FormDefinitionPatch
+		if !decodeFakeBody(response, request, &patch) {
+			return
+		}
+		if patch.Name == nil && patch.FieldGroups == nil && patch.Configuration == nil && patch.DisplayOptions == nil {
+			writeFakeError(response, http.StatusBadRequest, "VALIDATION_ERROR", "", "A form patch requires a managed subtree.")
+			return
+		}
+		candidate := form.definition
+		if patch.Name != nil {
+			candidate.Name = *patch.Name
+		}
+		if patch.FieldGroups != nil {
+			candidate.FieldGroups = *patch.FieldGroups
+		}
+		if patch.Configuration != nil {
+			candidate.Configuration = *patch.Configuration
+		}
+		if patch.DisplayOptions != nil {
+			candidate.DisplayOptions = *patch.DisplayOptions
+		}
+		if !supportedFakeForm(candidate.FormDefinitionWrite) {
+			writeFakeError(response, http.StatusBadRequest, "VALIDATION_ERROR", "", "The patch did not preserve the supported typed definition.")
+			return
+		}
+		form.definition = candidate
+		form.patchCount++
+		form.definition.UpdatedAt = f.advanceFormTimestamp()
+		writeFakeFormJSON(response, http.StatusOK, form)
+	case http.MethodDelete:
+		if !exists || form.definition.Archived {
+			writeFakeError(response, http.StatusNotFound, "OBJECT_NOT_FOUND", "", "No active form definition matched this identity.")
+			return
+		}
+		form.definition.Archived = true
 		response.WriteHeader(http.StatusNoContent)
 	default:
 		writeFakeError(response, http.StatusMethodNotAllowed, "VALIDATION_ERROR", "", "Unsupported method.")
 	}
+}
+
+func (f *FakeHubSpot) advanceFormTimestamp() string {
+	f.nextFormRevision++
+	return time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC).Add(time.Duration(f.nextFormRevision) * time.Second).Format(time.RFC3339)
+}
+
+func writeFakeFormJSON(response http.ResponseWriter, status int, form *fakeFormDefinition) {
+	body, err := json.Marshal(form.definition)
+	if err != nil {
+		panic(fmt.Sprintf("encode fake form definition: %v", err))
+	}
+	var document map[string]any
+	if err := json.Unmarshal(body, &document); err != nil {
+		panic(fmt.Sprintf("decode fake form definition: %v", err))
+	}
+	for key, value := range form.unknownMetadata {
+		document[key] = value
+	}
+	writeFakeJSON(response, status, document)
+}
+
+func (f *FakeHubSpot) FormPatchCount(id string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if form := f.forms[id]; form != nil {
+		return form.patchCount
+	}
+	return 0
+}
+
+func (f *FakeHubSpot) DriftFormPresentation(id string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	form := f.forms[id]
+	if form == nil || form.definition.Archived {
+		return false
+	}
+	form.definition.Name = "Out-of-band form"
+	field := &form.definition.FieldGroups[0].Fields[0]
+	field.Label = "Out-of-band email"
+	field.Description = "Out-of-band description"
+	field.Placeholder = "drift@example.com"
+	field.Required = false
+	field.Validation.BlockedEmailDomains = []string{"example.com"}
+	field.Validation.UseDefaultBlockList = false
+	form.definition.Configuration.PostSubmitAction.Value = "Out-of-band thank you"
+	form.definition.Configuration.RecaptchaEnabled = false
+	form.definition.DisplayOptions.SubmitButtonText = "Out-of-band submit"
+	form.definition.DisplayOptions.Style.SubmitAlignment = "center"
+	form.definition.DisplayOptions.Style.SubmitColor = "#00a4bd"
+	form.definition.UpdatedAt = f.advanceFormTimestamp()
+	return true
+}
+
+func (f *FakeHubSpot) AddFormUnknownMetadata(id string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	form := f.forms[id]
+	if form == nil {
+		return false
+	}
+	form.unknownMetadata = map[string]any{"futureServiceMetadata": map[string]any{"revision": 1}}
+	return true
+}
+
+func (f *FakeHubSpot) InjectUnsupportedFormStructure(id string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	form := f.forms[id]
+	if form == nil || len(form.definition.FieldGroups) != 1 || len(form.definition.FieldGroups[0].Fields) != 1 {
+		return false
+	}
+	form.definition.FieldGroups[0].Fields = append(form.definition.FieldGroups[0].Fields, form.definition.FieldGroups[0].Fields[0])
+	return true
+}
+
+func (f *FakeHubSpot) ClearUnsupportedFormStructure(id string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	form := f.forms[id]
+	if form == nil || len(form.definition.FieldGroups) != 1 || len(form.definition.FieldGroups[0].Fields) != 2 {
+		return false
+	}
+	form.definition.FieldGroups[0].Fields = form.definition.FieldGroups[0].Fields[:1]
+	return true
 }
 
 func supportedFakeForm(form hubspot.FormDefinitionWrite) bool {

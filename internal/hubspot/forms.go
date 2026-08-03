@@ -33,9 +33,19 @@ type FormDefinitionWrite struct {
 	LegalConsentOptions FormLegalConsentOptions `json:"legalConsentOptions"`
 }
 
+// FormDefinitionPatch is intentionally limited to the four supported mutable
+// presentation subtrees. Nil members are omitted from the request entirely.
+type FormDefinitionPatch struct {
+	Name           *string             `json:"name,omitempty"`
+	FieldGroups    *[]FormFieldGroup   `json:"fieldGroups,omitempty"`
+	Configuration  *FormConfiguration  `json:"configuration,omitempty"`
+	DisplayOptions *FormDisplayOptions `json:"displayOptions,omitempty"`
+}
+
 type FormFieldGroup struct {
 	GroupType    string      `json:"groupType"`
 	RichTextType string      `json:"richTextType"`
+	RichText     string      `json:"richText,omitempty"`
 	Fields       []FormField `json:"fields"`
 }
 
@@ -52,6 +62,7 @@ type FormField struct {
 	FieldType       string               `json:"fieldType"`
 	Required        bool                 `json:"required"`
 	Validation      FormFieldValidation  `json:"validation"`
+	DefaultValue    string               `json:"defaultValue,omitempty"`
 	Description     string               `json:"description"`
 	Placeholder     string               `json:"placeholder"`
 }
@@ -67,12 +78,18 @@ type FormConfiguration struct {
 	AllowLinkToResetKnownValues bool                 `json:"allowLinkToResetKnownValues"`
 	PostSubmitAction            FormPostSubmitAction `json:"postSubmitAction"`
 	Language                    string               `json:"language"`
+	LifecycleStages             []FormLifecycleStage `json:"lifecycleStages,omitempty"`
 	PrePopulateKnownValues      bool                 `json:"prePopulateKnownValues"`
 	Cloneable                   bool                 `json:"cloneable"`
 	NotifyContactOwner          bool                 `json:"notifyContactOwner"`
 	RecaptchaEnabled            bool                 `json:"recaptchaEnabled"`
 	Archivable                  bool                 `json:"archivable"`
 	NotifyRecipients            []string             `json:"notifyRecipients"`
+}
+
+type FormLifecycleStage struct {
+	ObjectTypeID string `json:"objectTypeId"`
+	Value        string `json:"value"`
 }
 
 type FormPostSubmitAction struct {
@@ -85,6 +102,7 @@ type FormDisplayOptions struct {
 	Theme            string    `json:"theme"`
 	SubmitButtonText string    `json:"submitButtonText"`
 	Style            FormStyle `json:"style"`
+	CSSClass         string    `json:"cssClass,omitempty"`
 }
 
 type FormStyle struct {
@@ -129,6 +147,30 @@ func (c *FormClient) Get(ctx context.Context, id string) (FormDefinition, error)
 
 func (c *FormClient) GetArchived(ctx context.Context, id string) (FormDefinition, error) {
 	return c.get(ctx, id, true)
+}
+
+func (c *FormClient) Update(ctx context.Context, id string, input FormDefinitionPatch) (FormDefinition, error) {
+	if id == "" {
+		return FormDefinition{}, errors.New("form id must not be empty")
+	}
+	if input.Name == nil && input.FieldGroups == nil && input.Configuration == nil && input.DisplayOptions == nil {
+		return FormDefinition{}, errors.New("form patch must contain at least one managed subtree")
+	}
+	body, err := json.Marshal(input)
+	if err != nil {
+		return FormDefinition{}, err
+	}
+	var out FormDefinition
+	if err := c.transport.Do(ctx, Operation{Name: "form-update", Method: http.MethodPatch, Path: formsPath() + "/" + url.PathEscape(id), Replay: ReplayNever}, bytes.NewReader(body), &out); err != nil {
+		return FormDefinition{}, err
+	}
+	if out.ID == "" {
+		return FormDefinition{}, errors.New("HubSpot form response omitted id")
+	}
+	if out.ID != id {
+		return FormDefinition{}, errors.New("HubSpot form response returned a different id")
+	}
+	return out, nil
 }
 
 func (c *FormClient) get(ctx context.Context, id string, archived bool) (FormDefinition, error) {
