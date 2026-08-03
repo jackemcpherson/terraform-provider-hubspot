@@ -19,6 +19,7 @@ suite_sha=
 tofu_version=
 terraform_version=
 mkdir -p "$report_dir"
+report_dir=$(CDPATH='' cd -- "$report_dir" && pwd)
 
 finish() {
   code=$?
@@ -83,6 +84,11 @@ export HUBSPOT_ACCEPTANCE_PROVIDER_BINARY=$provider_binary
 ledger=$(mktemp)
 export HUBSPOT_ACCEPTANCE_CLEANUP_LEDGER=$ledger
 export HUBSPOT_ACCEPTANCE=1
+if [ "$shard" = form_definitions ]; then
+  export HUBSPOT_ACCEPTANCE_EVIDENCE_DIR=$report_dir
+  export HUBSPOT_ACCEPTANCE_CANDIDATE_COMMIT=$commit
+  rm -f "$report_dir/form_definitions-tofu.json" "$report_dir/form_definitions-terraform.json"
+fi
 
 regex="^TestAcc_${shard}_"
 tests=$(go test -tags=acceptance ./internal/acceptance -list "$regex")
@@ -99,6 +105,21 @@ printf '%s\n' "$tests" | grep -qx "$quota_test" || {
 }
 go test -tags=acceptance ./internal/acceptance -run "^${quota_test}$" -count=1 -timeout=5m
 go test -tags=acceptance ./internal/acceptance -run "$regex" -count=1 -timeout=20m
+if [ "$shard" = form_definitions ]; then
+  for engine in tofu terraform; do
+    evidence="$report_dir/form_definitions-$engine.json"
+    test -s "$evidence" || { echo "Forms acceptance evidence is missing for $engine" >&2; exit 1; }
+    grep -q "\"candidate_commit\":\"$commit\"" "$evidence"
+    grep -q "\"engine\":\"$engine\"" "$evidence"
+    grep -q '"api_family":"marketing/v3/forms"' "$evidence"
+    grep -q '"scope_family":"forms"' "$evidence"
+    grep -q '"portal_fingerprint":"[0-9a-f]\{64\}"' "$evidence"
+    grep -q '"generated_identity_hash":"[0-9a-f]\{64\}"' "$evidence"
+    grep -q '"terminal_identity_hashes":\["[0-9a-f]\{64\}","[0-9a-f]\{64\}"\]' "$evidence"
+    grep -q '"timestamp":"[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}T[0-9:]\{8\}Z"' "$evidence"
+    grep -q '"cleanup":"passed"' "$evidence"
+  done
+fi
 status=passed
 
 # Keep the secret referenced so shell linters do not mistake it for optional.

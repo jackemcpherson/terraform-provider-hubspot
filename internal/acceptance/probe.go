@@ -163,6 +163,107 @@ func (s *Session) RequireFormArchived(id string) {
 	}
 }
 
+// MutateFormPresentation applies one supported out-of-band presentation change
+// by exact generated ID. Live acceptance uses it to prove ordinary drift and
+// repair without exercising destructive or unsupported discovery fixtures.
+func (s *Session) MutateFormPresentation(address string) {
+	s.t.Helper()
+	clients, err := s.probeClients()
+	if err != nil {
+		s.t.Fatalf("configure sanitized form drift probe: %v", err)
+	}
+	id := s.OpaqueStateString(address, "id")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	current, err := clients.Forms.Get(ctx, id)
+	if err != nil {
+		s.t.Fatalf("read form for drift probe: %s", SanitizedHubSpotError(err))
+	}
+	if len(current.FieldGroups) != 1 || len(current.FieldGroups[0].Fields) != 1 {
+		s.t.Fatal("form drift probe found unsupported managed structure")
+	}
+	current.Name = s.prefix + "external_drift"
+	current.FieldGroups[0].Fields[0].Label = "Out-of-band email"
+	current.Configuration.PostSubmitAction.Value = "Out-of-band thank you"
+	current.DisplayOptions.SubmitButtonText = "Out-of-band submit"
+	updated, err := clients.Forms.Update(ctx, id, hubspot.FormDefinitionPatch{
+		Name:           &current.Name,
+		FieldGroups:    &current.FieldGroups,
+		Configuration:  &current.Configuration,
+		DisplayOptions: &current.DisplayOptions,
+	})
+	if err != nil {
+		s.t.Fatalf("mutate form presentation for drift probe: %s", SanitizedHubSpotError(err))
+	}
+	if len(updated.FieldGroups) != 1 || len(updated.FieldGroups[0].Fields) != 1 || updated.ID != id || updated.Name != current.Name || updated.FieldGroups[0].Fields[0].Label != "Out-of-band email" ||
+		updated.Configuration.PostSubmitAction.Value != "Out-of-band thank you" || updated.DisplayOptions.SubmitButtonText != "Out-of-band submit" {
+		s.t.Fatal("form drift probe did not reach the requested safe presentation")
+	}
+}
+
+// ArchiveForm archives the state identity out of band and verifies the exact
+// terminal tombstone before returning the opaque identity to the caller.
+func (s *Session) ArchiveForm(address string) string {
+	s.t.Helper()
+	clients, err := s.probeClients()
+	if err != nil {
+		s.t.Fatalf("configure sanitized form archive probe: %v", err)
+	}
+	id := s.OpaqueStateString(address, "id")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	if err := clients.Forms.Archive(ctx, id); err != nil {
+		s.t.Fatalf("archive form for recreation probe: %s", SanitizedHubSpotError(err))
+	}
+	s.RequireFormArchived(id)
+	return id
+}
+
+// RequireFormsTerminal proves that the engine-specific owned prefix has no
+// active Forms and exactly the expected retained tombstone identities.
+func (s *Session) RequireFormsTerminal(prefix string, expectedIDs ...string) {
+	s.t.Helper()
+	clients, err := s.probeClients()
+	if err != nil {
+		s.t.Fatalf("configure sanitized form cleanup probe: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	active, err := clients.Forms.List(ctx, false)
+	if err != nil {
+		s.t.Fatalf("list active forms for terminal probe: %s", SanitizedHubSpotError(err))
+	}
+	for _, form := range active {
+		if strings.HasPrefix(form.Name, prefix) {
+			s.t.Fatal("form terminal probe found active prefix-owned configuration")
+		}
+	}
+	archived, err := clients.Forms.List(ctx, true)
+	if err != nil {
+		s.t.Fatalf("list archived forms for terminal probe: %s", SanitizedHubSpotError(err))
+	}
+	expected := make(map[string]struct{}, len(expectedIDs))
+	for _, id := range expectedIDs {
+		expected[id] = struct{}{}
+	}
+	matched := 0
+	for _, form := range archived {
+		if !strings.HasPrefix(form.Name, prefix) {
+			continue
+		}
+		if _, ok := expected[form.ID]; !ok || !form.Archived {
+			s.t.Fatal("form terminal probe found an unexpected prefix-owned tombstone")
+		}
+		matched++
+	}
+	if matched != len(expected) {
+		s.t.Fatal("form terminal probe did not find every exact retained tombstone identity")
+	}
+	for id := range expected {
+		s.RequireFormArchived(id)
+	}
+}
+
 func (s *Session) MutatePropertyGroupLabel(objectType, name, label string) {
 	s.MutatePropertyGroup(objectType, name, label, nil)
 }

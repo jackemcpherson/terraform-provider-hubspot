@@ -106,6 +106,7 @@ test "$(grep -c 'HUBSPOT_PORTAL_LOCK_ID: free-configuration' "$maintenance")" -e
 }
 grep -q 'CAPABILITY_SHARD: free_properties' "$maintenance"
 grep -q 'CAPABILITY_SHARD: form_definitions' "$maintenance"
+grep -q 'path: acceptance-report/form_definitions\*\.json' "$maintenance"
 grep -q '^          ref: [0-9a-f]\{40\}$' "$maintenance"
 ! grep -Eq 'hubspot-account-free_properties|hubspot-account-form_definitions' "$maintenance" || {
 	echo 'maintenance must not use shard-specific account concurrency groups' >&2

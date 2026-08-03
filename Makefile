@@ -68,6 +68,7 @@ check-release-tools:
 check-workflows:
 	@./scripts/one-portal-free-lifecycle_test.sh
 	@./scripts/acceptance-cleanup_test.sh
+	@./scripts/acceptance-shard_test.sh
 	@./scripts/released-provider-journey_test.sh
 	@./scripts/released-northstar-journey_test.sh
 	@./scripts/verify-released-provider_test.sh

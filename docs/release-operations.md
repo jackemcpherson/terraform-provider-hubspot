@@ -42,6 +42,23 @@ Forms are selected by the exact prefix but archived and verified by immutable ID
 the cleanup never archives by a name match alone. HubSpot retains archived
 configuration, so do not describe either operation as deletion.
 
+Scheduled Forms source acceptance runs only in the protected `form_definitions`
+Environment with its `forms`-scoped token and expected portal identity. OpenTofu
+and Terraform each receive a distinct suffix beneath the run's unique owned
+prefix and exercise one active form at a time. The live suite covers canonical
+create and no-op state, supported presentation update and drift repair, exact-ID
+import, external archive and recreation, and final terminal archive. Duplicate
+names, archived-name reuse, unsupported structures, and destructive failure
+matrices remain hermetic; do not add them to every live candidate run.
+
+A successful Forms run uploads `form_definitions-tofu.json` and
+`form_definitions-terraform.json` beside the shard summary. Each engine record
+binds the exact candidate commit to the Forms API and scope family, a
+domain-separated portal fingerprint, generated and terminal identity hashes, a
+UTC timestamp, and `cleanup: passed`. It contains no raw portal ID, form ID,
+owned prefix, name, payload, or credential. Missing engine evidence or incomplete
+terminal cleanup fails the shard and has no release waiver.
+
 To release, run `Release` from `main` with the intended v-prefixed SemVer. The
 single protected job requires the dispatch commit to be the current head of
 `main` with a successful `Required` quality check. It imports the release signing

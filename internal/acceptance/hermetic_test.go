@@ -493,21 +493,23 @@ func runHermeticFormDefinitionLifecycle(t *testing.T, engine acceptance.Engine, 
 			t.Fatalf("bounded managed update sent %d PATCH requests, want 1", got)
 		}
 
-		if !fake.DriftFormPresentation(id) {
-			t.Fatal("inject supported form drift")
+		session.MutateFormPresentation("hubspot_form_definition.test")
+		patchesAfterDriftProbe := fake.FormPatchCount(id)
+		if patchesAfterDriftProbe != 2 {
+			t.Fatalf("out-of-band drift probe sent %d total PATCH requests, want 2", patchesAfterDriftProbe)
 		}
 		session.RequirePlanDiffAttributes(updated, "hubspot_form_definition.test", "configuration", "display_options", "field_groups", "name")
 		session.Apply(updated)
 		session.RequireEmptyPlan(updated)
-		if got := fake.FormPatchCount(id); got != 2 {
-			t.Fatalf("drift repair sent %d total PATCH requests, want 2", got)
+		if got := fake.FormPatchCount(id); got != patchesAfterDriftProbe+1 {
+			t.Fatalf("drift repair sent %d total PATCH requests, want %d", got, patchesAfterDriftProbe+1)
 		}
 
 		if !fake.AddFormUnknownMetadata(id) {
 			t.Fatal("inject harmless form metadata")
 		}
 		session.RequireEmptyPlan(updated)
-		if got := fake.FormPatchCount(id); got != 2 {
+		if got := fake.FormPatchCount(id); got != patchesAfterDriftProbe+1 {
 			t.Fatalf("harmless metadata caused a PATCH; count = %d", got)
 		}
 
@@ -516,7 +518,7 @@ func runHermeticFormDefinitionLifecycle(t *testing.T, engine acceptance.Engine, 
 		}
 		session.RequirePlanFailure(updated, "Unsupported HubSpot form definition")
 		session.RequireStateString("hubspot_form_definition.test", "name", "Hermetic managed form updated")
-		if got := fake.FormPatchCount(id); got != 2 {
+		if got := fake.FormPatchCount(id); got != patchesAfterDriftProbe+1 {
 			t.Fatalf("unsupported drift caused a PATCH; count = %d", got)
 		}
 		if !fake.ClearUnsupportedFormStructure(id) {
@@ -579,8 +581,8 @@ func runHermeticFormDefinitionLifecycle(t *testing.T, engine acceptance.Engine, 
 			}
 		}
 
-		if err := clients.Forms.Archive(ctx, id); err != nil {
-			t.Fatal(err)
+		if archivedID := session.ArchiveForm(address); archivedID != id {
+			t.Fatal("form archive probe changed the generated identity")
 		}
 		session.Refresh(updated)
 		session.RequireStateAbsent(address)
@@ -784,112 +786,11 @@ func runHermeticPropertyDefinitionLifecycle(t *testing.T, engine acceptance.Engi
 
 func hermeticFormDefinitionConfig(apiBaseURL, providerSource string, updated bool) string {
 	name := "Hermetic managed form"
-	label := "Email address"
-	description := "Contact email"
-	placeholder := "name@example.com"
-	required := true
-	blockedDomains := "[]"
-	useDefaultBlockList := true
-	allowReset := false
-	prePopulate := false
-	recaptcha := true
-	thankYou := "Thank you"
-	submitText := "Submit"
-	labelSize := "13px"
-	labelColor := "#33475b"
-	legalSize := "12px"
-	legalColor := "#33475b"
-	helpSize := "11px"
-	helpColor := "#516f90"
-	fontFamily := "Arial, sans-serif"
-	backgroundWidth := "100%"
-	submitFontColor := "#ffffff"
-	submitAlignment := "left"
-	submitSize := "12px 24px"
-	submitColor := "#ff7a59"
 	if updated {
 		name = "Hermetic managed form updated"
-		label = "Work email"
-		description = "Updated contact email"
-		placeholder = "work@example.com"
-		required = false
-		blockedDomains = `["example.com"]`
-		useDefaultBlockList = false
-		allowReset = true
-		prePopulate = true
-		recaptcha = false
-		thankYou = "Updated thank you"
-		submitText = "Send"
-		labelSize = "14px"
-		labelColor = "#123456"
-		legalSize = "13px"
-		legalColor = "#234567"
-		helpSize = "12px"
-		helpColor = "#345678"
-		fontFamily = "Helvetica Neue, sans-serif"
-		backgroundWidth = "95.5%"
-		submitFontColor = "#456789"
-		submitAlignment = "center"
-		submitSize = "10px 20px"
-		submitColor = "#00a4bd"
 	}
-	return fmt.Sprintf(`
-terraform {
-  required_providers {
-    hubspot = {
-      source = %q
-    }
-  }
-}
-
-provider "hubspot" {
-  access_token = %q
-  api_base_url = %q
-}
-
-resource "hubspot_form_definition" "test" {
-  name = %q
-
-  field_groups = [{
-    fields = [{
-      label                  = %q
-      description            = %q
-      placeholder            = %q
-      required               = %t
-      blocked_email_domains  = %s
-      use_default_block_list = %t
-    }]
-  }]
-
-  configuration = {
-    language                         = "en"
-    allow_link_to_reset_known_values = %t
-    pre_populate_known_values        = %t
-    recaptcha_enabled                = %t
-    thank_you_text                   = %q
-  }
-
-  display_options = {
-    submit_button_text = %q
-    style = {
-      label_text_size          = %q
-      label_text_color         = %q
-      legal_consent_text_size  = %q
-      legal_consent_text_color = %q
-      help_text_size           = %q
-      help_text_color          = %q
-      font_family              = %q
-      background_width         = %q
-      submit_font_color        = %q
-      submit_alignment         = %q
-      submit_size              = %q
-      submit_color             = %q
-    }
-  }
-}
-`, providerSource, hermeticToken, apiBaseURL, name, label, description, placeholder, required, blockedDomains, useDefaultBlockList,
-		allowReset, prePopulate, recaptcha, thankYou, submitText, labelSize, labelColor, legalSize, legalColor, helpSize, helpColor,
-		fontFamily, backgroundWidth, submitFontColor, submitAlignment, submitSize, submitColor)
+	providerConfiguration := fmt.Sprintf("  access_token = %q\n  api_base_url = %q", hermeticToken, apiBaseURL)
+	return formDefinitionConfig(providerSource, providerConfiguration, name, updated)
 }
 
 func hermeticConsumerModuleConfig(apiBaseURL, providerSource, moduleSource string, updated bool) string {
