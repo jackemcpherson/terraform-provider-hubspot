@@ -71,6 +71,7 @@ check-workflows:
 	@./scripts/acceptance-cleanup_test.sh
 	@./scripts/acceptance-shard_test.sh
 	@./scripts/released-provider-journey_test.sh
+	@./scripts/released-form-migration_test.sh
 	@./scripts/released-northstar-journey_test.sh
 	@./scripts/verify-released-provider_test.sh
 	@./scripts/observe-release_test.sh

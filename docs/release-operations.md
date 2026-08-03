@@ -140,13 +140,27 @@ After publication and successful release observation, download the immutable
 GitHub release assets and run the separate completion journey:
 
 ```sh
-./scripts/released-provider-journey.sh v0.2.0 /path/to/release-assets
+./scripts/released-provider-journey.sh v0.3.0 /path/to/release-assets
 ```
 
 This completion command first proves each registry-installed package matches the
-GitHub archive, then runs both live shards, bidirectional provider-source state
-migration, and the complete dual-engine Northstar lifecycle. It writes sanitized
-evidence under `acceptance-report/` containing the exact provider commit, pinned
-demo commit, archive digest, engines, registry sources, timestamp, and cleanup
-result. The pinned demo commit contains separate read-only OpenTofu and Terraform
-locks covering all 13 released platforms.
+same immutable GitHub archive, then runs the released property lifecycle under
+both engines. A separate Forms journey creates one uniquely prefixed Form
+definition with Terraform and preserves its exact generated identity while its
+state moves to the OpenTofu provider source and back. Both engines read, plan,
+update, detect supported drift, repair it, and converge without a name lookup or
+second active Form. Terraform archives the shared identity only after every
+migration phase succeeds; exact Archived identity and zero active prefix-owned
+Forms are required even on cleanup paths.
+
+The complete cumulative Northstar lifecycle then runs under both engines and
+includes the keyed Form definition module alongside all released CRM property
+surfaces. Sanitized evidence under `acceptance-report/` records the exact
+provider and demo commits, selected archive digest for both registry sources,
+engines, start/completion timestamps, successful identity-preserving migration,
+terminal archive, and cleanup result. It contains a domain-separated identity
+hash rather than a raw remote identifier. The command is deliberately pinned to
+v0.3.0 and fails closed before publication: real packages from both registries,
+their lock-file digests, the union-scoped protected credential, and the pinned
+demo checkout must all be available. The pinned demo commit contains separate
+read-only OpenTofu and Terraform locks covering all 13 released platforms.

@@ -212,6 +212,29 @@ test "$(cat "$forms_manifest")" = '{"shard":"form_definitions","tier":"free","ap
 	echo 'Forms capability manifest must contain only the canonical API, scope, tier, and cleanup policy' >&2
 	exit 1
 }
+
+released_journey=scripts/released-provider-journey.sh
+released_forms=scripts/released-form-migration.sh
+released_northstar=scripts/released-northstar-journey.sh
+grep -q 'released provider journey requires v0.3.0' "$released_journey"
+grep -q 'released Form migration requires v0.3.0' "$released_forms"
+grep -q 'Northstar release journey requires v0.3.0' "$released_northstar"
+grep -q 'registry.terraform.io/jackemcpherson/hubspot' "$released_forms"
+grep -q 'registry.opentofu.org/jackemcpherson/hubspot' "$released_forms"
+test "$(grep -c 'state replace-provider' "$released_forms")" -eq 2 || {
+	echo 'released Forms must migrate one state to OpenTofu and back' >&2
+	exit 1
+}
+test "$(grep -c 'run_helper drift' "$released_forms")" -eq 1 || {
+	echo 'released Forms must use one reusable exact-ID drift phase' >&2
+	exit 1
+}
+grep -q 'run_helper verify-terminal' "$released_forms"
+grep -q 'identity_preserved":true' "$released_forms"
+grep -q 'form_identity_preserved":true' "$released_journey"
+grep -q 'HUBSPOT_ONE_PORTAL_LOCK_DIR' "$released_journey"
+grep -q 'hubspot_form_definition' scripts/verify-released-provider.sh
+grep -q 'released-form-migration_test.sh' Makefile
 ! grep -Eqi 'hub[_-]?id|app[_-]?id|record[_-]?id|form[_-]?id|portal[_-]?id|access[_-]?token|pat-' "$forms_manifest" || {
 	echo 'Forms capability manifest contains a forbidden identifier or credential marker' >&2
 	exit 1

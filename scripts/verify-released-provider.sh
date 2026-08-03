@@ -29,6 +29,7 @@ EOF
 schema=$("$engine" -chdir="$tmp" providers schema -json)
 printf '%s' "$schema" | grep -q 'hubspot_property_group'
 printf '%s' "$schema" | grep -q 'hubspot_property_definition'
+printf '%s' "$schema" | grep -q 'hubspot_form_definition'
 if printf '%s' "$schema" | grep -Eq 'hubspot_pipeline|hubspot_custom_object_schema'; then
   echo "released provider exposes a deferred resource" >&2
   exit 1

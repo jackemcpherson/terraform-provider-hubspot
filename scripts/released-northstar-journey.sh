@@ -4,7 +4,7 @@ set -eu
 version=${1:?release version is required}
 demo_script=${HUBSPOT_DEMO_SCRIPT:-../terraform-hubspot-demo/scripts/demo}
 
-test "$version" = v0.2.0 || { echo "Northstar release journey requires v0.2.0" >&2; exit 1; }
+test "$version" = v0.3.0 || { echo "Northstar release journey requires v0.3.0" >&2; exit 1; }
 test -x "$demo_script" || { echo "demo script is not executable: $demo_script" >&2; exit 1; }
 
 run_engine() {

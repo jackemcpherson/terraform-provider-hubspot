@@ -33,7 +33,7 @@ provider "registry.terraform.io/jackemcpherson/hubspot" {
 LOCK
     ;;
   'providers schema -json')
-    printf '%s\n' '{"hubspot_property_group":{},"hubspot_property_definition":{}}'
+    printf '%s\n' '{"hubspot_property_group":{},"hubspot_property_definition":{},"hubspot_form_definition":{}}'
     ;;
   *)
     echo "unexpected terraform invocation: $*" >&2
@@ -47,6 +47,11 @@ PATH="$tmp/bin:$PATH" FAKE_VERSION=0.1.4 FAKE_DIGEST="$digest" \
   "$root/scripts/verify-released-provider.sh" \
   terraform registry.terraform.io/jackemcpherson/hubspot v0.1.4 "$tmp/assets"
 
+ln -s terraform "$tmp/bin/tofu"
+PATH="$tmp/bin:$PATH" FAKE_VERSION=0.1.4 FAKE_DIGEST="$digest" \
+  "$root/scripts/verify-released-provider.sh" \
+  tofu registry.opentofu.org/jackemcpherson/hubspot v0.1.4 "$tmp/assets"
+
 if PATH="$tmp/bin:$PATH" FAKE_VERSION=0.1.3 FAKE_DIGEST="$digest" \
   "$root/scripts/verify-released-provider.sh" \
   terraform registry.terraform.io/jackemcpherson/hubspot v0.1.4 "$tmp/assets" \
@@ -55,5 +60,20 @@ if PATH="$tmp/bin:$PATH" FAKE_VERSION=0.1.3 FAKE_DIGEST="$digest" \
   exit 1
 fi
 grep -q 'registry lock selected 0.1.3 instead of 0.1.4' "$tmp/mismatch-output"
+
+if PATH="$tmp/bin:$PATH" FAKE_VERSION=0.1.4 FAKE_DIGEST=ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
+  "$root/scripts/verify-released-provider.sh" \
+  terraform registry.terraform.io/jackemcpherson/hubspot v0.1.4 "$tmp/assets" \
+  >"$tmp/digest-output" 2>&1; then
+  echo 'expected verifier to reject a different registry archive digest' >&2
+  exit 1
+fi
+grep -q 'registry digest does not match the GitHub release' "$tmp/digest-output"
+
+if PATH="$tmp/bin:$PATH" "$root/scripts/verify-released-provider.sh" \
+  terraform registry.opentofu.org/jackemcpherson/hubspot v0.1.4 "$tmp/assets" >/dev/null 2>&1; then
+  echo 'expected verifier to reject an engine/registry mismatch' >&2
+  exit 1
+fi
 
 echo 'Released provider verifier tests passed'
