@@ -65,18 +65,54 @@ if test "$tag_exists" = false; then
 fi
 
 : "${GPG_PUBLIC_KEY:?GPG_PUBLIC_KEY is required to verify an existing release}"
+: "${GPG_FINGERPRINT:?GPG_FINGERPRINT is required to verify the registered signing identity}"
+export GNUPGHOME="$tmp/gnupg"
+mkdir "$GNUPGHOME"
+chmod 700 "$GNUPGHOME"
 printf '%s' "$GPG_PUBLIC_KEY" | gpg --batch --import >/dev/null 2>&1
-git verify-tag "$version" >/dev/null
+if ! git verify-tag --raw "$version" >/dev/null 2>"$tmp/tag-verification"; then
+	echo 'release tag signature verification failed' >&2
+	exit 1
+fi
+"$root/scripts/verify-gpg-signing-identity.sh" "$GPG_FINGERPRINT" "$tmp/tag-verification" 'release tag'
 mkdir "$tmp/assets"
 gh release download "$version" --repo "$repository" --dir "$tmp/assets" >/dev/null
+
+if ! jq -e '
+	.assets as $assets |
+	($assets | type) == "array" and
+	($assets | length) > 0 and
+	($assets | all(.[];
+		((.name | type) == "string") and
+		(.name | test("^[A-Za-z0-9][A-Za-z0-9._-]*$")) and
+		((.digest | type) == "string") and
+		(.digest | test("^sha256:[0-9a-f]{64}$"))
+	)) and
+	(($assets | map(.name) | length) == ($assets | map(.name) | unique | length))
+' "$tmp/release.json" >/dev/null; then
+	echo 'GitHub release assets must have unique safe names and immutable SHA-256 digests' >&2
+	exit 1
+fi
+jq -r '.assets[] | [(.digest | ltrimstr("sha256:")), .name] | @tsv' "$tmp/release.json" |
+	LC_ALL=C sort -k 2 >"$tmp/expected-asset-digests"
+(
+	cd "$tmp/assets"
+	find . -maxdepth 1 -type f -print |
+		while IFS= read -r asset; do
+			digest=$(shasum -a 256 "$asset" | awk '{print $1}')
+			printf '%s\t%s\n' "$digest" "${asset#./}"
+		done | LC_ALL=C sort -k 2
+) >"$tmp/downloaded-asset-digests"
+if ! diff -u "$tmp/expected-asset-digests" "$tmp/downloaded-asset-digests"; then
+	echo 'downloaded release assets do not match GitHub immutable asset digests' >&2
+	exit 1
+fi
+
 if test -n "${RELEASE_ASSET_VERIFIER:-}"; then
-	"$RELEASE_ASSET_VERIFIER" "$tmp/assets" "$GPG_PUBLIC_KEY" "$version" "$repository"
+	"$RELEASE_ASSET_VERIFIER" "$tmp/assets" "$GPG_PUBLIC_KEY" "$version" "$repository" "$GPG_FINGERPRINT"
 else
-	"$root/scripts/verify-release-assets.sh" "$tmp/assets" "$GPG_PUBLIC_KEY"
+	"$root/scripts/verify-release-assets.sh" "$tmp/assets" "$GPG_PUBLIC_KEY" "$GPG_FINGERPRINT"
 	"$root/scripts/verify-release-bundle.sh" "$tmp/assets" "$version"
-	for archive in "$tmp/assets"/*.zip; do
-		gh attestation verify "$archive" --repo "$repository" >/dev/null
-	done
 fi
 
 if jq -e '.draft == true' "$tmp/release.json" >/dev/null; then

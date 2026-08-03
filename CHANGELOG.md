@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Fixed
+
+- Align post-publication release observation with the minimal release
+  architecture by verifying the registered signing identity and exact GitHub
+  asset digests without requiring provenance attestations.
+
 ## [0.2.0] - 2026-08-02
 
 ### Added

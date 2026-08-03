@@ -60,6 +60,23 @@ Registry metadata can be resynchronized after an ingestion failure. A bad
 archive, checksum, signature, or manifest requires a new patch release;
 maintainers must not move the tag or replace an asset.
 
+Post-publication observation is read-only and separate from the publication
+transaction. Export `GH_TOKEN`, the repository `GPG_PUBLIC_KEY`, and the full
+`GPG_FINGERPRINT` registered with both Registries, then run:
+
+```sh
+./scripts/observe-release.sh v0.3.0 <full-main-commit> jackemcpherson/terraform-provider-hubspot
+```
+
+For an existing release, the observer verifies that its tag resolves to `main`,
+has a valid signature from the registered identity, and retains a successful
+`Required` check. It downloads the exact GitHub asset set, compares every file
+with GitHub's immutable SHA-256 asset digest, verifies the checksum signature
+against the same identity, and validates the versioned Registry manifest plus
+the exact supported archive/checksum closure. The minimal architecture does not
+produce or require a provenance attestation. A failed observation makes the
+release unhealthy but does not authorize moving its tag or replacing its assets.
+
 The signed checksum inventory must contain exactly the provider archives and one
 Registry manifest. Keep `terraform-registry-manifest.json` as the repository source,
 but publish and checksum it as
@@ -80,7 +97,8 @@ the 32-bit ARM build is GOARM=6 and is published as `*_arm.zip`; do not suffix t
 archive as `armv6` or `armv7`, because OpenTofu Registry target discovery ignores
 those nonstandard architecture names.
 
-After publication, download the immutable GitHub release assets and run:
+After publication and successful release observation, download the immutable
+GitHub release assets and run the separate completion journey:
 
 ```sh
 ./scripts/released-provider-journey.sh v0.2.0 /path/to/release-assets

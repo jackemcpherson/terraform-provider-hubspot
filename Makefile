@@ -72,6 +72,7 @@ check-workflows:
 	@./scripts/released-northstar-journey_test.sh
 	@./scripts/verify-released-provider_test.sh
 	@./scripts/observe-release_test.sh
+	@./scripts/verify-release-assets_test.sh
 	@./scripts/compare-release-builds_test.sh
 	@./scripts/verify-registry-checksums_test.sh
 	@./scripts/verify-registry-manifest_test.sh
