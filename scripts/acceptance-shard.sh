@@ -10,7 +10,7 @@ status=failed
 cleanup=passed
 ledger=
 binary_dir=
-lock_dir=${HUBSPOT_ONE_PORTAL_LOCK_DIR:-"${TMPDIR:-/tmp}/hubspot-free-portal-${HUBSPOT_PORTAL_LOCK_ID:-default}.lock"}
+lock_dir=${HUBSPOT_ONE_PORTAL_LOCK_DIR:-"${TMPDIR:-/tmp}/hubspot-free-portal-${HUBSPOT_PORTAL_LOCK_ID:-free-configuration}.lock"}
 lock_acquired=false
 commit=$(git rev-parse HEAD)
 manifest_sha=
@@ -38,10 +38,13 @@ finish() {
 trap finish EXIT
 trap 'exit 1' HUP INT TERM
 
-test "$shard" = free_properties || { echo "v0.2 supports only the free_properties capability shard" >&2; exit 1; }
+case "$shard" in
+  free_properties|form_definitions) ;;
+  *) echo "acceptance shard must be free_properties or form_definitions" >&2; exit 1 ;;
+esac
 
 if [ "${HUBSPOT_PORTAL_LOCK_HELD:-}" != 1 ]; then
-  mkdir "$lock_dir" 2>/dev/null || { echo "HubSpot Free portal is already in use: $lock_dir" >&2; exit 1; }
+  mkdir "$lock_dir" 2>/dev/null || { echo "HubSpot configuration portal is already in use: $lock_dir" >&2; exit 1; }
   lock_acquired=true
 fi
 
@@ -50,8 +53,17 @@ printf '%s\n' "$prefix" | grep -Eq '^tf_acc_[A-Za-z0-9_]+_$' || { echo "acceptan
 test -s "$manifest"
 manifest_sha=$(shasum -a 256 "$manifest" | awk '{print $1}')
 grep -q "\"shard\":\"$shard\"" "$manifest"
-grep -q '"quota_telemetry":"advisory"' "$manifest"
-if grep -Eqi 'hub[_-]?id|app[_-]?id|record[_-]?id|access[_-]?token|pat-' "$manifest"; then
+case "$shard" in
+  free_properties)
+    grep -q '"quota_telemetry":"advisory"' "$manifest"
+    ;;
+  form_definitions)
+    grep -q '"api_family":"marketing/v3/forms"' "$manifest"
+    grep -q '"scope_families":\["forms"\]' "$manifest"
+    grep -q '"cleanup":"terminal_archive"' "$manifest"
+    ;;
+esac
+if grep -Eqi 'hub[_-]?id|app[_-]?id|record[_-]?id|form[_-]?id|portal[_-]?id|access[_-]?token|pat-' "$manifest"; then
   echo "capability manifest contains a forbidden identifier or credential marker" >&2
   exit 1
 fi
@@ -79,7 +91,7 @@ printf '%s\n' "$tests" | grep -q "TestAcc_${shard}_" || {
   echo "no acceptance tests registered for required shard $shard" >&2
   exit 1
 }
-quota_test="TestAcc_${shard}_QuotaPreflight"
+quota_test="TestAcc_${shard}_CapabilityPreflight"
 if [ "$shard" = free_properties ]; then quota_test="TestAcc_${shard}_QuotaTelemetry"; fi
 printf '%s\n' "$tests" | grep -qx "$quota_test" || {
   echo "no quota telemetry/preflight registered for required shard $shard" >&2

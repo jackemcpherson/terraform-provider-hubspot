@@ -144,6 +144,87 @@ func TestFakeHubSpotFormDriftHooksAndUnknownMetadata(t *testing.T) {
 	}
 }
 
+func TestFormJanitorReportsAndArchivesOnlyExactPrefixOwnedIDs(t *testing.T) {
+	fake := acceptance.NewFakeHubSpot("sentinel", 1)
+	clients := newFakeHubSpotClients(t, fake, "sentinel")
+	ctx := context.Background()
+	owned := fakeFormWrite()
+	owned.Name = "tf_acc_owned_active"
+	activeOwned, err := clients.Forms.Create(ctx, owned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retained := fakeFormWrite()
+	retained.Name = "tf_acc_owned_retained"
+	archivedOwned, err := clients.Forms.Create(ctx, retained)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := clients.Forms.Archive(ctx, archivedOwned.ID); err != nil {
+		t.Fatal(err)
+	}
+	unowned := fakeFormWrite()
+	unowned.Name = "customer_contact"
+	unownedForm, err := clients.Forms.Create(ctx, unowned)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	active, archived, err := countOwnedForms(ctx, clients, "tf_acc_owned_")
+	if err != nil || active != 1 || archived != 1 {
+		t.Fatalf("owned Form definition report = active %d archived %d, %v", active, archived, err)
+	}
+	retainedCount, err := archiveOwnedForms(ctx, clients, "tf_acc_owned_")
+	if err != nil || retainedCount != 2 {
+		t.Fatalf("terminal Form definition cleanup = retained %d, %v", retainedCount, err)
+	}
+	if fake.FormDeleteCount(activeOwned.ID) != 1 {
+		t.Fatal("cleanup did not archive the exact active generated ID once")
+	}
+	if fake.FormDeleteCount(unownedForm.ID) != 0 {
+		t.Fatal("cleanup archived an unowned Form definition")
+	}
+	if _, err := clients.Forms.Get(ctx, unownedForm.ID); err != nil {
+		t.Fatal("unowned Form definition did not remain active")
+	}
+}
+
+func TestFormJanitorFailsClosedForUnsupportedOrUnverifiableOwnedForms(t *testing.T) {
+	t.Run("unsupported form type", func(t *testing.T) {
+		fake := acceptance.NewFakeHubSpot("sentinel", 1)
+		clients := newFakeHubSpotClients(t, fake, "sentinel")
+		form := fakeFormWrite()
+		form.Name = "tf_acc_owned_unsupported"
+		created, err := clients.Forms.Create(context.Background(), form)
+		if err != nil || !fake.InjectNonHubSpotForm(created.ID) {
+			t.Fatal("create unsupported owned form")
+		}
+		if _, err := archiveOwnedForms(context.Background(), clients, "tf_acc_owned_"); err == nil {
+			t.Fatal("cleanup accepted an unsupported prefix collision")
+		}
+		if fake.FormDeleteCount(created.ID) != 0 {
+			t.Fatal("cleanup mutated unsupported prefix collision")
+		}
+	})
+	t.Run("unverifiable archive", func(t *testing.T) {
+		fake := acceptance.NewFakeHubSpot("sentinel", 1)
+		clients := newFakeHubSpotClients(t, fake, "sentinel")
+		form := fakeFormWrite()
+		form.Name = "tf_acc_owned_unverifiable"
+		created, err := clients.Forms.Create(context.Background(), form)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fake.FailNextFormOperation(acceptance.FormFaultArchiveNotApplied)
+		if _, err := archiveOwnedForms(context.Background(), clients, "tf_acc_owned_"); err == nil {
+			t.Fatal("cleanup accepted an unverifiable archive")
+		}
+		if _, err := clients.Forms.Get(context.Background(), created.ID); err != nil {
+			t.Fatal("unverifiable archive did not retain the active form")
+		}
+	})
+}
+
 func fakeFormWrite() hubspot.FormDefinitionWrite {
 	return hubspot.FormDefinitionWrite{
 		FormType: "hubspot", Name: "Managed form",

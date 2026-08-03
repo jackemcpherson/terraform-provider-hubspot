@@ -144,6 +144,43 @@ func TestFormClientPreservesGeneratedIDFromMalformedSuccessResponse(t *testing.T
 	}
 }
 
+func TestFormClientListsActiveAndArchivedDefinitionsThroughCursors(t *testing.T) {
+	requests := make([]string, 0, 3)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requests = append(requests, request.URL.RequestURI())
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Query().Get("archived") + "/" + request.URL.Query().Get("after") {
+		case "false/":
+			io.WriteString(writer, `{"results":[{"id":"active-1","name":"Owned","formType":"hubspot"}],"paging":{"next":{"after":"cursor-2"}}}`)
+		case "false/cursor-2":
+			io.WriteString(writer, `{"results":[{"id":"active-2","name":"Unowned","formType":"hubspot"}]}`)
+		case "true/":
+			io.WriteString(writer, `{"results":[{"id":"archived-1","name":"Owned","formType":"hubspot","archived":true}]}`)
+		default:
+			t.Fatalf("unexpected form list query: %s", request.URL.RawQuery)
+		}
+	}))
+	defer server.Close()
+
+	client := &FormClient{transport: newTestTransport(t, server.URL)}
+	active, err := client.List(context.Background(), false)
+	if err != nil || len(active) != 2 || active[0].ID != "active-1" || active[1].ID != "active-2" {
+		t.Fatalf("active forms = %#v, %v", active, err)
+	}
+	archived, err := client.List(context.Background(), true)
+	if err != nil || len(archived) != 1 || archived[0].ID != "archived-1" || !archived[0].Archived {
+		t.Fatalf("archived forms = %#v, %v", archived, err)
+	}
+	want := []string{
+		"/marketing/v3/forms?archived=false&limit=100",
+		"/marketing/v3/forms?after=cursor-2&archived=false&limit=100",
+		"/marketing/v3/forms?archived=true&limit=100",
+	}
+	if !reflect.DeepEqual(requests, want) {
+		t.Fatalf("list requests = %#v, want %#v", requests, want)
+	}
+}
+
 func canonicalFormWriteForTest() FormDefinitionWrite {
 	return FormDefinitionWrite{
 		FormType: "hubspot",

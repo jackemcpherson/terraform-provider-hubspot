@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-required='archive-crm-configuration.yml provider-maintenance.yml release.yml validate-provider.yml'
+required='archive-hubspot-configuration.yml provider-maintenance.yml release.yml validate-provider.yml'
 legacy='acceptance-cleanup.yml acceptance.yml ci.yml provider-lifecycle.yml quality.yml release-candidate.yml run-provider-lifecycle.yml security.yml verify-release.yml'
 
 actual=$(find .github/workflows -maxdepth 1 -type f -name '*.yml' -exec basename {} \; | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')
@@ -81,9 +81,34 @@ grep -q '^  schedule:' "$maintenance"
 grep -q '^  workflow_dispatch:' "$maintenance"
 grep -q "if: github.event_name == 'schedule'" "$maintenance"
 grep -q 'one-portal-free-lifecycle.sh' "$maintenance"
+grep -q 'acceptance-shard.sh' "$maintenance"
 grep -q 'acceptance-cleanup.sh report free_properties' "$maintenance"
-test "$(grep -c 'HUBSPOT_ACCEPTANCE_PORTAL_ID:.*vars.HUBSPOT_ACCEPTANCE_PORTAL_ID' "$maintenance")" -eq 2 || {
-	echo 'both live maintenance jobs must enforce the expected portal identity' >&2
+grep -q 'acceptance-cleanup.sh report form_definitions' "$maintenance"
+test "$(grep -c '^    environment: free_properties$' "$maintenance")" -eq 2 || {
+	echo 'property acceptance and reporting must use the protected free_properties environment' >&2
+	exit 1
+}
+test "$(grep -c '^    environment: form_definitions$' "$maintenance")" -eq 2 || {
+	echo 'Forms acceptance and reporting must use the protected form_definitions environment' >&2
+	exit 1
+}
+test "$(grep -c 'group: hubspot-account-free-configuration' "$maintenance")" -eq 4 || {
+	echo 'all maintenance jobs must share the account-wide non-cancelling concurrency group' >&2
+	exit 1
+}
+test "$(grep -c 'HUBSPOT_ACCEPTANCE_PORTAL_ID:.*vars.HUBSPOT_ACCEPTANCE_PORTAL_ID' "$maintenance")" -eq 4 || {
+	echo 'all live maintenance jobs must enforce the expected portal identity' >&2
+	exit 1
+}
+test "$(grep -c 'HUBSPOT_PORTAL_LOCK_ID: free-configuration' "$maintenance")" -eq 4 || {
+	echo 'all maintenance jobs must use the shared local portal lock identity' >&2
+	exit 1
+}
+grep -q 'CAPABILITY_SHARD: free_properties' "$maintenance"
+grep -q 'CAPABILITY_SHARD: form_definitions' "$maintenance"
+grep -q '^          ref: [0-9a-f]\{40\}$' "$maintenance"
+! grep -Eq 'hubspot-account-free_properties|hubspot-account-form_definitions' "$maintenance" || {
+	echo 'maintenance must not use shard-specific account concurrency groups' >&2
 	exit 1
 }
 ! grep -Eq 'GPG_|contents: write|goreleaser' "$maintenance" || {
@@ -127,16 +152,51 @@ if grep -q -- '--snapshot' "$release"; then
 	exit 1
 fi
 
-archive=.github/workflows/archive-crm-configuration.yml
+archive=.github/workflows/archive-hubspot-configuration.yml
 grep -q '^  workflow_dispatch:' "$archive"
 if grep -q '^  schedule:' "$archive"; then
-	echo 'CRM configuration archival must be manual only' >&2
+	echo 'HubSpot configuration archival must be manual only' >&2
 	exit 1
 fi
-grep -q '^    environment: free_properties$' "$archive"
+grep -q '^      shard:$' "$archive"
+grep -q "if: inputs.shard == 'free_properties'" "$archive"
+grep -q "if: inputs.shard == 'form_definitions'" "$archive"
+test "$(grep -c '^    environment: free_properties$' "$archive")" -eq 1
+test "$(grep -c '^    environment: form_definitions$' "$archive")" -eq 1
 grep -q 'archive-prefixed-crm-configuration' "$archive"
+grep -q 'archive-prefixed-form-definitions' "$archive"
 grep -q 'acceptance-cleanup.sh archive free_properties' "$archive"
-! grep -q '^      shard:' "$archive" || { echo 'the only supported shard must not be operator-selectable' >&2; exit 1; }
+grep -q 'acceptance-cleanup.sh archive form_definitions' "$archive"
+test "$(grep -c 'group: hubspot-account-free-configuration' "$archive")" -eq 2 || {
+	echo 'both archive jobs must share the account-wide non-cancelling concurrency group' >&2
+	exit 1
+}
+test "$(grep -c 'HUBSPOT_ACCEPTANCE_PORTAL_ID:.*vars.HUBSPOT_ACCEPTANCE_PORTAL_ID' "$archive")" -eq 2 || {
+	echo 'both archive jobs must enforce the protected portal identity' >&2
+	exit 1
+}
+test "$(grep -c 'HUBSPOT_PORTAL_LOCK_ID: free-configuration' "$archive")" -eq 2 || {
+	echo 'both archive jobs must use the shared local portal lock identity' >&2
+	exit 1
+}
+! grep -Eq '^[[:space:]]*environment:.*\$\{\{' "$archive" || {
+	echo 'operator input must not select a GitHub Environment dynamically' >&2
+	exit 1
+}
+! grep -Eq 'hubspot-account-free_properties|hubspot-account-form_definitions' "$archive" || {
+	echo 'manual cleanup must not use shard-specific account concurrency groups' >&2
+	exit 1
+}
+
+forms_manifest=acceptance/capabilities/form_definitions.json
+test "$(cat "$forms_manifest")" = '{"shard":"form_definitions","tier":"free","api_family":"marketing/v3/forms","scope_families":["forms"],"cleanup":"terminal_archive"}' || {
+	echo 'Forms capability manifest must contain only the canonical API, scope, tier, and cleanup policy' >&2
+	exit 1
+}
+! grep -Eqi 'hub[_-]?id|app[_-]?id|record[_-]?id|form[_-]?id|portal[_-]?id|access[_-]?token|pat-' "$forms_manifest" || {
+	echo 'Forms capability manifest contains a forbidden identifier or credential marker' >&2
+	exit 1
+}
 
 grep -Fq "mtime: '{{ .CommitDate }}'" .goreleaser.yml || {
 	echo 'release archive files must use the commit timestamp' >&2

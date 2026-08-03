@@ -32,7 +32,8 @@ an existing release.
 
 Scheduled source acceptance and read-only janitor reporting live in
 `provider-maintenance.yml`. Manual prefix archival remains isolated in
-`archive-crm-configuration.yml`. Pull-request and main validation remain in
+`archive-hubspot-configuration.yml`, with static protected jobs for each shard.
+Pull-request and main validation remain in
 `validate-provider.yml`.
 
 SPDX generation, provenance attestation, duplicate builds, draft-state recovery,

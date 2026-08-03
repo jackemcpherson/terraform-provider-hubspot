@@ -8,16 +8,19 @@ the actual create operation remains the authoritative quota check. Capability
 manifests contain feature and scope families only. They must not contain Hub IDs,
 app IDs, record IDs, configuration IDs, or credentials.
 
-v0.2 has one `free_properties` shard and one disposable portal shared with the
-Northstar demo. Run `make one-portal-free-lifecycle` only with the Free shard's
+v0.3 has `free_properties` and `form_definitions` shards in separate protected
+GitHub Environments, with separate tokens and expected portal variables. Both
+shards and the Northstar demo mutate one disposable portal. Run
+`make one-portal-free-lifecycle` only with the Free shard's
 protected token and a valid acceptance prefix. It saves no CRM records: it applies
 the demo's reviewed destroy plan after adopting and verifying its known identities,
 runs the owned Free acceptance suite, then always rebuilds the Git-authored demo
 through a fresh reviewed plan, including when acceptance fails. The demo and the
 shard share a portal lock keyed by
-`HUBSPOT_PORTAL_LOCK_ID` (default `default`) across local checkouts; GitHub uses
-the non-cancelling `hubspot-account-free_properties` concurrency group across
-runners. Do not bypass either gate for this portal.
+`HUBSPOT_PORTAL_LOCK_ID` (default `free-configuration`) across local checkouts;
+GitHub uses the non-cancelling `hubspot-account-free-configuration` concurrency
+group for property acceptance, Forms acceptance, Northstar, reports, and manual
+cleanup. Do not bypass either gate for this portal.
 
 HubSpot's property DELETE operations archive definitions and groups into its
 recycling bin rather than offering a permanent-purge endpoint. Free acceptance
@@ -28,11 +31,16 @@ must recreate successfully before the demo rebuild is verified. Properties are
 read back from the archive; groups are proven absent from the active API and reusable.
 
 The scheduled `Provider maintenance` workflow reports stale `tf_acc_`
-configuration. It never archives anything. Manual archival uses `Archive CRM
-configuration` and requires an exact owned prefix ending in `_`, the protected
-`free_properties` environment, and the literal confirmation
-`archive-prefixed-crm-configuration`. HubSpot retains this configuration in its
-recycling bin, so do not describe the operation as deletion.
+configuration in both shards. The Forms report distinguishes active owned Forms
+from retained archived tombstones, and neither report mutates the portal. Manual
+archival uses `Archive HubSpot configuration`: select a shard, provide an exact
+owned prefix ending in `_`, and enter that shard's literal confirmation.
+Property cleanup requires `archive-prefixed-crm-configuration`; Forms cleanup
+requires `archive-prefixed-form-definitions`. Static jobs bind each choice to its
+protected Environment, credentials, expected portal, and the shared account lock.
+Forms are selected by the exact prefix but archived and verified by immutable ID;
+the cleanup never archives by a name match alone. HubSpot retains archived
+configuration, so do not describe either operation as deletion.
 
 To release, run `Release` from `main` with the intended v-prefixed SemVer. The
 single protected job requires the dispatch commit to be the current head of

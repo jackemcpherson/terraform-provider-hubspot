@@ -10,6 +10,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strconv"
 )
 
 // FormClient owns the typed Forms v3 lifecycle boundary. Form identity is
@@ -124,6 +125,15 @@ type FormLegalConsentOptions struct {
 	Type string `json:"type"`
 }
 
+type formDefinitionPage struct {
+	Results []FormDefinition `json:"results"`
+	Paging  struct {
+		Next struct {
+			After string `json:"after"`
+		} `json:"next"`
+	} `json:"paging"`
+}
+
 func formsPath() string { return "/marketing/v3/forms" }
 
 func (c *FormClient) Create(ctx context.Context, input FormDefinitionWrite) (FormDefinition, error) {
@@ -149,6 +159,42 @@ func (c *FormClient) Get(ctx context.Context, id string) (FormDefinition, error)
 
 func (c *FormClient) GetArchived(ctx context.Context, id string) (FormDefinition, error) {
 	return c.get(ctx, id, true)
+}
+
+// List returns every active or archived Form definition by following HubSpot's
+// cursor. It is intentionally an internal maintenance surface, not a provider
+// data source or an identity lookup mechanism.
+func (c *FormClient) List(ctx context.Context, archived bool) ([]FormDefinition, error) {
+	results := make([]FormDefinition, 0)
+	after := ""
+	seen := make(map[string]struct{})
+	for {
+		query := url.Values{"archived": []string{strconv.FormatBool(archived)}, "limit": []string{"100"}}
+		if after != "" {
+			query.Set("after", after)
+		}
+		var page formDefinitionPage
+		if err := c.transport.Do(ctx, Operation{
+			Name: "form-list", Method: http.MethodGet, Path: formsPath() + "?" + query.Encode(), Replay: ReplaySafe,
+		}, nil, &page); err != nil {
+			return nil, err
+		}
+		for _, form := range page.Results {
+			if form.ID == "" {
+				return nil, errors.New("HubSpot form list response omitted id")
+			}
+			results = append(results, form)
+		}
+		next := page.Paging.Next.After
+		if next == "" {
+			return results, nil
+		}
+		if _, exists := seen[next]; exists {
+			return nil, errors.New("HubSpot form list cursor repeated")
+		}
+		seen[next] = struct{}{}
+		after = next
+	}
 }
 
 func (c *FormClient) Update(ctx context.Context, id string, input FormDefinitionPatch) (FormDefinition, error) {

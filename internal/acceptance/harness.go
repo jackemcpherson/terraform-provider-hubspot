@@ -33,6 +33,7 @@ type Shard string
 
 const (
 	FreeProperties      Shard = "free_properties"
+	FormDefinitions     Shard = "form_definitions"
 	DealPipelines       Shard = "deal_pipelines"
 	TicketPipelines     Shard = "ticket_pipelines"
 	CustomSchemas       Shard = "custom_schemas"
@@ -171,7 +172,7 @@ func Run(t testing.TB, options Options, scenario func(*Session)) {
 
 func validShard(shard Shard) bool {
 	switch shard {
-	case FreeProperties, DealPipelines, TicketPipelines, CustomSchemas, SensitiveProperties, CustomPipelines:
+	case FreeProperties, FormDefinitions, DealPipelines, TicketPipelines, CustomSchemas, SensitiveProperties, CustomPipelines:
 		return true
 	default:
 		return false

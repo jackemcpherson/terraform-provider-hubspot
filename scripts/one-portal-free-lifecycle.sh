@@ -9,7 +9,7 @@ if [ "$#" -gt 0 ]; then
 else
   acceptance_script=${HUBSPOT_ACCEPTANCE_SCRIPT:-"$root/scripts/acceptance-shard.sh"}
 fi
-lock_dir=${HUBSPOT_ONE_PORTAL_LOCK_DIR:-"${TMPDIR:-/tmp}/hubspot-free-portal-${HUBSPOT_PORTAL_LOCK_ID:-default}.lock"}
+lock_dir=${HUBSPOT_ONE_PORTAL_LOCK_DIR:-"${TMPDIR:-/tmp}/hubspot-free-portal-${HUBSPOT_PORTAL_LOCK_ID:-free-configuration}.lock"}
 demo_torn_down=false
 lock_acquired=false
 

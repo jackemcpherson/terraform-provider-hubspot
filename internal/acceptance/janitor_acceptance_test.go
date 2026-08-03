@@ -7,6 +7,8 @@ package acceptance_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -29,6 +31,12 @@ func TestAcc_JanitorReport(t *testing.T) {
 		t.Logf("stale owned CRM configuration: deal_pipelines=%d", countOwnedPipelines(t, ctx, clients, "deals", prefix))
 	case "ticket_pipelines":
 		t.Logf("stale owned CRM configuration: ticket_pipelines=%d", countOwnedPipelines(t, ctx, clients, "tickets", prefix))
+	case "form_definitions":
+		active, archived, err := countOwnedForms(ctx, clients, prefix)
+		if err != nil {
+			t.Fatalf("report stale owned Form definitions: %s", acceptance.SanitizedHubSpotError(err))
+		}
+		t.Logf("stale owned HubSpot configuration: active_form_definitions=%d retained_archived_form_definitions=%d", active, archived)
 	}
 }
 
@@ -37,6 +45,14 @@ func TestAcc_ManualPrefixCleanup(t *testing.T) {
 	prefix := requiredEnvironment(t, "HUBSPOT_ACCEPTANCE_PREFIX")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
+	if shard == "form_definitions" {
+		archived, err := archiveOwnedForms(ctx, clients, prefix)
+		if err != nil {
+			t.Fatalf("archive owned Form definitions: %s", acceptance.SanitizedHubSpotError(err))
+		}
+		t.Logf("terminal cleanup retained Archived form definitions: %d", archived)
+		return
+	}
 
 	if shard == "deal_pipelines" || shard == "ticket_pipelines" {
 		objectType := "deals"
@@ -93,7 +109,7 @@ func TestAcc_ManualPrefixCleanup(t *testing.T) {
 func janitorClients(t *testing.T) (*hubspot.ClientSet, string) {
 	t.Helper()
 	shard := requiredEnvironment(t, "CAPABILITY_SHARD")
-	if shard != "free_properties" && shard != "deal_pipelines" && shard != "ticket_pipelines" {
+	if shard != "free_properties" && shard != "form_definitions" && shard != "deal_pipelines" && shard != "ticket_pipelines" {
 		t.Fatal("janitor implementation is unavailable for the selected capability shard")
 	}
 	token := requiredEnvironment(t, "HUBSPOT_ACCESS_TOKEN")
@@ -104,6 +120,72 @@ func janitorClients(t *testing.T) (*hubspot.ClientSet, string) {
 		t.Fatalf("configure HubSpot acceptance janitor: %v", err)
 	}
 	return clients, shard
+}
+
+func countOwnedForms(ctx context.Context, clients *hubspot.ClientSet, prefix string) (int, int, error) {
+	active, err := clients.Forms.List(ctx, false)
+	if err != nil {
+		return 0, 0, err
+	}
+	archived, err := clients.Forms.List(ctx, true)
+	if err != nil {
+		return 0, 0, err
+	}
+	return countFormsWithPrefix(active, prefix), countFormsWithPrefix(archived, prefix), nil
+}
+
+func countFormsWithPrefix(forms []hubspot.FormDefinition, prefix string) int {
+	count := 0
+	for _, form := range forms {
+		if strings.HasPrefix(form.Name, prefix) {
+			count++
+		}
+	}
+	return count
+}
+
+func archiveOwnedForms(ctx context.Context, clients *hubspot.ClientSet, prefix string) (int, error) {
+	active, err := clients.Forms.List(ctx, false)
+	if err != nil {
+		return 0, err
+	}
+	for _, form := range active {
+		if !strings.HasPrefix(form.Name, prefix) {
+			continue
+		}
+		if form.FormType != "hubspot" || form.ID == "" {
+			return 0, errors.New("prefix-owned Form definition has an unsupported identity or type")
+		}
+		archiveErr := clients.Forms.Archive(ctx, form.ID)
+		if _, activeErr := clients.Forms.Get(ctx, form.ID); activeErr == nil {
+			return 0, errors.New("prefix-owned Form definition remained active after archival")
+		} else if !formJanitorNotFound(activeErr) {
+			return 0, fmt.Errorf("verify active Form definition absence: %w", activeErr)
+		}
+		archived, archivedErr := clients.Forms.GetArchived(ctx, form.ID)
+		if archivedErr != nil {
+			if archiveErr != nil {
+				return 0, fmt.Errorf("archive prefix-owned Form definition: %w", archiveErr)
+			}
+			return 0, fmt.Errorf("verify Archived form definition: %w", archivedErr)
+		}
+		if archived.ID != form.ID || !archived.Archived {
+			return 0, errors.New("Archived form definition identity was not exact")
+		}
+	}
+	remaining, retained, err := countOwnedForms(ctx, clients, prefix)
+	if err != nil {
+		return 0, err
+	}
+	if remaining != 0 {
+		return 0, errors.New("manual cleanup could not verify zero active prefix-owned Form definitions")
+	}
+	return retained, nil
+}
+
+func formJanitorNotFound(err error) bool {
+	var apiError *hubspot.Error
+	return errors.As(err, &apiError) && apiError.Status == 404
 }
 
 func freeJanitorClients(t *testing.T) *hubspot.ClientSet {

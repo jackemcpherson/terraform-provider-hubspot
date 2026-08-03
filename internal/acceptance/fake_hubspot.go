@@ -134,6 +134,22 @@ func (f *FakeHubSpot) handleForms(response http.ResponseWriter, request *http.Re
 func (f *FakeHubSpot) handleFormCollection(response http.ResponseWriter, request *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if request.Method == http.MethodGet {
+		archived := request.URL.Query().Get("archived") == "true"
+		ids := make([]string, 0, len(f.forms))
+		for id, form := range f.forms {
+			if form.definition.Archived == archived {
+				ids = append(ids, id)
+			}
+		}
+		sort.Strings(ids)
+		results := make([]hubspot.FormDefinition, 0, len(ids))
+		for _, id := range ids {
+			results = append(results, f.forms[id].definition)
+		}
+		writeFakeJSON(response, http.StatusOK, map[string]any{"results": results})
+		return
+	}
 	if request.Method != http.MethodPost {
 		writeFakeError(response, http.StatusMethodNotAllowed, "VALIDATION_ERROR", "", "Unsupported method.")
 		return
