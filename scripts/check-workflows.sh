@@ -80,7 +80,7 @@ maintenance=.github/workflows/provider-maintenance.yml
 grep -q '^  schedule:' "$maintenance"
 grep -q '^  workflow_dispatch:' "$maintenance"
 grep -q "if: github.event_name == 'schedule'" "$maintenance"
-grep -q 'one-portal-free-lifecycle.sh' "$maintenance"
+grep -q 'northstar-candidate-lifecycle.sh' "$maintenance"
 grep -q 'acceptance-shard.sh' "$maintenance"
 grep -q 'acceptance-cleanup.sh report free_properties' "$maintenance"
 grep -q 'acceptance-cleanup.sh report form_definitions' "$maintenance"
@@ -92,22 +92,40 @@ test "$(grep -c '^    environment: form_definitions$' "$maintenance")" -eq 2 || 
 	echo 'Forms acceptance and reporting must use the protected form_definitions environment' >&2
 	exit 1
 }
-test "$(grep -c 'group: hubspot-account-free-configuration' "$maintenance")" -eq 4 || {
+test "$(grep -c '^    environment: northstar$' "$maintenance")" -eq 1 || {
+	echo 'the cumulative lifecycle must use its distinct protected Northstar credential boundary' >&2
+	exit 1
+}
+test "$(grep -c 'group: hubspot-account-free-configuration' "$maintenance")" -eq 5 || {
 	echo 'all maintenance jobs must share the account-wide non-cancelling concurrency group' >&2
 	exit 1
 }
-test "$(grep -c 'HUBSPOT_ACCEPTANCE_PORTAL_ID:.*vars.HUBSPOT_ACCEPTANCE_PORTAL_ID' "$maintenance")" -eq 4 || {
+test "$(grep -c 'HUBSPOT_ACCEPTANCE_PORTAL_ID:.*vars.HUBSPOT_ACCEPTANCE_PORTAL_ID' "$maintenance")" -eq 5 || {
 	echo 'all live maintenance jobs must enforce the expected portal identity' >&2
 	exit 1
 }
-test "$(grep -c 'HUBSPOT_PORTAL_LOCK_ID: free-configuration' "$maintenance")" -eq 4 || {
+test "$(grep -c 'HUBSPOT_PORTAL_LOCK_ID: free-configuration' "$maintenance")" -eq 5 || {
 	echo 'all maintenance jobs must use the shared local portal lock identity' >&2
 	exit 1
 }
 grep -q 'CAPABILITY_SHARD: free_properties' "$maintenance"
 grep -q 'CAPABILITY_SHARD: form_definitions' "$maintenance"
 grep -q 'path: acceptance-report/form_definitions\*\.json' "$maintenance"
+grep -q 'path: .release-demo/.demo/local-\*-destroy/form-terminal.json' "$maintenance"
+grep -q "HUBSPOT_REQUIRE_CLEAN_PROVENANCE: '1'" "$maintenance"
+grep -q 'HUBSPOT_DEMO_EXPECTED_COMMIT: [0-9a-f]\{40\}' "$maintenance"
 grep -q '^          ref: [0-9a-f]\{40\}$' "$maintenance"
+maintenance_demo_commit=$(sed -n 's/^      HUBSPOT_DEMO_EXPECTED_COMMIT: \([0-9a-f]\{40\}\)$/\1/p' "$maintenance")
+maintenance_demo_ref=$(sed -n 's/^          ref: \([0-9a-f]\{40\}\)$/\1/p' "$maintenance")
+quality_demo_commit=$(sed -n 's/^      DOCS_PORTAL_DEMO_COMMIT: \([0-9a-f]\{40\}\)$/\1/p' "$quality")
+test "$maintenance_demo_commit" = "$maintenance_demo_ref" && test "$maintenance_demo_ref" = "$quality_demo_commit" || {
+	echo 'maintenance, documentation, and hermetic jobs must pin the same exact Northstar candidate' >&2
+	exit 1
+}
+test "$(grep -c "ref: $quality_demo_commit" "$quality")" -eq 2 || {
+	echo 'both validation checkouts must use the exact documented Northstar candidate' >&2
+	exit 1
+}
 ! grep -Eq 'hubspot-account-free_properties|hubspot-account-form_definitions' "$maintenance" || {
 	echo 'maintenance must not use shard-specific account concurrency groups' >&2
 	exit 1

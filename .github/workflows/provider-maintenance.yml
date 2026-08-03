@@ -25,11 +25,48 @@ jobs:
       contents: read
     env:
       CAPABILITY_SHARD: free_properties
+      HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
+      HUBSPOT_ACCEPTANCE_PORTAL_ID: ${{ vars.HUBSPOT_ACCEPTANCE_PORTAL_ID }}
+      HUBSPOT_ACCEPTANCE_PREFIX: tf_acc_${{ github.run_id }}_${{ github.run_attempt }}_
+      HUBSPOT_PORTAL_LOCK_ID: free-configuration
+    steps:
+      - name: Check out provider source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up provider toolchain
+        uses: ./.github/actions/setup-provider-toolchain
+        with:
+          tofu-version: '1.12.3'
+          terraform-version: '1.15.8'
+      - name: Run fail-closed property-schema source acceptance
+        run: ./scripts/acceptance-shard.sh
+      - name: Upload sanitized property-schema acceptance result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: scheduled-acceptance-free_properties
+          path: acceptance-report/free_properties.json
+          if-no-files-found: error
+
+  source-northstar-lifecycle:
+    name: Scheduled cumulative Northstar lifecycle
+    if: github.event_name == 'schedule'
+    environment: northstar
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    concurrency:
+      group: hubspot-account-free-configuration
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
       HUBSPOT_DEMO_SCRIPT: ${{ github.workspace }}/.release-demo/scripts/demo
       HUBSPOT_PROVIDER_REPO: ${{ github.workspace }}
       HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
       HUBSPOT_ACCEPTANCE_PORTAL_ID: ${{ vars.HUBSPOT_ACCEPTANCE_PORTAL_ID }}
-      HUBSPOT_ACCEPTANCE_PREFIX: tf_acc_${{ github.run_id }}_${{ github.run_attempt }}_
+      HUBSPOT_DEMO_EXPECTED_COMMIT: fed9fab1904a73cb01cfc962d028ec689bcca741
+      HUBSPOT_REQUIRE_CLEAN_PROVENANCE: '1'
       HUBSPOT_PORTAL_LOCK_ID: free-configuration
     steps:
       - name: Check out provider source
@@ -40,7 +77,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: jackemcpherson/terraform-hubspot-instance-demo
-          ref: 6710ac7f0997edc340b27f12eda8f0ebe042d5ff
+          ref: fed9fab1904a73cb01cfc962d028ec689bcca741
           path: .release-demo
           persist-credentials: false
       - name: Set up provider toolchain
@@ -48,14 +85,14 @@ jobs:
         with:
           tofu-version: '1.12.3'
           terraform-version: '1.15.8'
-      - name: Run fail-closed property-schema source acceptance
-        run: ./scripts/one-portal-free-lifecycle.sh
-      - name: Upload sanitized property-schema acceptance result
+      - name: Run fail-closed cumulative dual-engine Northstar lifecycle
+        run: ./scripts/northstar-candidate-lifecycle.sh
+      - name: Upload sanitized Northstar terminal records
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: scheduled-acceptance-free_properties
-          path: acceptance-report/free_properties.json
+          name: scheduled-northstar-terminal
+          path: .release-demo/.demo/local-*-destroy/form-terminal.json
           if-no-files-found: error
 
   source-forms-acceptance:

@@ -10,7 +10,10 @@ app IDs, record IDs, configuration IDs, or credentials.
 
 v0.3 has `free_properties` and `form_definitions` shards in separate protected
 GitHub Environments, with separate tokens and expected portal variables. Both
-shards and the Northstar demo mutate one disposable portal. Run
+shards and the Northstar demo mutate one disposable portal. Northstar has a
+third protected Environment whose token contains the cumulative property-schema
+scope union plus `forms`; neither capability-specific job receives that token.
+Run
 `make one-portal-free-lifecycle` only with the Free shard's
 protected token and a valid acceptance prefix. It saves no CRM records: it applies
 the demo's reviewed destroy plan after adopting and verifying its known identities,
@@ -21,6 +24,17 @@ shard share a portal lock keyed by
 GitHub uses the non-cancelling `hubspot-account-free-configuration` concurrency
 group for property acceptance, Forms acceptance, Northstar, reports, and manual
 cleanup. Do not bypass either gate for this portal.
+
+Scheduled property acceptance and the cumulative Northstar lifecycle are
+separate jobs because one GitHub job cannot safely enter two protected credential
+boundaries. The Northstar job starts from an empty portal, runs plan, reviewed
+apply, verification, repeat empty plan, supported property and Form drift,
+repair, refresh, exact-ID adoption, and reviewed terminal teardown under both
+engines, then leaves no active Northstar-owned Form. Each destroy records the
+Archived generated identity only as a domain-separated hash. Protected runs
+also require the exact clean demo commit. Local adoption of a pre-existing demo
+must supply `HUBSPOT_NORTHSTAR_FORM_ID` when no state output is available; the
+script never discovers or imports a Form by remote name.
 
 HubSpot's property DELETE operations archive definitions and groups into its
 recycling bin rather than offering a permanent-purge endpoint. Free acceptance
