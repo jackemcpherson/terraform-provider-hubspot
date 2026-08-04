@@ -86,7 +86,7 @@ jobs:
           tofu-version: '1.12.3'
           terraform-version: '1.15.8'
       - name: Run fail-closed cumulative dual-engine Northstar lifecycle
-        run: ./scripts/northstar-candidate-lifecycle.sh
+        run: ./scripts/northstar-candidate-lifecycle.sh v0.4.0
       - name: Upload sanitized Northstar terminal records
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

@@ -3,6 +3,7 @@ set -eu
 
 required='archive-hubspot-configuration.yml provider-maintenance.yml release.yml validate-provider.yml'
 legacy='acceptance-cleanup.yml acceptance.yml ci.yml provider-lifecycle.yml quality.yml release-candidate.yml run-provider-lifecycle.yml security.yml verify-release.yml'
+compatibility=scripts/validate-candidate-compatibility.sh
 
 actual=$(find .github/workflows -maxdepth 1 -type f -name '*.yml' -exec basename {} \; | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')
 # Split the fixed repository-owned filename list into one name per line.
@@ -81,6 +82,7 @@ grep -q '^  schedule:' "$maintenance"
 grep -q '^  workflow_dispatch:' "$maintenance"
 grep -q "if: github.event_name == 'schedule'" "$maintenance"
 grep -q 'northstar-candidate-lifecycle.sh' "$maintenance"
+grep -q 'northstar-candidate-lifecycle.sh v0.4.0' "$maintenance"
 grep -q 'acceptance-shard.sh' "$maintenance"
 grep -q 'acceptance-cleanup.sh report free_properties' "$maintenance"
 grep -q 'acceptance-cleanup.sh report form_definitions' "$maintenance"
@@ -253,6 +255,8 @@ grep -q -- '--skip=announce,publish,sign,validate' scripts/build-release-bundle.
 grep -q 'goreleaser" check' Makefile
 grep -q 'goreleaser" healthcheck' Makefile
 grep -q 'build-release-bundle.sh' scripts/registry-release-preflight.sh
+test -x "$compatibility"
+grep -q 'validate-candidate-compatibility.sh.*"$version".*"$demo_root"' scripts/northstar-candidate-lifecycle.sh
 # Match the literal Make variable expression.
 # shellcheck disable=SC2016
 grep -q '^[[:space:]]*@"$(TOOLS_BIN)/goreleaser" release --snapshot --clean --skip=sign$' Makefile
