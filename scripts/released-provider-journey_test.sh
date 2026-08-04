@@ -8,13 +8,22 @@ log="$tmp/calls"
 assets="$tmp/assets"
 demo="$tmp/demo-repo"
 evidence="$tmp/evidence"
-mkdir -p "$assets" "$demo"
+provider="$tmp/provider-repo"
+mkdir -p "$assets" "$demo" "$provider"
 git -C "$demo" init -q
 git -C "$demo" config user.name test
 git -C "$demo" config user.email test@example.com
 touch "$demo/README.md"
 git -C "$demo" add README.md
 git -C "$demo" commit -qm fixture
+demo_commit=$(git -C "$demo" rev-parse HEAD)
+git -C "$provider" init -q
+git -C "$provider" config user.name test
+git -C "$provider" config user.email test@example.com
+touch "$provider/go.mod"
+git -C "$provider" add go.mod
+git -C "$provider" commit -qm fixture
+provider_commit=$(git -C "$provider" rev-parse HEAD)
 os=$(uname -s | tr '[:upper:]' '[:lower:]')
 case "$(uname -m)" in arm64|aarch64) arch=arm64 ;; *) arch=amd64 ;; esac
 touch "$assets/terraform-provider-hubspot_0.3.0_${os}_${arch}.zip"
@@ -42,6 +51,9 @@ CALL_LOG="$log" \
 	RELEASED_NORTHSTAR_SCRIPT="$tmp/northstar" \
 	VERIFY_RELEASED_PROVIDER_SCRIPT="$tmp/verify" \
 	HUBSPOT_DEMO_REPO="$demo" \
+	HUBSPOT_PROVIDER_REPO="$provider" \
+	HUBSPOT_PROVIDER_EXPECTED_COMMIT="$provider_commit" \
+	HUBSPOT_DEMO_EXPECTED_COMMIT="$demo_commit" \
 	HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/portal-lock" \
 	RELEASE_EVIDENCE_DIR="$evidence" \
 	"$root/scripts/released-provider-journey.sh" v0.3.0 "$assets"
@@ -67,7 +79,8 @@ if CALL_LOG="$tmp/incomplete.log" SKIP_MIGRATION_EVIDENCE=1 \
 	RELEASED_FORM_MIGRATION_SCRIPT="$tmp/migration" \
 	RELEASED_NORTHSTAR_SCRIPT="$tmp/northstar" \
 	VERIFY_RELEASED_PROVIDER_SCRIPT="$tmp/verify" \
-	HUBSPOT_DEMO_REPO="$demo" HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/portal-lock" RELEASE_EVIDENCE_DIR="$tmp/incomplete-evidence" \
+	HUBSPOT_DEMO_REPO="$demo" HUBSPOT_PROVIDER_REPO="$provider" HUBSPOT_PROVIDER_EXPECTED_COMMIT="$provider_commit" \
+	HUBSPOT_DEMO_EXPECTED_COMMIT="$demo_commit" HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/portal-lock" RELEASE_EVIDENCE_DIR="$tmp/incomplete-evidence" \
 	"$root/scripts/released-provider-journey.sh" v0.3.0 "$assets" >/dev/null 2>&1; then
 	echo "expected incomplete migration evidence rejection" >&2
 	exit 1
@@ -78,6 +91,7 @@ test ! -e "$tmp/portal-lock"
 mkdir "$tmp/portal-lock"
 if CALL_LOG="$tmp/locked.log" RELEASED_LIVE_SHARD_SCRIPT="$tmp/live" RELEASED_FORM_MIGRATION_SCRIPT="$tmp/migration" \
 	RELEASED_NORTHSTAR_SCRIPT="$tmp/northstar" VERIFY_RELEASED_PROVIDER_SCRIPT="$tmp/verify" HUBSPOT_DEMO_REPO="$demo" \
+	HUBSPOT_PROVIDER_REPO="$provider" HUBSPOT_PROVIDER_EXPECTED_COMMIT="$provider_commit" HUBSPOT_DEMO_EXPECTED_COMMIT="$demo_commit" \
 	HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/portal-lock" RELEASE_EVIDENCE_DIR="$tmp/locked-evidence" \
 	"$root/scripts/released-provider-journey.sh" v0.3.0 "$assets" >/dev/null 2>&1; then
 	echo "expected shared portal lock rejection" >&2

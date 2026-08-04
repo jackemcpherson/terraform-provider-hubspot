@@ -20,14 +20,11 @@ func TestGenerateBuildsRegisteredProviderAndConsumerModulePages(t *testing.T) {
 	output := filepath.Join(t.TempDir(), "portal")
 
 	err := docsportal.Generate(context.Background(), docsportal.Config{
-		Provider:               providerimpl.New("0.3.0")(),
-		ProviderRepo:           providerRepo,
-		DemoRepo:               demoRepo,
-		OutputDir:              output,
-		Version:                "0.3.0",
-		RequireClean:           true,
-		ExpectedProviderCommit: "provider-commit",
-		ExpectedDemoCommit:     "demo-commit",
+		Provider:     providerimpl.New("0.3.0")(),
+		ProviderRepo: providerRepo,
+		DemoRepo:     demoRepo,
+		OutputDir:    output,
+		Version:      "0.3.0",
 		ProviderProvenance: docsportal.Provenance{
 			Commit: "provider-commit", Timestamp: "2026-08-02T00:00:00Z",
 		},
@@ -108,6 +105,41 @@ func TestGenerateBuildsRegisteredProviderAndConsumerModulePages(t *testing.T) {
 		if secondFiles[name] != contents {
 			t.Errorf("regeneration changed %s", name)
 		}
+	}
+}
+
+func TestGenerateDoesNotLetSuppliedMetadataBypassExactCheckoutValidation(t *testing.T) {
+	expected := strings.Repeat("a", 40)
+	err := docsportal.Generate(context.Background(), docsportal.Config{
+		Provider:               providerimpl.New("0.3.0")(),
+		ProviderRepo:           t.TempDir(),
+		DemoRepo:               createDemoFixture(t),
+		OutputDir:              filepath.Join(t.TempDir(), "portal"),
+		Version:                "0.3.0",
+		RequireClean:           true,
+		ExpectedProviderCommit: expected,
+		ExpectedDemoCommit:     expected,
+		ProviderProvenance:     docsportal.Provenance{Commit: expected, Timestamp: "2026-08-02T00:00:00Z"},
+		DemoProvenance:         docsportal.Provenance{Commit: expected, Timestamp: "2026-08-01T00:00:00Z"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "provider provenance") {
+		t.Fatalf("error = %v, want provider provenance rejection", err)
+	}
+}
+
+func TestGenerateRequiresExpectedCommitsForCleanCandidateInputs(t *testing.T) {
+	err := docsportal.Generate(context.Background(), docsportal.Config{
+		Provider:           providerimpl.New("0.3.0")(),
+		ProviderRepo:       t.TempDir(),
+		DemoRepo:           createDemoFixture(t),
+		OutputDir:          filepath.Join(t.TempDir(), "portal"),
+		Version:            "0.3.0",
+		RequireClean:       true,
+		ProviderProvenance: docsportal.Provenance{Commit: "provider-commit", Timestamp: "2026-08-02T00:00:00Z"},
+		DemoProvenance:     docsportal.Provenance{Commit: "demo-commit", Timestamp: "2026-08-01T00:00:00Z"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "exact expected provider and demo commits") {
+		t.Fatalf("error = %v, want exact expected commit requirement", err)
 	}
 }
 

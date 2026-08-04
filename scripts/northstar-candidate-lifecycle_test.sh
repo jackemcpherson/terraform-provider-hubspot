@@ -36,6 +36,23 @@ provider "$address" {
 EOF
 done
 
+git -C "$demo_root" init -q
+git -C "$demo_root" config user.name test
+git -C "$demo_root" config user.email test@example.com
+git -C "$demo_root" add .
+git -C "$demo_root" commit -qm fixture
+demo_commit=$(git -C "$demo_root" rev-parse HEAD)
+
+provider_root="$tmp/provider-root"
+mkdir "$provider_root"
+git -C "$provider_root" init -q
+git -C "$provider_root" config user.name test
+git -C "$provider_root" config user.email test@example.com
+touch "$provider_root/go.mod"
+git -C "$provider_root" add go.mod
+git -C "$provider_root" commit -qm fixture
+provider_commit=$(git -C "$provider_root" rev-parse HEAD)
+
 run() {
   CALL_LOG="$log" HUBSPOT_DEMO_SCRIPT="$demo_root/scripts/demo" HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
     "$root/scripts/northstar-candidate-lifecycle.sh" v0.4.0
@@ -57,6 +74,24 @@ if CALL_LOG="$log" FAIL_PHASE=tofu:repair HUBSPOT_DEMO_SCRIPT="$demo_root/script
   exit 1
 fi
 test "$(tail -1 "$log")" = 'tofu:local:repair'
+test ! -e "$tmp/lock"
+
+worktree="$tmp/demo-worktree"
+git -C "$demo_root" worktree add --quiet --detach "$worktree" "$demo_commit"
+: >"$log"
+CALL_LOG="$log" HUBSPOT_DEMO_SCRIPT="$worktree/scripts/demo" HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
+  HUBSPOT_REQUIRE_CLEAN_PROVENANCE=1 HUBSPOT_PROVIDER_REPO="$provider_root" \
+  HUBSPOT_PROVIDER_EXPECTED_COMMIT="$provider_commit" HUBSPOT_DEMO_EXPECTED_COMMIT="$demo_commit" \
+  "$root/scripts/northstar-candidate-lifecycle.sh" v0.4.0
+test "$(wc -l <"$log" | tr -d ' ')" = 20
+
+if CALL_LOG="$log" HUBSPOT_DEMO_SCRIPT="$worktree/scripts/demo" HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
+  HUBSPOT_REQUIRE_CLEAN_PROVENANCE=1 HUBSPOT_PROVIDER_REPO="$provider_root" \
+  HUBSPOT_PROVIDER_EXPECTED_COMMIT=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa HUBSPOT_DEMO_EXPECTED_COMMIT="$demo_commit" \
+  "$root/scripts/northstar-candidate-lifecycle.sh" v0.4.0; then
+  echo "Northstar lifecycle accepted the wrong provider provenance" >&2
+  exit 1
+fi
 test ! -e "$tmp/lock"
 
 mkdir "$tmp/lock"

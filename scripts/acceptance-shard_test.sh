@@ -6,12 +6,13 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 fixture="$tmp/repository"
 bin="$tmp/bin"
-mkdir -p "$fixture/acceptance/capabilities" "$fixture/internal/acceptance" "$bin"
-cp "$root/scripts/acceptance-shard.sh" "$fixture/acceptance-shard.sh"
+mkdir -p "$fixture/acceptance/capabilities" "$fixture/internal/acceptance" "$fixture/scripts" "$bin"
+cp "$root/scripts/acceptance-shard.sh" "$fixture/scripts/acceptance-shard.sh"
 cp "$root/acceptance/capabilities/form_definitions.json" "$fixture/acceptance/capabilities/form_definitions.json"
 printf '%s\n' 'package acceptance' >"$fixture/internal/acceptance/fixture.go"
 
 printf '%s\n' '#!/bin/sh' \
+	'if [ "$1" = -C ]; then shift 2; fi' \
 	'case "$1" in' \
 	'  rev-parse) printf "%s\n" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ;;' \
 	'  status) ;;' \
@@ -58,7 +59,7 @@ run_shard() {
 			HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/portal-lock" \
 			ACCEPTANCE_REPORT_DIR="$tmp/report" \
 			FAKE_EVIDENCE_RESULT=${FAKE_EVIDENCE_RESULT:-complete} \
-			./acceptance-shard.sh
+			./scripts/acceptance-shard.sh
 	)
 }
 
@@ -84,7 +85,7 @@ test ! -e "$tmp/portal-lock"
 if (
 	cd "$fixture"
 	PATH="$bin:$PATH" CAPABILITY_SHARD=unknown HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ACCEPTANCE_PREFIX=tf_acc_candidate_ \
-		HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/portal-lock" ACCEPTANCE_REPORT_DIR="$tmp/report" ./acceptance-shard.sh
+		HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/portal-lock" ACCEPTANCE_REPORT_DIR="$tmp/report" ./scripts/acceptance-shard.sh
 ); then
 	echo 'candidate run accepted an unsupported shard' >&2
 	exit 1

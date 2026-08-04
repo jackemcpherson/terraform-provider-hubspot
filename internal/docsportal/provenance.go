@@ -6,24 +6,27 @@ package docsportal
 import (
 	"errors"
 	"fmt"
-	"os/exec"
-	"strings"
+
+	"github.com/jackemcpherson/terraform-provider-hubspot/internal/provenance"
 )
 
 func resolveProvenance(config *Config) error {
-	if config.ProviderProvenance.Commit == "" {
-		provenance, err := gitProvenance(config.ProviderRepo)
+	if config.RequireClean && (config.ExpectedProviderCommit == "" || config.ExpectedDemoCommit == "") {
+		return errors.New("clean candidate portal generation requires exact expected provider and demo commits")
+	}
+	if config.ProviderProvenance.Commit == "" || config.ExpectedProviderCommit != "" {
+		providerProvenance, err := gitProvenance(config.ProviderRepo, config.ExpectedProviderCommit)
 		if err != nil {
 			return fmt.Errorf("provider provenance: %w", err)
 		}
-		config.ProviderProvenance = provenance
+		config.ProviderProvenance = providerProvenance
 	}
-	if config.DemoProvenance.Commit == "" {
-		provenance, err := gitProvenance(config.DemoRepo)
+	if config.DemoProvenance.Commit == "" || config.ExpectedDemoCommit != "" {
+		demoProvenance, err := gitProvenance(config.DemoRepo, config.ExpectedDemoCommit)
 		if err != nil {
 			return fmt.Errorf("demo provenance: %w", err)
 		}
-		config.DemoProvenance = provenance
+		config.DemoProvenance = demoProvenance
 	}
 	if config.RequireClean && (config.ProviderProvenance.Dirty || config.DemoProvenance.Dirty) {
 		return errors.New("candidate portal generation requires clean provider and demo checkouts")
@@ -37,27 +40,16 @@ func resolveProvenance(config *Config) error {
 	return nil
 }
 
-func gitProvenance(repo string) (Provenance, error) {
-	commit, err := gitOutput(repo, "rev-parse", "HEAD")
+func gitProvenance(repo, expectedCommit string) (Provenance, error) {
+	var checkout provenance.Checkout
+	var err error
+	if expectedCommit != "" {
+		checkout, err = provenance.ValidateCheckout(repo, expectedCommit)
+	} else {
+		checkout, err = provenance.InspectCheckout(repo)
+	}
 	if err != nil {
 		return Provenance{}, err
 	}
-	timestamp, err := gitOutput(repo, "show", "-s", "--format=%cI", "HEAD")
-	if err != nil {
-		return Provenance{}, err
-	}
-	dirty, err := gitOutput(repo, "status", "--porcelain")
-	if err != nil {
-		return Provenance{}, err
-	}
-	return Provenance{Commit: commit, Timestamp: timestamp, Dirty: dirty != ""}, nil
-}
-
-func gitOutput(repo string, arguments ...string) (string, error) {
-	command := exec.Command("git", append([]string{"-C", repo}, arguments...)...)
-	output, err := command.Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(output)), nil
+	return Provenance{Commit: checkout.Commit, Timestamp: checkout.Timestamp, Dirty: checkout.Dirty}, nil
 }

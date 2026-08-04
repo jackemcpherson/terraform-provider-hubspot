@@ -116,6 +116,7 @@ grep -q 'CAPABILITY_SHARD: form_definitions' "$maintenance"
 grep -q 'path: acceptance-report/form_definitions\*\.json' "$maintenance"
 grep -q 'path: .release-demo/.demo/local-\*-destroy/form-terminal.json' "$maintenance"
 grep -q "HUBSPOT_REQUIRE_CLEAN_PROVENANCE: '1'" "$maintenance"
+test "$(grep -c 'HUBSPOT_PROVIDER_EXPECTED_COMMIT:.*github.sha' "$maintenance")" -eq 3
 grep -q 'HUBSPOT_DEMO_EXPECTED_COMMIT: [0-9a-f]\{40\}' "$maintenance"
 grep -q '^          ref: [0-9a-f]\{40\}$' "$maintenance"
 maintenance_demo_commit=$(sed -n 's/^      HUBSPOT_DEMO_EXPECTED_COMMIT: \([0-9a-f]\{40\}\)$/\1/p' "$maintenance")

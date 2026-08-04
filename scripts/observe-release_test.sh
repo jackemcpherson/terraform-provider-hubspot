@@ -63,7 +63,6 @@ write_checksums "$fixture_root/bad-closure"
 # shellcheck disable=SC2016
 printf '%s\n' '#!/bin/sh' '
 case "$1 $2" in
-  "rev-parse HEAD") printf "%s\n" "$CANDIDATE_COMMIT" ;;
   "ls-remote --exit-code") test "$TAG_EXISTS" = true && printf "%s\trefs/tags/%s\n" "$TAG_COMMIT" "$VERSION" ;;
   "fetch --quiet") ;;
   "rev-list -n") printf "%s\n" "$TAG_COMMIT" ;;
@@ -75,6 +74,14 @@ case "$1 $2" in
     ;;
   *) echo "unexpected git call: $*" >&2; exit 1 ;;
 esac' >"$tmp/git"
+# The validator has exhaustive real-Git coverage in internal/provenance; this
+# command double proves the observer selects that shared boundary.
+# shellcheck disable=SC2016
+printf '%s\n' '#!/bin/sh' '
+case "$*" in
+  *"cmd/validate-checkout"*"$CANDIDATE_COMMIT") exit 0 ;;
+  *) echo "unexpected go call: $*" >&2; exit 1 ;;
+esac' >"$tmp/go"
 # shellcheck disable=SC2016
 printf '%s\n' '#!/bin/sh' '
 assets="$FIXTURE_ROOT/${EVIDENCE_STATE:-valid}"
@@ -120,7 +127,7 @@ case "$*" in
   *"providers schema -json"*) printf "{\"hubspot_property_group\":{}}\n" ;;
 esac' >"$tmp/terraform"
 cp "$tmp/terraform" "$tmp/tofu"
-chmod +x "$tmp/git" "$tmp/gh" "$tmp/gpg" "$tmp/terraform" "$tmp/tofu"
+chmod +x "$tmp/git" "$tmp/go" "$tmp/gh" "$tmp/gpg" "$tmp/terraform" "$tmp/tofu"
 
 observe() {
 	PATH="$tmp:$PATH" GH_TOKEN=test GPG_PUBLIC_KEY=test \

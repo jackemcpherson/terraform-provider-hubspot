@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 shard=${CAPABILITY_SHARD:?CAPABILITY_SHARD is required}
 token=${HUBSPOT_ACCESS_TOKEN:?HUBSPOT_ACCESS_TOKEN is required}
 prefix=${HUBSPOT_ACCEPTANCE_PREFIX:?HUBSPOT_ACCEPTANCE_PREFIX is required}
@@ -12,7 +13,8 @@ ledger=
 binary_dir=
 lock_dir=${HUBSPOT_ONE_PORTAL_LOCK_DIR:-"${TMPDIR:-/tmp}/hubspot-free-portal-${HUBSPOT_PORTAL_LOCK_ID:-free-configuration}.lock"}
 lock_acquired=false
-commit=$(git rev-parse HEAD)
+commit=$(git -C "$root" rev-parse HEAD)
+expected_commit=${HUBSPOT_PROVIDER_EXPECTED_COMMIT:-$commit}
 manifest_sha=
 provider_sha=
 suite_sha=
@@ -69,7 +71,8 @@ if grep -Eqi 'hub[_-]?id|app[_-]?id|record[_-]?id|form[_-]?id|portal[_-]?id|acce
   exit 1
 fi
 
-test -z "$(git status --porcelain --untracked-files=all)" || { echo "acceptance source tree is not the exact clean commit" >&2; exit 1; }
+GOTOOLCHAIN=local go run "$root/cmd/validate-checkout" "$root" "$expected_commit"
+commit=$expected_commit
 tofu_version=$(tofu version | sed -n '1s/^OpenTofu v//p')
 terraform_version=$(terraform version | sed -n '1s/^Terraform v//p')
 test "$tofu_version" = "1.12.3" || { echo "unexpected OpenTofu acceptance version" >&2; exit 1; }

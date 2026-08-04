@@ -10,6 +10,12 @@ All notable changes to this project are documented here.
   local consumer module, and both committed engine locks before candidate bundle
   construction or protected Northstar mutation.
 
+### Fixed
+
+- Accept standalone clones and linked worktrees as protected provider and demo
+  provenance while still requiring the exact clean 40-character commit and
+  checkout root.
+
 ## [0.3.0] - 2026-08-03
 
 ### Added

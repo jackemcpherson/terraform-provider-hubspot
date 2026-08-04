@@ -35,10 +35,7 @@ if test "$tag_exists" != "$release_exists"; then
 	exit 1
 fi
 if test "$tag_exists" = false; then
-	test "$(git rev-parse HEAD)" = "$candidate_commit" || {
-		echo 'checked-out commit does not match the new release commit' >&2
-		exit 1
-	}
+	GOTOOLCHAIN=local go run "$root/cmd/validate-checkout" "$root" "$candidate_commit"
 	release_commit=$candidate_commit
 else
 	git fetch --quiet --force origin "refs/tags/$version:refs/tags/$version"
