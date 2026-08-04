@@ -7,11 +7,13 @@ Managed resources:
 
 - property groups and property definitions
 - narrowly typed contact email Form definitions
+- explicit File folders and locally sourced Managed files
 
 The two property-definition data sources inspect non-sensitive schema metadata.
 The provider does not read CRM records, record values, form submissions, or
 responses. v0.3.0 supports ordinary non-sensitive CRM property schema plus one
-contact email Form definition aggregate on HubSpot Free; pipelines, custom
+contact email Form definition aggregate on HubSpot Free. Current source also
+contains the additive v0.4.0 Files configuration candidate; pipelines, custom
 schemas, and sensitive definitions are deferred.
 
 Observed custom-property limit telemetry is advisory, not local admission
@@ -51,6 +53,7 @@ Terraform users can change the source to
 - [Imports and drift](docs/imports-and-drift.md)
 - [Property lifecycle](docs/property-lifecycle.md)
 - [Form definition surface](docs/surfaces/form-definition.md)
+- [Files configuration surface](docs/surfaces/files-configuration.md)
 - [Destroy semantics](docs/destroy-semantics.md)
 - [State portability](docs/state-portability.md)
 - [Troubleshooting](docs/troubleshooting.md)
@@ -77,11 +80,12 @@ localhost build; `make docs-portal-update` intentionally refreshes that digest.
 
 ## Exclusions
 
-v0.3.0 does not manage CRM records, record values, form submissions, pipelines,
-custom schemas, association labels, sensitive definitions, OAuth, consent,
-notification or automation behavior, non-email fields, HubSpot-defined
-properties, or arbitrary HTTP/JSON payloads. It does not migrate state from
-third-party HubSpot providers.
+The v0.4.0 candidate does not manage CRM records, record values, form
+submissions, pipelines, custom schemas, association labels, sensitive
+definitions, OAuth, consent, notification or automation behavior, non-email
+form fields, HubSpot-defined properties, CMS Developer File System content, URL
+imports, signed URLs, or arbitrary HTTP/JSON payloads. It does not migrate state
+from third-party HubSpot providers.
 
 ## Development
 

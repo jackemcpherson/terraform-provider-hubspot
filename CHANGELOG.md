@@ -8,6 +8,8 @@ All notable changes to this project are documented here.
 
 - Manage explicit HubSpot File folder hierarchies and Managed files by generated
   ID through the GA Files API, requiring only the minimum `files` scope.
+- Publish the stable-keyed `files-configuration` consumer module, generated
+  references, composable hierarchy example, and Files lifecycle guidance.
 - Validate a requested candidate against the cumulative root, every referenced
   local consumer module, and both committed engine locks before candidate bundle
   construction or protected Northstar mutation.

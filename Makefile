@@ -102,7 +102,7 @@ release-snapshot:
 
 docs:
 	@test -x "$(TOOLS_BIN)/tfplugindocs" || { echo "tfplugindocs $(TFPLUGINDOCS_VERSION) required; run make tools"; exit 1; }
-	@"$(TOOLS_BIN)/tfplugindocs" generate --provider-name hubspot
+	@GOFLAGS="-ldflags=-X=main.providerAddress=registry.terraform.io/hashicorp/hubspot" "$(TOOLS_BIN)/tfplugindocs" generate --provider-name hubspot
 
 docs-portal:
 	@go run ./cmd/docs-portal

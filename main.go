@@ -11,11 +11,14 @@ import (
 	"github.com/jackemcpherson/terraform-provider-hubspot/internal/provider"
 )
 
-var version = "dev"
+var (
+	version         = "dev"
+	providerAddress = "registry.terraform.io/jackemcpherson/hubspot"
+)
 
 func main() {
 	if err := providerserver.Serve(context.Background(), provider.New(version), providerserver.ServeOpts{
-		Address: "registry.terraform.io/jackemcpherson/hubspot",
+		Address: providerAddress,
 	}); err != nil {
 		log.Fatal(err)
 	}

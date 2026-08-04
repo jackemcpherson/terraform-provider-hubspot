@@ -16,7 +16,8 @@ cp "$root/docs/index.md" "$tmp/docs/index.md"
 cp -R "$root/docs/resources" "$tmp/docs/resources"
 cp -R "$root/docs/data-sources" "$tmp/docs/data-sources"
 
-"$tool" generate --provider-dir "$root" --provider-name hubspot >/dev/null
+GOFLAGS="-ldflags=-X=main.providerAddress=registry.terraform.io/hashicorp/hubspot" \
+  "$tool" generate --provider-dir "$root" --provider-name hubspot >/dev/null
 
 for path in index.md resources data-sources; do
   diff -ru "$tmp/docs/$path" "$root/docs/$path"

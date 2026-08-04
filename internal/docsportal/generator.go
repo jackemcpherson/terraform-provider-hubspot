@@ -105,12 +105,12 @@ func Generate(ctx context.Context, config Config) error {
 }
 
 func requireSurface(resources, dataSources []providerType, modules []moduleDoc) error {
-	for _, required := range []string{"crm-schema", "form-definition"} {
+	for _, required := range []string{"crm-schema", "form-definition", "files-configuration"} {
 		if !containsModule(modules, required) {
 			return fmt.Errorf("required consumer module %s was not discovered from HCL", required)
 		}
 	}
-	for _, required := range []string{"hubspot_form_definition", "hubspot_property_group", "hubspot_property"} {
+	for _, required := range []string{"hubspot_form_definition", "hubspot_property_group", "hubspot_property", "hubspot_file_folder", "hubspot_file"} {
 		if !containsProviderType(resources, required) {
 			return fmt.Errorf("required registered resource %s was not discovered", required)
 		}
