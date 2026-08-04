@@ -6,6 +6,8 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Manage explicit HubSpot File folder hierarchies and Managed files by generated
+  ID through the GA Files API, requiring only the minimum `files` scope.
 - Validate a requested candidate against the cumulative root, every referenced
   local consumer module, and both committed engine locks before candidate bundle
   construction or protected Northstar mutation.

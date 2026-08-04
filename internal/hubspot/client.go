@@ -26,6 +26,8 @@ type ClientSet struct {
 	Schemas        *SchemaClient
 	AccountInfo    *AccountInfoClient
 	Forms          *FormClient
+	FileFolders    *FileFolderClient
+	Files          *FileClient
 }
 
 func NewClientSet(config TransportConfig) (*ClientSet, error) {
@@ -40,6 +42,8 @@ func NewClientSet(config TransportConfig) (*ClientSet, error) {
 		Schemas:        &SchemaClient{transport: transport},
 		AccountInfo:    &AccountInfoClient{transport: transport},
 		Forms:          &FormClient{transport: transport},
+		FileFolders:    &FileFolderClient{transport: transport},
+		Files:          &FileClient{transport: transport},
 	}, nil
 }
 
