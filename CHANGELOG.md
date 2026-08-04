@@ -15,6 +15,9 @@ All notable changes to this project are documented here.
 - Accept standalone clones and linked worktrees as protected provider and demo
   provenance while still requiring the exact clean 40-character commit and
   checkout root.
+- Require both public Registries' ordinary versions responses to advertise a
+  published release, with bounded cache revalidation and safe stale-response
+  diagnostics that cannot confuse source discovery with Registry ingestion.
 
 ## [0.3.0] - 2026-08-03
 

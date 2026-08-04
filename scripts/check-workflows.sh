@@ -163,7 +163,7 @@ test "$(grep -c 'GPG_PRIVATE_KEY:.*secrets.GPG_PRIVATE_KEY' "$release")" -eq 1 |
 	echo 'release contains work outside the minimal build, tag, and publication path' >&2
 	exit 1
 }
-observer_contract='scripts/observe-release.sh scripts/verify-release-assets.sh scripts/verify-release-bundle.sh scripts/verify-gpg-signing-identity.sh scripts/verify-registry-checksums.sh scripts/verify-registry-manifest.sh scripts/smoke-release-archive.sh'
+observer_contract='scripts/observe-release.sh scripts/verify-registry-ingestion.sh scripts/verify-release-assets.sh scripts/verify-release-bundle.sh scripts/verify-gpg-signing-identity.sh scripts/verify-registry-checksums.sh scripts/verify-registry-manifest.sh scripts/smoke-release-archive.sh'
 # Split the fixed repository-owned observer helper list into grep inputs.
 # shellcheck disable=SC2086
 ! grep -Eqi 'attest|provenance' $observer_contract || {

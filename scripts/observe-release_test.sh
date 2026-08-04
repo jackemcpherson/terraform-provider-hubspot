@@ -127,13 +127,21 @@ case "$*" in
   *"providers schema -json"*) printf "{\"hubspot_property_group\":{}}\n" ;;
 esac' >"$tmp/terraform"
 cp "$tmp/terraform" "$tmp/tofu"
-chmod +x "$tmp/git" "$tmp/go" "$tmp/gh" "$tmp/gpg" "$tmp/terraform" "$tmp/tofu"
+# shellcheck disable=SC2016
+printf '%s\n' '#!/bin/sh' '
+printf "%s\n" "$*" >>"$REGISTRY_INGESTION_LOG"
+if test "${REGISTRY_INGESTION_STATE:-fresh}" != fresh; then
+  echo "registry ingestion blocked for registry.opentofu.org after 12 attempts: ordinary-version-absent,revalidation-version-absent" >&2
+  exit 1
+fi' >"$tmp/registry-ingestion"
+chmod +x "$tmp/git" "$tmp/go" "$tmp/gh" "$tmp/gpg" "$tmp/terraform" "$tmp/tofu" "$tmp/registry-ingestion"
 
 observe() {
 	PATH="$tmp:$PATH" GH_TOKEN=test GPG_PUBLIC_KEY=test \
 		GPG_FINGERPRINT="$registered_fingerprint" REGISTERED_FINGERPRINT="$registered_fingerprint" \
 		CANDIDATE_COMMIT="$candidate" TAG_COMMIT="$tag_commit" VERSION=v1.2.3 \
 		TAG_EXISTS="$1" RELEASE_STATE="$2" FIXTURE_ROOT="$fixture_root" \
+		REGISTRY_INGESTION_VERIFIER="$tmp/registry-ingestion" REGISTRY_INGESTION_LOG="$tmp/registry-ingestion.log" \
 		"$root/scripts/observe-release.sh" v1.2.3 "$candidate" owner/repository
 }
 
@@ -165,7 +173,12 @@ expect_success() {
 
 expect_success "new $candidate" observe false none
 expect_success "draft $tag_commit" observe true draft
-expect_success "published $tag_commit" observe true published
+expect_success "release observation complete: registries ingested $tag_commit" observe true published
+test "$(cat "$tmp/registry-ingestion.log")" = "v1.2.3"
+
+REGISTRY_INGESTION_STATE=stale expect_failure 'source-only discovery' 'registry ingestion blocked for registry.opentofu.org' observe true published
+grep -q "source release observed: published $tag_commit" "$tmp/output"
+unset REGISTRY_INGESTION_STATE
 
 expect_failure 'tag without release' 'immutable conflict' observe true none
 expect_failure 'release without tag' 'immutable conflict' observe false draft

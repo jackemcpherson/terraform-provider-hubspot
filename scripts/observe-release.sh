@@ -115,5 +115,8 @@ fi
 if jq -e '.draft == true' "$tmp/release.json" >/dev/null; then
 	printf 'draft %s\n' "$release_commit"
 else
-	printf 'published %s\n' "$release_commit"
+	printf 'source release observed: published %s\n' "$release_commit"
+	registry_ingestion_verifier=${REGISTRY_INGESTION_VERIFIER:-"$root/scripts/verify-registry-ingestion.sh"}
+	"$registry_ingestion_verifier" "$version"
+	printf 'release observation complete: registries ingested %s\n' "$release_commit"
 fi

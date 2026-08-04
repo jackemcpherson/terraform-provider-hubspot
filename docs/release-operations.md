@@ -129,9 +129,22 @@ has a valid signature from the registered identity, and retains a successful
 `Required` check. It downloads the exact GitHub asset set, compares every file
 with GitHub's immutable SHA-256 asset digest, verifies the checksum signature
 against the same identity, and validates the versioned Registry manifest plus
-the exact supported archive/checksum closure. The minimal architecture does not
-produce or require a provenance attestation. A failed observation makes the
-release unhealthy but does not authorize moving its tag or replacing its assets.
+the exact supported archive/checksum closure. This source-release result is
+reported as prerequisite evidence and does not count as Registry ingestion.
+
+For each public Registry, the observer then polls the ordinary versions endpoint
+up to 12 times, with ten seconds between attempts and a ten-second request
+timeout. A valid stale response receives one `Cache-Control: no-cache` and
+`Pragma: no-cache` revalidation. A cache-bypassing response cannot complete
+observation: a later ordinary response must advertise the version. Non-success,
+timeout, malformed, structurally invalid, duplicate, or persistently stale
+responses fail with the Registry host and safe response class, never the response
+body. The same contract applies to Terraform Registry and OpenTofu Registry.
+
+The minimal architecture does not produce or require a provenance attestation.
+A failed observation makes the release unhealthy but does not authorize moving
+its tag or replacing its assets. Source and Registry observation remain outside
+the protected publication transaction required by ADR 0002.
 
 The signed checksum inventory must contain exactly the provider archives and one
 Registry manifest. Keep `terraform-registry-manifest.json` as the repository source,
