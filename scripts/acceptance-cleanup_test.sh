@@ -18,14 +18,20 @@ PATH="$tmp:$PATH" CALL_LOG="$log" HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ONE_PORTAL_L
 PATH="$tmp:$PATH" CALL_LOG="$log" HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
 	"$root/scripts/acceptance-cleanup.sh" report form_definitions
 PATH="$tmp:$PATH" CALL_LOG="$log" HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
+	"$root/scripts/acceptance-cleanup.sh" report files_configuration
+PATH="$tmp:$PATH" CALL_LOG="$log" HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
 	"$root/scripts/acceptance-cleanup.sh" archive free_properties tf_acc_owned_ archive-prefixed-crm-configuration
 PATH="$tmp:$PATH" CALL_LOG="$log" HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
 	"$root/scripts/acceptance-cleanup.sh" archive form_definitions tf_acc_forms_ archive-prefixed-form-definitions
+PATH="$tmp:$PATH" CALL_LOG="$log" HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
+	"$root/scripts/acceptance-cleanup.sh" archive files_configuration tf_acc_files_ delete-prefixed-files-configuration
 
 grep -Fq 'free_properties|tf_acc_|test -tags=acceptance ./internal/acceptance -run ^TestAcc_JanitorReport$ -count=1 -timeout=10m' "$log"
 grep -Fq 'form_definitions|tf_acc_|test -tags=acceptance ./internal/acceptance -run ^TestAcc_JanitorReport$ -count=1 -timeout=10m' "$log"
+grep -Fq 'files_configuration|tf_acc_|test -tags=acceptance ./internal/acceptance -run ^TestAcc_JanitorReport$ -count=1 -timeout=10m' "$log"
 grep -Fq 'free_properties|tf_acc_owned_|test -tags=acceptance ./internal/acceptance -run ^TestAcc_ManualPrefixCleanup$ -count=1 -timeout=20m' "$log"
 grep -Fq 'form_definitions|tf_acc_forms_|test -tags=acceptance ./internal/acceptance -run ^TestAcc_ManualPrefixCleanup$ -count=1 -timeout=20m' "$log"
+grep -Fq 'files_configuration|tf_acc_files_|test -tags=acceptance ./internal/acceptance -run ^TestAcc_ManualPrefixCleanup$ -count=1 -timeout=20m' "$log"
 
 if PATH="$tmp:$PATH" CALL_LOG="$log" HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
 	"$root/scripts/acceptance-cleanup.sh" archive free_properties tf_acc_owned_ delete-prefixed-configuration; then
@@ -40,6 +46,11 @@ fi
 if PATH="$tmp:$PATH" CALL_LOG="$log" HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
 	"$root/scripts/acceptance-cleanup.sh" archive form_definitions tf_acc_forms_ archive-prefixed-crm-configuration; then
 	echo 'CRM confirmation must not authorize Forms cleanup' >&2
+	exit 1
+fi
+if PATH="$tmp:$PATH" CALL_LOG="$log" HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
+	"$root/scripts/acceptance-cleanup.sh" archive files_configuration tf_acc_files_ archive-prefixed-form-definitions; then
+	echo 'Forms confirmation must not authorize Files cleanup' >&2
 	exit 1
 fi
 if PATH="$tmp:$PATH" CALL_LOG="$log" HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \

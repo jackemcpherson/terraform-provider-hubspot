@@ -137,6 +137,7 @@ func runHermeticFilesConfigurationLifecycle(t *testing.T, engine acceptance.Engi
 		childID := session.OpaqueStateString("hubspot_file_folder.child", "id")
 		fileID := session.OpaqueStateString("hubspot_file.managed", "id")
 		session.RequireEmptyPlan(initial)
+		session.RequireManagedFileDuplicateRejected("hubspot_file.managed", initialBytes)
 
 		if err := os.WriteFile(sourcePath, updatedBytes, 0o600); err != nil {
 			t.Fatal(err)

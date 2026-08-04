@@ -20,6 +20,7 @@ provider_sha=
 suite_sha=
 tofu_version=
 terraform_version=
+candidate_compatibility=${CANDIDATE_COMPATIBILITY_SCRIPT:-"$root/scripts/validate-candidate-compatibility.sh"}
 mkdir -p "$report_dir"
 report_dir=$(CDPATH='' cd -- "$report_dir" && pwd)
 
@@ -42,14 +43,9 @@ trap finish EXIT
 trap 'exit 1' HUP INT TERM
 
 case "$shard" in
-  free_properties|form_definitions) ;;
-  *) echo "acceptance shard must be free_properties or form_definitions" >&2; exit 1 ;;
+  free_properties|form_definitions|files_configuration) ;;
+  *) echo "acceptance shard must be free_properties, form_definitions, or files_configuration" >&2; exit 1 ;;
 esac
-
-if [ "${HUBSPOT_PORTAL_LOCK_HELD:-}" != 1 ]; then
-  mkdir "$lock_dir" 2>/dev/null || { echo "HubSpot configuration portal is already in use: $lock_dir" >&2; exit 1; }
-  lock_acquired=true
-fi
 
 printf '%s\n' "$prefix" | grep -Eq '^tf_acc_[A-Za-z0-9_]+_$' || { echo "acceptance prefix must use tf_acc_ and end with an underscore" >&2; exit 1; }
 
@@ -65,6 +61,11 @@ case "$shard" in
     grep -q '"scope_families":\["forms"\]' "$manifest"
     grep -q '"cleanup":"terminal_archive"' "$manifest"
     ;;
+  files_configuration)
+    grep -q '"api_family":"files/2026-03"' "$manifest"
+    grep -q '"scope_families":\["files"\]' "$manifest"
+    grep -q '"cleanup":"active_absence_with_trash_retention"' "$manifest"
+    ;;
 esac
 if grep -Eqi 'hub[_-]?id|app[_-]?id|record[_-]?id|form[_-]?id|portal[_-]?id|access[_-]?token|pat-' "$manifest"; then
   echo "capability manifest contains a forbidden identifier or credential marker" >&2
@@ -73,6 +74,11 @@ fi
 
 GOTOOLCHAIN=local go run "$root/cmd/validate-checkout" "$root" "$expected_commit"
 commit=$expected_commit
+if [ "$shard" = files_configuration ]; then
+  candidate_version=${HUBSPOT_CANDIDATE_VERSION:?HUBSPOT_CANDIDATE_VERSION is required for Files acceptance}
+  demo_repo=${HUBSPOT_DEMO_REPO:?HUBSPOT_DEMO_REPO is required for Files acceptance}
+  "$candidate_compatibility" "$candidate_version" "$demo_repo"
+fi
 tofu_version=$(tofu version | sed -n '1s/^OpenTofu v//p')
 terraform_version=$(terraform version | sed -n '1s/^Terraform v//p')
 test "$tofu_version" = "1.12.3" || { echo "unexpected OpenTofu acceptance version" >&2; exit 1; }
@@ -84,13 +90,18 @@ CGO_ENABLED=0 GOTOOLCHAIN=local go build -trimpath -o "$provider_binary" .
 provider_sha=$(shasum -a 256 "$provider_binary" | awk '{print $1}')
 export HUBSPOT_ACCEPTANCE_PROVIDER_BINARY=$provider_binary
 
+if [ "${HUBSPOT_PORTAL_LOCK_HELD:-}" != 1 ]; then
+  mkdir "$lock_dir" 2>/dev/null || { echo "HubSpot configuration portal is already in use: $lock_dir" >&2; exit 1; }
+  lock_acquired=true
+fi
+
 ledger=$(mktemp)
 export HUBSPOT_ACCEPTANCE_CLEANUP_LEDGER=$ledger
 export HUBSPOT_ACCEPTANCE=1
-if [ "$shard" = form_definitions ]; then
+if [ "$shard" = form_definitions ] || [ "$shard" = files_configuration ]; then
   export HUBSPOT_ACCEPTANCE_EVIDENCE_DIR=$report_dir
   export HUBSPOT_ACCEPTANCE_CANDIDATE_COMMIT=$commit
-  rm -f "$report_dir/form_definitions-tofu.json" "$report_dir/form_definitions-terraform.json"
+  rm -f "$report_dir/$shard-tofu.json" "$report_dir/$shard-terraform.json"
 fi
 
 regex="^TestAcc_${shard}_"
@@ -121,6 +132,27 @@ if [ "$shard" = form_definitions ]; then
     grep -q '"terminal_identity_hashes":\["[0-9a-f]\{64\}","[0-9a-f]\{64\}"\]' "$evidence"
     grep -q '"timestamp":"[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}T[0-9:]\{8\}Z"' "$evidence"
     grep -q '"cleanup":"passed"' "$evidence"
+  done
+fi
+if [ "$shard" = files_configuration ]; then
+  for engine in tofu terraform; do
+    evidence="$report_dir/files_configuration-$engine.json"
+    test -s "$evidence" || { echo "Files acceptance evidence is missing for $engine" >&2; exit 1; }
+    grep -q "\"candidate_commit\":\"$commit\"" "$evidence"
+    grep -q "\"engine\":\"$engine\"" "$evidence"
+    grep -q '"api_family":"files/2026-03"' "$evidence"
+    grep -q '"scope_family":"files"' "$evidence"
+    grep -q '"portal_fingerprint":"[0-9a-f]\{64\}"' "$evidence"
+    grep -q '"generated_identity_hashes":\["[0-9a-f]\{64\}","[0-9a-f]\{64\}","[0-9a-f]\{64\}","[0-9a-f]\{64\}","[0-9a-f]\{64\}","[0-9a-f]\{64\}","[0-9a-f]\{64\}"\]' "$evidence"
+    grep -q '"access_transitions":\["PRIVATE","PUBLIC_NOT_INDEXABLE","PRIVATE"\]' "$evidence"
+    grep -q '"content_change_proof":{"before_sha256":"[0-9a-f]\{64\}","after_sha256":"[0-9a-f]\{64\}"}' "$evidence"
+    grep -q '"started_at":"[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}T[0-9:]\{8\}Z"' "$evidence"
+    grep -q '"completed_at":"[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}T[0-9:]\{8\}Z"' "$evidence"
+    grep -q '"active_cleanup_counts":{"files":0,"folders":0}' "$evidence"
+    grep -q '"trash_retention":"expected"' "$evidence"
+    grep -q '"final_state":"zero_active_configuration"' "$evidence"
+    grep -q '"cleanup":"passed"' "$evidence"
+    grep -q '"status":"passed"' "$evidence"
   done
 fi
 status=passed

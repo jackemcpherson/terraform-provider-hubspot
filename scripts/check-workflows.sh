@@ -87,6 +87,7 @@ grep -q 'northstar-candidate-lifecycle.sh v0.4.0' "$maintenance"
 grep -q 'acceptance-shard.sh' "$maintenance"
 grep -q 'acceptance-cleanup.sh report free_properties' "$maintenance"
 grep -q 'acceptance-cleanup.sh report form_definitions' "$maintenance"
+grep -q 'acceptance-cleanup.sh report files_configuration' "$maintenance"
 test "$(grep -c '^    environment: free_properties$' "$maintenance")" -eq 2 || {
 	echo 'property acceptance and reporting must use the protected free_properties environment' >&2
 	exit 1
@@ -95,32 +96,40 @@ test "$(grep -c '^    environment: form_definitions$' "$maintenance")" -eq 2 || 
 	echo 'Forms acceptance and reporting must use the protected form_definitions environment' >&2
 	exit 1
 }
+test "$(grep -c '^    environment: files_configuration$' "$maintenance")" -eq 2 || {
+	echo 'Files acceptance and reporting must use the protected files_configuration environment' >&2
+	exit 1
+}
 test "$(grep -c '^    environment: northstar$' "$maintenance")" -eq 1 || {
 	echo 'the cumulative lifecycle must use its distinct protected Northstar credential boundary' >&2
 	exit 1
 }
-test "$(grep -c 'group: hubspot-account-free-configuration' "$maintenance")" -eq 5 || {
+test "$(grep -c 'group: hubspot-account-free-configuration' "$maintenance")" -eq 7 || {
 	echo 'all maintenance jobs must share the account-wide non-cancelling concurrency group' >&2
 	exit 1
 }
-test "$(grep -c 'HUBSPOT_ACCEPTANCE_PORTAL_ID:.*vars.HUBSPOT_ACCEPTANCE_PORTAL_ID' "$maintenance")" -eq 5 || {
+test "$(grep -c 'HUBSPOT_ACCEPTANCE_PORTAL_ID:.*vars.HUBSPOT_ACCEPTANCE_PORTAL_ID' "$maintenance")" -eq 7 || {
 	echo 'all live maintenance jobs must enforce the expected portal identity' >&2
 	exit 1
 }
-test "$(grep -c 'HUBSPOT_PORTAL_LOCK_ID: free-configuration' "$maintenance")" -eq 5 || {
+test "$(grep -c 'HUBSPOT_PORTAL_LOCK_ID: free-configuration' "$maintenance")" -eq 7 || {
 	echo 'all maintenance jobs must use the shared local portal lock identity' >&2
 	exit 1
 }
 grep -q 'CAPABILITY_SHARD: free_properties' "$maintenance"
 grep -q 'CAPABILITY_SHARD: form_definitions' "$maintenance"
+grep -q 'CAPABILITY_SHARD: files_configuration' "$maintenance"
 grep -q 'path: acceptance-report/form_definitions\*\.json' "$maintenance"
+grep -q 'path: acceptance-report/files_configuration\*\.json' "$maintenance"
+grep -q 'HUBSPOT_CANDIDATE_VERSION: v0.4.0' "$maintenance"
+grep -q 'HUBSPOT_DEMO_REPO:.*\.candidate-demo' "$maintenance"
 grep -q 'path: .release-demo/.demo/local-\*-destroy/form-terminal.json' "$maintenance"
 grep -q "HUBSPOT_REQUIRE_CLEAN_PROVENANCE: '1'" "$maintenance"
-test "$(grep -c 'HUBSPOT_PROVIDER_EXPECTED_COMMIT:.*github.sha' "$maintenance")" -eq 3
+test "$(grep -c 'HUBSPOT_PROVIDER_EXPECTED_COMMIT:.*github.sha' "$maintenance")" -eq 4
 grep -q 'HUBSPOT_DEMO_EXPECTED_COMMIT: [0-9a-f]\{40\}' "$maintenance"
 grep -q '^          ref: [0-9a-f]\{40\}$' "$maintenance"
 maintenance_demo_commit=$(sed -n 's/^      HUBSPOT_DEMO_EXPECTED_COMMIT: \([0-9a-f]\{40\}\)$/\1/p' "$maintenance")
-maintenance_demo_ref=$(sed -n 's/^          ref: \([0-9a-f]\{40\}\)$/\1/p' "$maintenance")
+maintenance_demo_ref=$(sed -n 's/^          ref: \([0-9a-f]\{40\}\)$/\1/p' "$maintenance" | LC_ALL=C sort -u)
 quality_demo_commit=$(sed -n 's/^      DOCS_PORTAL_DEMO_COMMIT: \([0-9a-f]\{40\}\)$/\1/p' "$quality")
 test "$maintenance_demo_commit" = "$maintenance_demo_ref" && test "$maintenance_demo_ref" = "$quality_demo_commit" || {
 	echo 'maintenance, documentation, and hermetic jobs must pin the same exact Northstar candidate' >&2
@@ -130,7 +139,7 @@ test "$(grep -c "ref: $quality_demo_commit" "$quality")" -eq 2 || {
 	echo 'both validation checkouts must use the exact documented Northstar candidate' >&2
 	exit 1
 }
-! grep -Eq 'hubspot-account-free_properties|hubspot-account-form_definitions' "$maintenance" || {
+! grep -Eq 'hubspot-account-free_properties|hubspot-account-form_definitions|hubspot-account-files_configuration' "$maintenance" || {
 	echo 'maintenance must not use shard-specific account concurrency groups' >&2
 	exit 1
 }
@@ -184,29 +193,33 @@ fi
 grep -q '^      shard:$' "$archive"
 grep -q "if: inputs.shard == 'free_properties'" "$archive"
 grep -q "if: inputs.shard == 'form_definitions'" "$archive"
+grep -q "if: inputs.shard == 'files_configuration'" "$archive"
 test "$(grep -c '^    environment: free_properties$' "$archive")" -eq 1
 test "$(grep -c '^    environment: form_definitions$' "$archive")" -eq 1
+test "$(grep -c '^    environment: files_configuration$' "$archive")" -eq 1
 grep -q 'archive-prefixed-crm-configuration' "$archive"
 grep -q 'archive-prefixed-form-definitions' "$archive"
+grep -q 'delete-prefixed-files-configuration' "$archive"
 grep -q 'acceptance-cleanup.sh archive free_properties' "$archive"
 grep -q 'acceptance-cleanup.sh archive form_definitions' "$archive"
-test "$(grep -c 'group: hubspot-account-free-configuration' "$archive")" -eq 2 || {
-	echo 'both archive jobs must share the account-wide non-cancelling concurrency group' >&2
+grep -q 'acceptance-cleanup.sh archive files_configuration' "$archive"
+test "$(grep -c 'group: hubspot-account-free-configuration' "$archive")" -eq 3 || {
+	echo 'all manual cleanup jobs must share the account-wide non-cancelling concurrency group' >&2
 	exit 1
 }
-test "$(grep -c 'HUBSPOT_ACCEPTANCE_PORTAL_ID:.*vars.HUBSPOT_ACCEPTANCE_PORTAL_ID' "$archive")" -eq 2 || {
-	echo 'both archive jobs must enforce the protected portal identity' >&2
+test "$(grep -c 'HUBSPOT_ACCEPTANCE_PORTAL_ID:.*vars.HUBSPOT_ACCEPTANCE_PORTAL_ID' "$archive")" -eq 3 || {
+	echo 'all manual cleanup jobs must enforce the protected portal identity' >&2
 	exit 1
 }
-test "$(grep -c 'HUBSPOT_PORTAL_LOCK_ID: free-configuration' "$archive")" -eq 2 || {
-	echo 'both archive jobs must use the shared local portal lock identity' >&2
+test "$(grep -c 'HUBSPOT_PORTAL_LOCK_ID: free-configuration' "$archive")" -eq 3 || {
+	echo 'all manual cleanup jobs must use the shared local portal lock identity' >&2
 	exit 1
 }
 ! grep -Eq '^[[:space:]]*environment:.*\$\{\{' "$archive" || {
 	echo 'operator input must not select a GitHub Environment dynamically' >&2
 	exit 1
 }
-! grep -Eq 'hubspot-account-free_properties|hubspot-account-form_definitions' "$archive" || {
+! grep -Eq 'hubspot-account-free_properties|hubspot-account-form_definitions|hubspot-account-files_configuration' "$archive" || {
 	echo 'manual cleanup must not use shard-specific account concurrency groups' >&2
 	exit 1
 }
@@ -214,6 +227,11 @@ test "$(grep -c 'HUBSPOT_PORTAL_LOCK_ID: free-configuration' "$archive")" -eq 2 
 forms_manifest=acceptance/capabilities/form_definitions.json
 test "$(cat "$forms_manifest")" = '{"shard":"form_definitions","tier":"free","api_family":"marketing/v3/forms","scope_families":["forms"],"cleanup":"terminal_archive"}' || {
 	echo 'Forms capability manifest must contain only the canonical API, scope, tier, and cleanup policy' >&2
+	exit 1
+}
+files_manifest=acceptance/capabilities/files_configuration.json
+test "$(cat "$files_manifest")" = '{"shard":"files_configuration","tier":"free","api_family":"files/2026-03","scope_families":["files"],"cleanup":"active_absence_with_trash_retention"}' || {
+	echo 'Files capability manifest must contain only the canonical API, scope, tier, and cleanup policy' >&2
 	exit 1
 }
 
@@ -241,6 +259,10 @@ grep -q 'hubspot_form_definition' scripts/verify-released-provider.sh
 grep -q 'released-form-migration_test.sh' Makefile
 ! grep -Eqi 'hub[_-]?id|app[_-]?id|record[_-]?id|form[_-]?id|portal[_-]?id|access[_-]?token|pat-' "$forms_manifest" || {
 	echo 'Forms capability manifest contains a forbidden identifier or credential marker' >&2
+	exit 1
+}
+! grep -Eqi 'hub[_-]?id|app[_-]?id|record[_-]?id|file[_-]?id|folder[_-]?id|portal[_-]?id|access[_-]?token|pat-' "$files_manifest" || {
+	echo 'Files capability manifest contains a forbidden identifier or credential marker' >&2
 	exit 1
 }
 
