@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Added
+
+- Validate a requested candidate against the cumulative root, every referenced
+  local consumer module, and both committed engine locks before candidate bundle
+  construction or protected Northstar mutation.
+
 ## [0.3.0] - 2026-08-03
 
 ### Added

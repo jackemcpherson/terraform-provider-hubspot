@@ -77,17 +77,18 @@ Before candidate qualification can mutate the portal, run the generic
 compatibility preflight against the active cumulative demo checkout:
 
 ```sh
-./scripts/validate-candidate-compatibility.sh vX.Y.Z ../terraform-hubspot-demo
+./scripts/candidate-preflight.sh vX.Y.Z ../terraform-hubspot-demo
 ```
 
-The command discovers the cumulative root and its complete local module graph,
-parses every HubSpot provider constraint, and requires both committed engine
-locks to select the exact candidate with registry package hashes. An
+The command first discovers the cumulative root and its complete local module
+graph, parses every HubSpot provider constraint, and requires both committed
+engine locks to select the exact candidate with registry package hashes. An
 incompatible module or a missing, malformed, stale, or differently selected
-lock blocks qualification and names the exact source. The protected Northstar
-entry point runs this same preflight before acquiring the portal lock or calling
-the demo lifecycle. Keep this qualification outside the protected publication
-transaction, as required by ADR 0002.
+lock blocks qualification and names the exact source. Only then does it build
+and validate the complete dual-registry release bundle. The protected Northstar
+entry point runs the same compatibility check before acquiring the portal lock
+or calling the demo lifecycle. Keep this qualification outside the protected
+publication transaction, as required by ADR 0002.
 
 To release, run `Release` from `main` with the intended v-prefixed SemVer. The
 single protected job requires the dispatch commit to be the current head of

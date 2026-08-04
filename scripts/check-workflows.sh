@@ -4,6 +4,7 @@ set -eu
 required='archive-hubspot-configuration.yml provider-maintenance.yml release.yml validate-provider.yml'
 legacy='acceptance-cleanup.yml acceptance.yml ci.yml provider-lifecycle.yml quality.yml release-candidate.yml run-provider-lifecycle.yml security.yml verify-release.yml'
 compatibility=scripts/validate-candidate-compatibility.sh
+candidate_preflight=scripts/candidate-preflight.sh
 
 actual=$(find .github/workflows -maxdepth 1 -type f -name '*.yml' -exec basename {} \; | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')
 # Split the fixed repository-owned filename list into one name per line.
@@ -256,6 +257,9 @@ grep -q 'goreleaser" check' Makefile
 grep -q 'goreleaser" healthcheck' Makefile
 grep -q 'build-release-bundle.sh' scripts/registry-release-preflight.sh
 test -x "$compatibility"
+test -x "$candidate_preflight"
+grep -q 'validate-candidate-compatibility.sh.*"$version".*"$demo"' "$candidate_preflight"
+grep -q 'registry-release-preflight.sh' "$candidate_preflight"
 grep -q 'validate-candidate-compatibility.sh.*"$version".*"$demo_root"' scripts/northstar-candidate-lifecycle.sh
 # Match the literal Make variable expression.
 # shellcheck disable=SC2016

@@ -31,13 +31,29 @@ type localModuleCall struct {
 	source string
 }
 
+type candidateVersion struct {
+	requested string
+	release   string
+	parsed    *version.Version
+}
+
+type engineLock struct {
+	engine  string
+	path    string
+	address string
+}
+
+var committedEngineLocks = []engineLock{
+	{engine: "OpenTofu", path: filepath.Join("locks", "tofu", ".terraform.lock.hcl"), address: "registry.opentofu.org/jackemcpherson/hubspot"},
+	{engine: "Terraform", path: filepath.Join("locks", "terraform", ".terraform.lock.hcl"), address: "registry.terraform.io/jackemcpherson/hubspot"},
+}
+
 // Validate proves that the cumulative root, its local module graph, and both
 // committed engine locks admit and select candidateVersion.
 func Validate(candidateVersion, demoRoot string) error {
-	releaseVersion := strings.TrimPrefix(candidateVersion, "v")
-	candidate, err := version.NewVersion(releaseVersion)
+	candidate, err := parseCandidateVersion(candidateVersion)
 	if err != nil {
-		return fmt.Errorf("requested version %q is invalid: %w", candidateVersion, err)
+		return err
 	}
 
 	root, err := filepath.Abs(demoRoot)
@@ -52,25 +68,27 @@ func Validate(candidateVersion, demoRoot string) error {
 		return fmt.Errorf("cumulative demo checkout %q is not a directory", demoRoot)
 	}
 
-	if err := validateModuleGraph(root, candidateVersion, candidate); err != nil {
+	if err := validateModuleGraph(root, candidate); err != nil {
 		return err
 	}
-	for _, lock := range []struct {
-		engine  string
-		path    string
-		address string
-	}{
-		{engine: "OpenTofu", path: filepath.Join("locks", "tofu", ".terraform.lock.hcl"), address: "registry.opentofu.org/jackemcpherson/hubspot"},
-		{engine: "Terraform", path: filepath.Join("locks", "terraform", ".terraform.lock.hcl"), address: "registry.terraform.io/jackemcpherson/hubspot"},
-	} {
-		if err := validateLock(root, lock.engine, lock.path, lock.address, candidateVersion, releaseVersion, candidate); err != nil {
+	for _, lock := range committedEngineLocks {
+		if err := validateLock(root, lock, candidate); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateModuleGraph(root, candidateVersion string, candidate *version.Version) error {
+func parseCandidateVersion(requested string) (candidateVersion, error) {
+	release := strings.TrimPrefix(requested, "v")
+	parsed, err := version.NewVersion(release)
+	if err != nil {
+		return candidateVersion{}, fmt.Errorf("requested version %q is invalid: %w", requested, err)
+	}
+	return candidateVersion{requested: requested, release: release, parsed: parsed}, nil
+}
+
+func validateModuleGraph(root string, candidate candidateVersion) error {
 	visited := make(map[string]bool)
 	queue := []string{root}
 	for len(queue) > 0 {
@@ -93,12 +111,12 @@ func validateModuleGraph(root, candidateVersion string, candidate *version.Versi
 			return fmt.Errorf("%s: HubSpot provider constraint is missing", name)
 		}
 		for _, constraint := range constraints {
-			parsed, err := version.NewConstraint(constraint.text)
+			parsedConstraint, err := version.NewConstraint(constraint.text)
 			if err != nil {
-				return fmt.Errorf("%s: malformed HubSpot provider constraint %q for requested version %s: %w", constraint.file, constraint.text, candidateVersion, err)
+				return fmt.Errorf("%s: malformed HubSpot provider constraint %q for requested version %s: %w", constraint.file, constraint.text, candidate.requested, err)
 			}
-			if !parsed.Check(candidate) {
-				return fmt.Errorf("%s: HubSpot provider constraint %q excludes requested version %s", constraint.file, constraint.text, candidateVersion)
+			if !parsedConstraint.Check(candidate.parsed) {
+				return fmt.Errorf("%s: HubSpot provider constraint %q excludes requested version %s", constraint.file, constraint.text, candidate.requested)
 			}
 		}
 
@@ -214,76 +232,76 @@ func constraintsFromRequiredProviders(body *hclsyntax.Body, fileName string) ([]
 	return constraints, nil
 }
 
-func validateLock(root, engine, relativeLock, providerAddress, candidateVersion, releaseVersion string, candidate *version.Version) error {
-	path := filepath.Join(root, relativeLock)
-	fileName := filepath.ToSlash(relativeLock)
+func validateLock(root string, lock engineLock, candidate candidateVersion) error {
+	path := filepath.Join(root, lock.path)
+	fileName := filepath.ToSlash(lock.path)
 	if _, err := os.Stat(path); err != nil {
-		return fmt.Errorf("%s: committed %s lock is missing", fileName, engine)
+		return fmt.Errorf("%s: committed %s lock is missing", fileName, lock.engine)
 	}
 	parser := hclparse.NewParser()
 	file, diagnostics := parser.ParseHCLFile(path)
 	if diagnostics.HasErrors() {
-		return fmt.Errorf("%s: malformed %s lock: %s", fileName, engine, diagnostics.Error())
+		return fmt.Errorf("%s: malformed %s lock: %s", fileName, lock.engine, diagnostics.Error())
 	}
 	body, ok := file.Body.(*hclsyntax.Body)
 	if !ok {
-		return fmt.Errorf("%s: unsupported %s lock syntax", fileName, engine)
+		return fmt.Errorf("%s: unsupported %s lock syntax", fileName, lock.engine)
 	}
 	var selected *hclsyntax.Block
 	for _, block := range body.Blocks {
-		if block.Type == "provider" && len(block.Labels) == 1 && block.Labels[0] == providerAddress {
+		if block.Type == "provider" && len(block.Labels) == 1 && block.Labels[0] == lock.address {
 			if selected != nil {
-				return fmt.Errorf("%s: %s lock contains duplicate HubSpot provider selections", fileName, engine)
+				return fmt.Errorf("%s: %s lock contains duplicate HubSpot provider selections", fileName, lock.engine)
 			}
 			selected = block
 		}
 	}
 	if selected == nil {
-		return fmt.Errorf("%s: %s lock has no selection for %s", fileName, engine, providerAddress)
+		return fmt.Errorf("%s: %s lock has no selection for %s", fileName, lock.engine, lock.address)
 	}
 
-	selectedVersion, err := requiredBlockString(selected, "version", fileName, engine)
+	selectedVersion, err := requiredBlockString(selected, "version", fileName, lock.engine)
 	if err != nil {
 		return err
 	}
-	if selectedVersion != releaseVersion {
-		return fmt.Errorf("%s: %s lock selected HubSpot provider %q instead of requested version %s", fileName, engine, selectedVersion, candidateVersion)
+	if selectedVersion != candidate.release {
+		return fmt.Errorf("%s: %s lock selected HubSpot provider %q instead of requested version %s", fileName, lock.engine, selectedVersion, candidate.requested)
 	}
-	constraintText, err := requiredBlockString(selected, "constraints", fileName, engine)
+	constraintText, err := requiredBlockString(selected, "constraints", fileName, lock.engine)
 	if err != nil {
 		return err
 	}
 	constraint, err := version.NewConstraint(constraintText)
 	if err != nil {
-		return fmt.Errorf("%s: malformed %s lock constraint %q: %w", fileName, engine, constraintText, err)
+		return fmt.Errorf("%s: malformed %s lock constraint %q: %w", fileName, lock.engine, constraintText, err)
 	}
-	if !constraint.Check(candidate) {
-		return fmt.Errorf("%s: %s lock constraint %q excludes requested version %s", fileName, engine, constraintText, candidateVersion)
+	if !constraint.Check(candidate.parsed) {
+		return fmt.Errorf("%s: %s lock constraint %q excludes requested version %s", fileName, lock.engine, constraintText, candidate.requested)
 	}
 
 	hashesAttribute, exists := selected.Body.Attributes["hashes"]
 	if !exists {
-		return fmt.Errorf("%s: %s lock has no HubSpot provider package hashes", fileName, engine)
+		return fmt.Errorf("%s: %s lock has no HubSpot provider package hashes", fileName, lock.engine)
 	}
 	hashes, diagnostics := hashesAttribute.Expr.Value(nil)
 	if diagnostics.HasErrors() || !hashes.IsKnown() || hashes.IsNull() || !hashes.CanIterateElements() {
-		return fmt.Errorf("%s: malformed %s HubSpot provider package hashes", fileName, engine)
+		return fmt.Errorf("%s: malformed %s HubSpot provider package hashes", fileName, lock.engine)
 	}
 	count := 0
 	iterator := hashes.ElementIterator()
 	for iterator.Next() {
 		_, hashValue := iterator.Element()
 		if hashValue.Type() != cty.String || !hashValue.IsKnown() || hashValue.IsNull() {
-			return fmt.Errorf("%s: malformed %s HubSpot provider package hash", fileName, engine)
+			return fmt.Errorf("%s: malformed %s HubSpot provider package hash", fileName, lock.engine)
 		}
 		hash := hashValue.AsString()
 		if !packageHashPattern.MatchString(hash) {
-			return fmt.Errorf("%s: malformed %s HubSpot provider package hash %q", fileName, engine, hash)
+			return fmt.Errorf("%s: malformed %s HubSpot provider package hash %q", fileName, lock.engine, hash)
 		}
 		count++
 	}
 	if count == 0 {
-		return fmt.Errorf("%s: %s lock has no HubSpot provider package hashes", fileName, engine)
+		return fmt.Errorf("%s: %s lock has no HubSpot provider package hashes", fileName, lock.engine)
 	}
 	return nil
 }
