@@ -81,7 +81,12 @@ done
 maintenance=.github/workflows/provider-maintenance.yml
 grep -q '^  schedule:' "$maintenance"
 grep -q '^  workflow_dispatch:' "$maintenance"
-grep -q "if: github.event_name == 'schedule'" "$maintenance"
+grep -q '^      run_source_acceptance:$' "$maintenance"
+grep -q '^        default: false$' "$maintenance"
+test "$(grep -c "if: github.event_name == 'schedule' || inputs.run_source_acceptance" "$maintenance")" -eq 4 || {
+	echo 'source acceptance must require the schedule or explicit manual qualification input' >&2
+	exit 1
+}
 grep -q 'northstar-candidate-lifecycle.sh' "$maintenance"
 grep -q 'northstar-candidate-lifecycle.sh v0.4.0' "$maintenance"
 grep -q 'acceptance-shard.sh' "$maintenance"
@@ -104,8 +109,18 @@ test "$(grep -c '^    environment: northstar$' "$maintenance")" -eq 1 || {
 	echo 'the cumulative lifecycle must use its distinct protected Northstar credential boundary' >&2
 	exit 1
 }
-test "$(grep -c 'group: hubspot-account-free-configuration' "$maintenance")" -eq 7 || {
-	echo 'all maintenance jobs must share the account-wide non-cancelling concurrency group' >&2
+test "$(grep -c '^  group: hubspot-account-free-configuration$' "$maintenance")" -eq 1 || {
+	echo 'the maintenance workflow must hold the account-wide non-cancelling concurrency group' >&2
+	exit 1
+}
+grep -q '^    needs: source-property-acceptance$' "$maintenance"
+grep -q '^    needs: source-northstar-lifecycle$' "$maintenance"
+grep -q '^    needs: source-forms-acceptance$' "$maintenance"
+grep -q '^    needs: source-files-acceptance$' "$maintenance"
+grep -q '^    needs: property-report$' "$maintenance"
+grep -q '^    needs: forms-report$' "$maintenance"
+test "$(grep -c '^    if: always()$' "$maintenance")" -eq 3 || {
+	echo 'all maintenance reports must run after the serialized source chain' >&2
 	exit 1
 }
 test "$(grep -c 'HUBSPOT_ACCEPTANCE_PORTAL_ID:.*vars.HUBSPOT_ACCEPTANCE_PORTAL_ID' "$maintenance")" -eq 7 || {

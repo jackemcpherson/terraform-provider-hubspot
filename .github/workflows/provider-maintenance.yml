@@ -4,23 +4,26 @@ on:
   schedule:
     - cron: '41 4 * * *'
   workflow_dispatch:
+    inputs:
+      run_source_acceptance:
+        description: Run protected source qualification
+        required: false
+        default: false
+        type: boolean
 
 permissions: {}
 
 concurrency:
-  group: provider-maintenance-${{ github.event_name }}-${{ github.ref }}
+  group: hubspot-account-free-configuration
   cancel-in-progress: false
 
 jobs:
   source-property-acceptance:
     name: Scheduled property-schema source acceptance
-    if: github.event_name == 'schedule'
+    if: github.event_name == 'schedule' || inputs.run_source_acceptance
     environment: free_properties
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    concurrency:
-      group: hubspot-account-free-configuration
-      cancel-in-progress: false
     permissions:
       contents: read
     env:
@@ -52,13 +55,11 @@ jobs:
 
   source-northstar-lifecycle:
     name: Scheduled cumulative Northstar lifecycle
-    if: github.event_name == 'schedule'
+    needs: source-property-acceptance
+    if: github.event_name == 'schedule' || inputs.run_source_acceptance
     environment: northstar
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    concurrency:
-      group: hubspot-account-free-configuration
-      cancel-in-progress: false
     permissions:
       contents: read
     env:
@@ -103,13 +104,11 @@ jobs:
 
   source-forms-acceptance:
     name: Scheduled Forms source acceptance
-    if: github.event_name == 'schedule'
+    needs: source-northstar-lifecycle
+    if: github.event_name == 'schedule' || inputs.run_source_acceptance
     environment: form_definitions
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    concurrency:
-      group: hubspot-account-free-configuration
-      cancel-in-progress: false
     permissions:
       contents: read
     env:
@@ -141,13 +140,11 @@ jobs:
 
   source-files-acceptance:
     name: Scheduled Files source acceptance
-    if: github.event_name == 'schedule'
+    needs: source-forms-acceptance
+    if: github.event_name == 'schedule' || inputs.run_source_acceptance
     environment: files_configuration
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    concurrency:
-      group: hubspot-account-free-configuration
-      cancel-in-progress: false
     permissions:
       contents: read
     env:
@@ -188,12 +185,11 @@ jobs:
 
   property-report:
     name: Owned property-schema configuration report
+    needs: source-files-acceptance
+    if: always()
     environment: free_properties
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    concurrency:
-      group: hubspot-account-free-configuration
-      cancel-in-progress: false
     permissions:
       contents: read
     env:
@@ -212,12 +208,11 @@ jobs:
 
   forms-report:
     name: Owned Form definition report
+    needs: property-report
+    if: always()
     environment: form_definitions
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    concurrency:
-      group: hubspot-account-free-configuration
-      cancel-in-progress: false
     permissions:
       contents: read
     env:
@@ -236,12 +231,11 @@ jobs:
 
   files-report:
     name: Owned Files configuration report
+    needs: forms-report
+    if: always()
     environment: files_configuration
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    concurrency:
-      group: hubspot-account-free-configuration
-      cancel-in-progress: false
     permissions:
       contents: read
     env:
