@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -109,9 +110,252 @@ func execute(ctx context.Context, action string, ids []string, clients *hubspot.
 			return "", errors.New("four Northstar Files generated IDs are required for terminal verification")
 		}
 		return verifyNorthstarFilesTerminal(ctx, clients, newNorthstarFilesIDs(ids))
+	case "cleanup":
+		if len(ids) != 0 {
+			return "", errors.New("northstar cleanup does not accept generated IDs")
+		}
+		if err := cleanupNorthstar(ctx, clients); err != nil {
+			return "", err
+		}
+		return "Northstar cleanup verified zero active owned configuration", nil
 	default:
 		return "", errors.New("unknown Northstar lifecycle action")
 	}
+}
+
+var northstarCRMNames = map[string]struct {
+	groups     map[string]struct{}
+	properties map[string]struct{}
+}{
+	"contacts": {
+		groups: stringSet("ns_customer_context"),
+		properties: stringSet(
+			"ns_buyer_role", "ns_onboarding_status", "ns_last_success_review",
+		),
+	},
+	"companies": {
+		groups:     stringSet("ns_account_profile"),
+		properties: stringSet("ns_account_tier", "ns_renewal_date"),
+	},
+	"deals": {
+		groups:     stringSet("ns_commercial_context"),
+		properties: stringSet("ns_commercial_motion", "ns_implementation_risk"),
+	},
+	"tickets": {
+		groups:     stringSet("ns_support_context"),
+		properties: stringSet("ns_support_priority", "ns_support_summary", "ns_response_due_at"),
+	},
+}
+
+type northstarCleanupPlan struct {
+	properties map[string][]string
+	groups     map[string][]string
+	forms      []string
+	files      []string
+	folders    []hubspot.FileFolder
+}
+
+func stringSet(values ...string) map[string]struct{} {
+	result := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		result[value] = struct{}{}
+	}
+	return result
+}
+
+func cleanupNorthstar(ctx context.Context, clients *hubspot.ClientSet) error {
+	plan, err := inspectNorthstarCleanup(ctx, clients)
+	if err != nil {
+		return err
+	}
+	for _, id := range plan.files {
+		if err := deleteNorthstarIdentity(ctx, clients.Files.Delete, func(ctx context.Context, id string) error {
+			_, err := clients.Files.Get(ctx, id)
+			return err
+		}, id); err != nil {
+			return fmt.Errorf("delete Northstar Managed file: %s", acceptance.SanitizedHubSpotError(err))
+		}
+	}
+	sort.Slice(plan.folders, func(left, right int) bool {
+		leftDepth := strings.Count(plan.folders[left].Path, "/")
+		rightDepth := strings.Count(plan.folders[right].Path, "/")
+		if leftDepth == rightDepth {
+			return plan.folders[left].Path > plan.folders[right].Path
+		}
+		return leftDepth > rightDepth
+	})
+	for _, folder := range plan.folders {
+		if err := deleteNorthstarIdentity(ctx, clients.FileFolders.Delete, func(ctx context.Context, id string) error {
+			_, err := clients.FileFolders.Get(ctx, id)
+			return err
+		}, folder.ID); err != nil {
+			return fmt.Errorf("delete Northstar File folder: %s", acceptance.SanitizedHubSpotError(err))
+		}
+	}
+	for _, id := range plan.forms {
+		if err := clients.Forms.Archive(ctx, id); err != nil && !northstarNotFound(err) {
+			return fmt.Errorf("archive Northstar Form definition: %s", acceptance.SanitizedHubSpotError(err))
+		}
+	}
+	for objectType, names := range plan.properties {
+		for _, name := range names {
+			if err := clients.Properties.Archive(ctx, objectType, name); err != nil && !northstarNotFound(err) {
+				return fmt.Errorf("archive Northstar %s property: %s", objectType, acceptance.SanitizedHubSpotError(err))
+			}
+		}
+	}
+	for objectType, names := range plan.groups {
+		for _, name := range names {
+			if err := clients.PropertyGroups.Archive(ctx, objectType, name); err != nil && !northstarNotFound(err) {
+				return fmt.Errorf("archive Northstar %s property group: %s", objectType, acceptance.SanitizedHubSpotError(err))
+			}
+		}
+	}
+	return verifyNorthstarCleanup(ctx, clients)
+}
+
+func inspectNorthstarCleanup(ctx context.Context, clients *hubspot.ClientSet) (northstarCleanupPlan, error) {
+	plan := northstarCleanupPlan{properties: map[string][]string{}, groups: map[string][]string{}}
+	for objectType, expected := range northstarCRMNames {
+		properties, err := clients.Properties.List(ctx, objectType, false, "non_sensitive", "")
+		if err != nil {
+			return plan, fmt.Errorf("list Northstar %s properties: %s", objectType, acceptance.SanitizedHubSpotError(err))
+		}
+		for _, property := range properties {
+			if !strings.HasPrefix(property.Name, "ns_") {
+				continue
+			}
+			if _, ok := expected.properties[property.Name]; !ok {
+				return plan, fmt.Errorf("refusing unexpected Northstar %s property %q", objectType, property.Name)
+			}
+			plan.properties[objectType] = append(plan.properties[objectType], property.Name)
+		}
+		groups, err := clients.PropertyGroups.List(ctx, objectType)
+		if err != nil {
+			return plan, fmt.Errorf("list Northstar %s property groups: %s", objectType, acceptance.SanitizedHubSpotError(err))
+		}
+		for _, group := range groups {
+			if !strings.HasPrefix(group.Name, "ns_") {
+				continue
+			}
+			if _, ok := expected.groups[group.Name]; !ok {
+				return plan, fmt.Errorf("refusing unexpected Northstar %s property group %q", objectType, group.Name)
+			}
+			plan.groups[objectType] = append(plan.groups[objectType], group.Name)
+		}
+	}
+	forms, err := clients.Forms.List(ctx, false)
+	if err != nil {
+		return plan, fmt.Errorf("list Northstar Form definitions: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	for _, form := range forms {
+		if !strings.HasPrefix(form.Name, "ns_") {
+			continue
+		}
+		if form.Name != "ns_contact_us" && form.Name != "ns_contact_us_drift" {
+			return plan, fmt.Errorf("refusing unexpected Northstar Form definition %q", form.Name)
+		}
+		plan.forms = append(plan.forms, form.ID)
+	}
+	files, err := clients.Files.Search(ctx, nil, "")
+	if err != nil {
+		return plan, fmt.Errorf("list Northstar Managed files: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	folders, err := clients.FileFolders.Search(ctx, nil, "")
+	if err != nil {
+		return plan, fmt.Errorf("list Northstar File folders: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	ownedFolderIDs := map[string]struct{}{}
+	for _, folder := range folders {
+		if folder.Archived || !strings.HasPrefix(folder.Name, "ns_") {
+			continue
+		}
+		if folder.Name != "ns_brand" && folder.Name != "ns_brand_refresh" && folder.Name != "ns_downloads" {
+			return plan, fmt.Errorf("refusing unexpected Northstar File folder %q", folder.Name)
+		}
+		if !strings.HasSuffix(folder.Path, "/"+folder.Name) {
+			return plan, errors.New("refusing Northstar File folder with unexpected placement")
+		}
+		plan.folders = append(plan.folders, folder)
+		ownedFolderIDs[folder.ID] = struct{}{}
+	}
+	for _, file := range files {
+		if file.Archived {
+			continue
+		}
+		_, inOwnedFolder := ownedFolderIDs[file.FolderID]
+		ownedName := strings.HasPrefix(file.Name, "ns_")
+		if inOwnedFolder && !ownedName {
+			return plan, errors.New("refusing Northstar File folder containing an unowned Managed file")
+		}
+		if !ownedName {
+			continue
+		}
+		if !inOwnedFolder || !strings.HasSuffix(file.Path, "/"+file.Name) {
+			return plan, errors.New("refusing Northstar Managed file with unexpected placement")
+		}
+		plan.files = append(plan.files, file.ID)
+	}
+	for _, folder := range folders {
+		if folder.Archived || folder.ParentFolderID == nil {
+			continue
+		}
+		if _, inOwnedFolder := ownedFolderIDs[*folder.ParentFolderID]; inOwnedFolder && !strings.HasPrefix(folder.Name, "ns_") {
+			return plan, errors.New("refusing Northstar File folder containing an unowned child folder")
+		}
+	}
+	return plan, nil
+}
+
+func verifyNorthstarCleanup(ctx context.Context, clients *hubspot.ClientSet) error {
+	plan, err := inspectNorthstarCleanup(ctx, clients)
+	if err != nil {
+		return err
+	}
+	for _, names := range plan.properties {
+		if len(names) != 0 {
+			return errors.New("northstar cleanup left active CRM properties")
+		}
+	}
+	for _, names := range plan.groups {
+		if len(names) != 0 {
+			return errors.New("northstar cleanup left active CRM property groups")
+		}
+	}
+	if len(plan.forms) != 0 || len(plan.files) != 0 || len(plan.folders) != 0 {
+		return errors.New("northstar cleanup left active Forms or Files configuration")
+	}
+	return nil
+}
+
+func deleteNorthstarIdentity(ctx context.Context, deleteByID func(context.Context, string) error, readByID func(context.Context, string) error, id string) error {
+	if err := deleteByID(ctx, id); err != nil && !northstarNotFound(err) {
+		var apiError *hubspot.Error
+		if !errors.As(err, &apiError) || !apiError.Ambiguous {
+			return err
+		}
+	}
+	for {
+		err := readByID(ctx, id)
+		if northstarNotFound(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		timer := time.NewTimer(250 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return errors.New("northstar Files cleanup timed out")
+		case <-timer.C:
+		}
+	}
+}
+
+func northstarNotFound(err error) bool {
+	var apiError *hubspot.Error
+	return errors.As(err, &apiError) && apiError.Status == 404
 }
 
 func verifyNorthstarFiles(ctx context.Context, clients *hubspot.ClientSet, ids northstarFilesIDs) error {

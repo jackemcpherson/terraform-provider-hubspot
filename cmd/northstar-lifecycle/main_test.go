@@ -73,6 +73,103 @@ func TestExecuteRejectsUnknownAction(t *testing.T) {
 	}
 }
 
+func TestExecuteCleansInterruptedNorthstarLifecycle(t *testing.T) {
+	server := httptest.NewServer(acceptance.NewFakeHubSpot("token", 123))
+	defer server.Close()
+	origin, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clients, err := hubspot.NewClientSet(hubspot.TransportConfig{BaseURL: origin, AccessToken: "token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	order := int64(1)
+	sensitivity := "non_sensitive"
+	for objectType, names := range northstarCRMNames {
+		for name := range names.groups {
+			if _, err := clients.PropertyGroups.Create(ctx, objectType, hubspot.PropertyGroupCreate{Name: name, Label: name, DisplayOrder: order}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for name := range names.properties {
+			groupName := ""
+			for candidate := range names.groups {
+				groupName = candidate
+				break
+			}
+			if _, err := clients.Properties.Create(ctx, objectType, hubspot.PropertyWrite{
+				Name: name, Label: name, GroupName: groupName, Type: "string", FieldType: "text", DataSensitivity: &sensitivity,
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	form, err := clients.Forms.Create(ctx, northstarFormFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	brand, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: "ns_brand"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	downloads, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: "ns_downloads", ParentFolderID: &brand.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := clients.Files.Upload(ctx, hubspot.FileUpload{Name: "ns_private_readme.txt", FolderID: brand.ID, Access: "PRIVATE", Bytes: []byte("Northstar private file\n")}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := clients.Files.Upload(ctx, hubspot.FileUpload{Name: "ns_public_logo.svg", FolderID: downloads.ID, Access: "PUBLIC_NOT_INDEXABLE", Bytes: []byte("Northstar public file\n")}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := execute(ctx, "cleanup", nil, clients)
+	if err != nil || result != "Northstar cleanup verified zero active owned configuration" {
+		t.Fatalf("cleanup result = %q, %v", result, err)
+	}
+	if _, err := clients.Forms.Get(ctx, form.ID); err == nil {
+		t.Fatal("cleanup left the Northstar Form active")
+	}
+	if _, err := clients.Forms.GetArchived(ctx, form.ID); err != nil {
+		t.Fatal("cleanup did not retain the Northstar Form tombstone")
+	}
+	if err := verifyNorthstarCleanup(ctx, clients); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestExecuteCleanupRejectsUnexpectedPrefixBeforeMutation(t *testing.T) {
+	server := httptest.NewServer(acceptance.NewFakeHubSpot("token", 123))
+	defer server.Close()
+	origin, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clients, err := hubspot.NewClientSet(hubspot.TransportConfig{BaseURL: origin, AccessToken: "token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	form, err := clients.Forms.Create(ctx, northstarFormFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	order := int64(1)
+	if _, err := clients.PropertyGroups.Create(ctx, "contacts", hubspot.PropertyGroupCreate{Name: "ns_unexpected", Label: "Unexpected", DisplayOrder: order}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(ctx, "cleanup", nil, clients); err == nil || !strings.Contains(err.Error(), "refusing unexpected") {
+		t.Fatalf("cleanup error = %v", err)
+	}
+	if _, err := clients.Forms.Get(ctx, form.ID); err != nil {
+		t.Fatal("failed preflight partially mutated the Northstar Form")
+	}
+	if _, err := clients.PropertyGroups.Get(ctx, "contacts", "ns_unexpected"); err != nil {
+		t.Fatal("failed preflight partially mutated the unexpected property group")
+	}
+}
+
 func TestExecuteManagesNorthstarFilesLifecycle(t *testing.T) {
 	server := httptest.NewServer(acceptance.NewFakeHubSpot("token", 123))
 	defer server.Close()
