@@ -18,7 +18,13 @@ fi
 
 "$root/scripts/validate-candidate-compatibility.sh" "$version" "$demo_root"
 mkdir "$lock_dir" 2>/dev/null || { echo "Northstar portal lifecycle is already running: $lock_dir" >&2; exit 1; }
-trap 'rmdir "$lock_dir"' EXIT HUP INT TERM
+cleanup() {
+  status=$?
+  trap - EXIT HUP INT TERM
+  rmdir "$lock_dir" 2>/dev/null || true
+  exit "$status"
+}
+trap cleanup EXIT HUP INT TERM
 
 run() {
   ENGINE=$1 HUBSPOT_PORTAL_LOCK_HELD=1 "$demo" local "$2"
