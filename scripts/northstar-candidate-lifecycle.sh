@@ -18,9 +18,22 @@ fi
 
 "$root/scripts/validate-candidate-compatibility.sh" "$version" "$demo_root"
 mkdir "$lock_dir" 2>/dev/null || { echo "Northstar portal lifecycle is already running: $lock_dir" >&2; exit 1; }
+run_failure_cleanup() {
+  if [ -n "${HUBSPOT_NORTHSTAR_CLEANUP_SCRIPT:-}" ]; then
+    "$HUBSPOT_NORTHSTAR_CLEANUP_SCRIPT"
+    return
+  fi
+  GOTOOLCHAIN=local go run "$root/cmd/northstar-lifecycle" cleanup
+}
 cleanup() {
   status=$?
   trap - EXIT HUP INT TERM
+  if [ "$status" -ne 0 ]; then
+    if ! run_failure_cleanup; then
+      echo "Northstar failure cleanup did not complete" >&2
+      status=1
+    fi
+  fi
   rmdir "$lock_dir" 2>/dev/null || true
   exit "$status"
 }
