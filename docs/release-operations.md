@@ -164,7 +164,7 @@ and archive binary names, then installs the built archive through filesystem
 mirrors with both OpenTofu and Terraform. The public registries expose no
 pre-publication dry-run API, so this local/CI gate is the publication-contract
 test. Production uses the same GoReleaser configuration directly. The protected
-job passes the reviewed `docs/releases/v0.3.0.md` file as custom release notes.
+job passes the reviewed `docs/releases/v0.4.0.md` file as custom release notes.
 GoReleaser changelog processing must remain enabled because its
 `--release-notes` input is ignored when changelog generation is disabled.
 
