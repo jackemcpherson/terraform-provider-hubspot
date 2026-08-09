@@ -37,7 +37,8 @@ EOF
 done
 
 run() {
-  CALL_LOG="$log" HUBSPOT_DEMO_SCRIPT="$demo_root/scripts/demo" HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
+  CALL_LOG="$log" HUBSPOT_DEMO_REPO="$demo_root" HUBSPOT_DEMO_SCRIPT="$demo_root/scripts/demo" \
+    HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
     "$root/scripts/northstar-candidate-lifecycle.sh" v0.4.0
 }
 
@@ -54,7 +55,8 @@ if test -e "$tmp/lock"; then
 fi
 
 : >"$log"
-if CALL_LOG="$log" FAIL_PHASE=tofu:repair HUBSPOT_DEMO_SCRIPT="$demo_root/scripts/demo" HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
+if CALL_LOG="$log" FAIL_PHASE=tofu:repair HUBSPOT_DEMO_REPO="$demo_root" \
+  HUBSPOT_DEMO_SCRIPT="$demo_root/scripts/demo" HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
   "$root/scripts/northstar-candidate-lifecycle.sh" v0.4.0; then
   echo "Northstar lifecycle accepted a skipped or failed Forms phase" >&2
   exit 1
