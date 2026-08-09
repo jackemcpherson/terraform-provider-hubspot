@@ -1,0 +1,83 @@
+terraform {
+  required_version = ">= 1.8, < 2.0"
+
+  required_providers {
+    hubspot = {
+      source  = "__PROVIDER_SOURCE__"
+      version = "= __PROVIDER_VERSION__"
+    }
+  }
+}
+
+variable "hubspot_access_token" {
+  type        = string
+  description = "HubSpot private-app token for the serialized released Files journey."
+  sensitive   = true
+  nullable    = false
+}
+
+variable "acceptance_prefix" {
+  type        = string
+  description = "Unique ownership prefix for this released Files journey."
+  nullable    = false
+}
+
+variable "file_suffix" {
+  type        = string
+  description = "Mutable suffix used to prove in-place Managed file metadata updates."
+  nullable    = false
+}
+
+variable "file_access" {
+  type        = string
+  description = "Mutable Managed file access used by the released lifecycle."
+  nullable    = false
+}
+
+variable "source_path" {
+  type        = string
+  description = "Absolute local path of the reviewed tiny released fixture."
+  nullable    = false
+}
+
+variable "source_sha256" {
+  type        = string
+  description = "Reviewed lowercase SHA-256 digest of the released fixture."
+  nullable    = false
+}
+
+provider "hubspot" {
+  access_token = var.hubspot_access_token
+}
+
+resource "hubspot_file_folder" "root" {
+  name = "${var.acceptance_prefix}released_root"
+}
+
+resource "hubspot_file_folder" "leaf" {
+  name             = "${var.acceptance_prefix}released_leaf"
+  parent_folder_id = hubspot_file_folder.root.id
+}
+
+resource "hubspot_file" "this" {
+  name          = "${var.acceptance_prefix}${var.file_suffix}"
+  folder_id     = hubspot_file_folder.leaf.id
+  source_path   = var.source_path
+  source_sha256 = var.source_sha256
+  access        = var.file_access
+}
+
+output "released_root_folder_id" {
+  description = "Generated root File folder identity."
+  value       = hubspot_file_folder.root.id
+}
+
+output "released_leaf_folder_id" {
+  description = "Generated leaf File folder identity."
+  value       = hubspot_file_folder.leaf.id
+}
+
+output "released_file_id" {
+  description = "Generated Managed file identity."
+  value       = hubspot_file.this.id
+}

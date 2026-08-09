@@ -20,14 +20,11 @@ func TestGenerateBuildsRegisteredProviderAndConsumerModulePages(t *testing.T) {
 	output := filepath.Join(t.TempDir(), "portal")
 
 	err := docsportal.Generate(context.Background(), docsportal.Config{
-		Provider:               providerimpl.New("0.3.0")(),
-		ProviderRepo:           providerRepo,
-		DemoRepo:               demoRepo,
-		OutputDir:              output,
-		Version:                "0.3.0",
-		RequireClean:           true,
-		ExpectedProviderCommit: "provider-commit",
-		ExpectedDemoCommit:     "demo-commit",
+		Provider:     providerimpl.New("0.4.0")(),
+		ProviderRepo: providerRepo,
+		DemoRepo:     demoRepo,
+		OutputDir:    output,
+		Version:      "0.4.0",
 		ProviderProvenance: docsportal.Provenance{
 			Commit: "provider-commit", Timestamp: "2026-08-02T00:00:00Z",
 		},
@@ -38,12 +35,13 @@ func TestGenerateBuildsRegisteredProviderAndConsumerModulePages(t *testing.T) {
 	}
 
 	for _, relative := range []string{
-		"index.html", "crm-property-schema.html", "form-definition.html", "resources/index.html",
+		"index.html", "crm-property-schema.html", "form-definition.html", "files-configuration.html", "resources/index.html",
 		"resources/hubspot_property.html", "resources/hubspot_property_group.html",
 		"resources/hubspot_form_definition.html",
+		"resources/hubspot_file_folder.html", "resources/hubspot_file.html",
 		"data-sources/index.html", "data-sources/hubspot_property_definition.html",
 		"data-sources/hubspot_property_definitions.html", "modules/index.html",
-		"modules/crm-schema.html", "modules/form-definition.html", "provenance.json",
+		"modules/crm-schema.html", "modules/form-definition.html", "modules/files-configuration.html", "provenance.json",
 	} {
 		if _, err := os.Stat(filepath.Join(output, relative)); err != nil {
 			t.Errorf("missing generated %s: %v", relative, err)
@@ -74,6 +72,26 @@ func TestGenerateBuildsRegisteredProviderAndConsumerModulePages(t *testing.T) {
 			t.Errorf("form overview missing %q", expected)
 		}
 	}
+	filesModulePage := readFile(t, filepath.Join(output, "modules", "files-configuration.html"))
+	for _, expected := range []string{"parent_folder_id", "folders", "files", "hubspot_file_folder", "hubspot_file", "folder_ids", "file_ids", "Stable map keys", "Complete usage", `module &#34;files_root&#34;`, "moved", "leaf-first", "0.4.0"} {
+		if !strings.Contains(filesModulePage, expected) {
+			t.Errorf("Files module page missing %q", expected)
+		}
+	}
+	for _, resource := range []string{"hubspot_file_folder", "hubspot_file"} {
+		page := readFile(t, filepath.Join(output, "resources", resource+".html"))
+		for _, expected := range []string{"generated ID", "Import", "active absence", "Files configuration"} {
+			if !strings.Contains(page, expected) {
+				t.Errorf("%s resource page missing %q", resource, expected)
+			}
+		}
+	}
+	filesOverview := readFile(t, filepath.Join(output, "files-configuration.html"))
+	for _, expected := range []string{"files", "20,000,000", "generated ID", "SHA-256", "collision", "exact residual", "Never search", "Trash", "leaf-first", "Northstar"} {
+		if !strings.Contains(filesOverview, expected) {
+			t.Errorf("Files overview missing %q", expected)
+		}
+	}
 	propertyPage := readFile(t, filepath.Join(output, "resources", "hubspot_property.html"))
 	for _, expected := range []string{"object_type", "field_type", "options", "Import", "Lifecycle"} {
 		if !strings.Contains(propertyPage, expected) {
@@ -81,7 +99,7 @@ func TestGenerateBuildsRegisteredProviderAndConsumerModulePages(t *testing.T) {
 		}
 	}
 	provenance := readFile(t, filepath.Join(output, "provenance.json"))
-	for _, expected := range []string{"provider-commit", "demo-commit", `"version": "0.3.0"`, "2026-08-02T00:00:00Z", `"state": "unreleased"`, `"dirty": false`, "hubspot_form_definition", "form-definition"} {
+	for _, expected := range []string{"provider-commit", "demo-commit", `"version": "0.4.0"`, "2026-08-02T00:00:00Z", `"state": "unreleased"`, `"dirty": false`, "hubspot_form_definition", "hubspot_file_folder", "hubspot_file", "form-definition", "files-configuration"} {
 		if !strings.Contains(provenance, expected) {
 			t.Errorf("provenance missing %q", expected)
 		}
@@ -91,8 +109,8 @@ func TestGenerateBuildsRegisteredProviderAndConsumerModulePages(t *testing.T) {
 	}
 	secondOutput := filepath.Join(t.TempDir(), "portal")
 	err = docsportal.Generate(context.Background(), docsportal.Config{
-		Provider: providerimpl.New("0.3.0")(), ProviderRepo: providerRepo, DemoRepo: demoRepo,
-		OutputDir: secondOutput, Version: "0.3.0",
+		Provider: providerimpl.New("0.4.0")(), ProviderRepo: providerRepo, DemoRepo: demoRepo,
+		OutputDir: secondOutput, Version: "0.4.0",
 		ProviderProvenance: docsportal.Provenance{Commit: "provider-commit", Timestamp: "2026-08-02T00:00:00Z"},
 		DemoProvenance:     docsportal.Provenance{Commit: "demo-commit", Timestamp: "2026-08-01T00:00:00Z"},
 	})
@@ -108,6 +126,41 @@ func TestGenerateBuildsRegisteredProviderAndConsumerModulePages(t *testing.T) {
 		if secondFiles[name] != contents {
 			t.Errorf("regeneration changed %s", name)
 		}
+	}
+}
+
+func TestGenerateDoesNotLetSuppliedMetadataBypassExactCheckoutValidation(t *testing.T) {
+	expected := strings.Repeat("a", 40)
+	err := docsportal.Generate(context.Background(), docsportal.Config{
+		Provider:               providerimpl.New("0.3.0")(),
+		ProviderRepo:           t.TempDir(),
+		DemoRepo:               createDemoFixture(t),
+		OutputDir:              filepath.Join(t.TempDir(), "portal"),
+		Version:                "0.3.0",
+		RequireClean:           true,
+		ExpectedProviderCommit: expected,
+		ExpectedDemoCommit:     expected,
+		ProviderProvenance:     docsportal.Provenance{Commit: expected, Timestamp: "2026-08-02T00:00:00Z"},
+		DemoProvenance:         docsportal.Provenance{Commit: expected, Timestamp: "2026-08-01T00:00:00Z"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "provider provenance") {
+		t.Fatalf("error = %v, want provider provenance rejection", err)
+	}
+}
+
+func TestGenerateRequiresExpectedCommitsForCleanCandidateInputs(t *testing.T) {
+	err := docsportal.Generate(context.Background(), docsportal.Config{
+		Provider:           providerimpl.New("0.3.0")(),
+		ProviderRepo:       t.TempDir(),
+		DemoRepo:           createDemoFixture(t),
+		OutputDir:          filepath.Join(t.TempDir(), "portal"),
+		Version:            "0.3.0",
+		RequireClean:       true,
+		ProviderProvenance: docsportal.Provenance{Commit: "provider-commit", Timestamp: "2026-08-02T00:00:00Z"},
+		DemoProvenance:     docsportal.Provenance{Commit: "demo-commit", Timestamp: "2026-08-01T00:00:00Z"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "exact expected provider and demo commits") {
+		t.Fatalf("error = %v, want exact expected commit requirement", err)
 	}
 }
 
@@ -193,10 +246,14 @@ func createDemoFixture(t *testing.T) string {
 	root := t.TempDir()
 	crmModule := filepath.Join(root, "modules", "crm-schema")
 	formModule := filepath.Join(root, "modules", "form-definition")
+	filesModule := filepath.Join(root, "modules", "files-configuration")
 	if err := os.MkdirAll(crmModule, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(formModule, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filesModule, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	files := map[string]string{
@@ -236,6 +293,29 @@ output "properties" { value = hubspot_property.this }
 	if err := os.WriteFile(filepath.Join(formModule, "README.md"), []byte("Use a moved block when changing a key; otherwise replacement archives the old form. Requires provider 0.3.0.\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	filesModuleFiles := map[string]string{
+		"main.tf": `resource "hubspot_file_folder" "this" { for_each = var.folders }
+resource "hubspot_file" "this" { for_each = var.files }
+`,
+		"variables.tf": `variable "parent_folder_id" { type = string }
+variable "folders" { type = map(object({ name = string })) }
+variable "files" { type = map(object({ name = string })) }
+`,
+		"outputs.tf": `output "folder_ids" { value = { for key, folder in hubspot_file_folder.this : key => folder.id } }
+output "file_ids" { value = { for key, file in hubspot_file.this : key => file.id } }
+output "files" { value = hubspot_file.this }
+`,
+		"versions.tf": `terraform { required_version = ">= 1.8, < 2.0" }
+`,
+	}
+	for name, contents := range filesModuleFiles {
+		if err := os.WriteFile(filepath.Join(filesModule, name), []byte(contents), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(filesModule, "README.md"), []byte("Stable map keys require moved blocks when renamed. Requires provider 0.4.0. Teardown is file-first and leaf-first.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(root, "main.tf"), []byte(`module "crm_schema" { source = "./modules/crm-schema" }
 `), 0o644); err != nil {
 		t.Fatal(err)
@@ -247,6 +327,17 @@ output "properties" { value = hubspot_property.this }
 	if err := os.WriteFile(filepath.Join(example, "main.tf"), []byte(`module "contact_forms" {
   source = "../../modules/form-definition"
   forms  = { contact = { name = "Contact" } }
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	filesExample := filepath.Join(root, "examples", "files-configuration")
+	if err := os.MkdirAll(filesExample, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(filesExample, "main.tf"), []byte(`module "files_root" {
+  source  = "../../modules/files-configuration"
+  folders = { assets = { name = "Assets" } }
 }
 `), 0o644); err != nil {
 		t.Fatal(err)

@@ -212,6 +212,15 @@ func TestSafeCategoryRejectsUnsafeValues(t *testing.T) {
 	}
 }
 
+func TestOperationTimeoutDefaultsLegacyRequestsAndHonorsExplicitFilesBounds(t *testing.T) {
+	if got := effectiveOperationTimeout(Operation{}); got != time.Minute {
+		t.Fatalf("legacy operation timeout = %s, want 1m", got)
+	}
+	if got := effectiveOperationTimeout(Operation{Timeout: 5 * time.Minute}); got != 5*time.Minute {
+		t.Fatalf("explicit operation timeout = %s, want 5m", got)
+	}
+}
+
 func newTestTransport(t *testing.T, baseURL string) *Transport {
 	t.Helper()
 	parsed, err := url.Parse(baseURL)

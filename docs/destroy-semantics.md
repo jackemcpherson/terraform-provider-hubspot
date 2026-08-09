@@ -62,3 +62,18 @@ not restore the tombstone.
 **Non-destructive alternative:** `tofu state rm
 hubspot_form_definition.<name>` (or `terraform state rm ...`) leaves the active
 form in HubSpot without provider ownership.
+
+## hubspot_file and hubspot_file_folder
+
+Destroy deletes the exact active generated file or empty generated folder. The
+provider removes state only after direct read proves active absence. HubSpot may
+retain deleted assets in its managed Trash; destroy never claims physical purge,
+requests GDPR deletion, or restores a retained asset.
+
+Folders with any active child file or folder are rejected before deletion.
+Destroy files first and folders leaf-first. An already absent generated ID
+completes idempotently; an ambiguous response retains state for a safe retry.
+
+**Non-destructive alternative:** `tofu state rm hubspot_file.<name>` or `tofu
+state rm hubspot_file_folder.<name>` (or the equivalent `terraform` command)
+leaves the active asset unmanaged.

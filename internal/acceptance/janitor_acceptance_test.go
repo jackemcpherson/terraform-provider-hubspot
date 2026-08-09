@@ -9,6 +9,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http/httptest"
+	"net/url"
+	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -37,6 +41,12 @@ func TestAcc_JanitorReport(t *testing.T) {
 			t.Fatalf("report stale owned Form definitions: %s", acceptance.SanitizedHubSpotError(err))
 		}
 		t.Logf("stale owned HubSpot configuration: active_form_definitions=%d retained_archived_form_definitions=%d", active, archived)
+	case "files_configuration":
+		files, folders, err := acceptance.CountActiveFilesConfiguration(ctx, clients, prefix)
+		if err != nil {
+			t.Fatalf("report stale active Files configuration: %s", acceptance.SanitizedHubSpotError(err))
+		}
+		t.Logf("stale owned HubSpot configuration: active_managed_files=%d active_file_folders=%d", files, folders)
 	}
 }
 
@@ -45,6 +55,13 @@ func TestAcc_ManualPrefixCleanup(t *testing.T) {
 	prefix := requiredEnvironment(t, "HUBSPOT_ACCEPTANCE_PREFIX")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
+	if shard == "files_configuration" {
+		if err := deleteOwnedFilesConfiguration(ctx, clients, prefix); err != nil {
+			t.Fatalf("delete owned Files configuration: %s", acceptance.SanitizedHubSpotError(err))
+		}
+		t.Log("Files cleanup verified zero active owned configuration; HubSpot-managed Trash retention is expected")
+		return
+	}
 	if shard == "form_definitions" {
 		archived, err := archiveOwnedForms(ctx, clients, prefix)
 		if err != nil {
@@ -106,10 +123,93 @@ func TestAcc_ManualPrefixCleanup(t *testing.T) {
 	}
 }
 
+func TestFilesJanitorReportsAndDeletesOwnedConfigurationLeafFirst(t *testing.T) {
+	fake := acceptance.NewFakeHubSpot("token", 123)
+	server := httptest.NewServer(fake)
+	defer server.Close()
+	origin, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clients, err := hubspot.NewClientSet(hubspot.TransportConfig{BaseURL: origin, AccessToken: "token", UserAgent: "files-janitor-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	unowned, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: "keep"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: "tf_acc_owned_root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: "tf_acc_owned_child", ParentFolderID: &root.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := clients.Files.Upload(ctx, hubspot.FileUpload{Name: "tf_acc_owned_file.txt", FolderID: child.ID, Access: "PRIVATE", Bytes: []byte("owned")}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := clients.Files.Upload(ctx, hubspot.FileUpload{Name: "keep.txt", FolderID: unowned.ID, Access: "PRIVATE", Bytes: []byte("unowned")}); err != nil {
+		t.Fatal(err)
+	}
+	files, folders, err := acceptance.CountActiveFilesConfiguration(ctx, clients, "tf_acc_owned_")
+	if err != nil || files != 1 || folders != 2 {
+		t.Fatalf("owned Files report = files %d, folders %d, error %v", files, folders, err)
+	}
+	if err := deleteOwnedFilesConfiguration(ctx, clients, "tf_acc_owned_"); err != nil {
+		t.Fatal(err)
+	}
+	files, folders, err = acceptance.CountActiveFilesConfiguration(ctx, clients, "tf_acc_owned_")
+	if err != nil || files != 0 || folders != 0 {
+		t.Fatalf("owned Files cleanup = files %d, folders %d, error %v", files, folders, err)
+	}
+	if _, err := clients.FileFolders.Get(ctx, unowned.ID); err != nil {
+		t.Fatal("Files cleanup mutated an unowned folder")
+	}
+}
+
+func TestFilesJanitorFailsClosedOnUnownedFolderContents(t *testing.T) {
+	fake := acceptance.NewFakeHubSpot("token", 123)
+	server := httptest.NewServer(fake)
+	defer server.Close()
+	origin, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clients, err := hubspot.NewClientSet(hubspot.TransportConfig{BaseURL: origin, AccessToken: "token", UserAgent: "files-janitor-failure-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	root, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: "tf_acc_owned_root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownedFile, err := clients.Files.Upload(ctx, hubspot.FileUpload{Name: "tf_acc_owned_file.txt", FolderID: root.ID, Access: "PRIVATE", Bytes: []byte("owned")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unownedFile, err := clients.Files.Upload(ctx, hubspot.FileUpload{Name: "keep.txt", FolderID: root.ID, Access: "PRIVATE", Bytes: []byte("unowned")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := deleteOwnedFilesConfiguration(ctx, clients, "tf_acc_owned_"); err == nil {
+		t.Fatal("Files cleanup accepted an owned folder containing unowned configuration")
+	}
+	if _, err := clients.Files.Get(ctx, ownedFile.ID); err != nil {
+		t.Fatal("failed Files cleanup partially mutated owned configuration")
+	}
+	if _, err := clients.Files.Get(ctx, unownedFile.ID); err != nil {
+		t.Fatal("failed Files cleanup mutated unowned configuration")
+	}
+}
+
 func janitorClients(t *testing.T) (*hubspot.ClientSet, string) {
 	t.Helper()
 	shard := requiredEnvironment(t, "CAPABILITY_SHARD")
-	if shard != "free_properties" && shard != "form_definitions" && shard != "deal_pipelines" && shard != "ticket_pipelines" {
+	if shard != "free_properties" && shard != "form_definitions" && shard != "files_configuration" && shard != "deal_pipelines" && shard != "ticket_pipelines" {
 		t.Fatal("janitor implementation is unavailable for the selected capability shard")
 	}
 	token := requiredEnvironment(t, "HUBSPOT_ACCESS_TOKEN")
@@ -120,6 +220,127 @@ func janitorClients(t *testing.T) (*hubspot.ClientSet, string) {
 		t.Fatalf("configure HubSpot acceptance janitor: %v", err)
 	}
 	return clients, shard
+}
+
+var generatedFilesJanitorID = regexp.MustCompile(`^[1-9][0-9]*$`)
+
+func deleteOwnedFilesConfiguration(ctx context.Context, clients *hubspot.ClientSet, prefix string) error {
+	files, err := clients.Files.Search(ctx, nil, "")
+	if err != nil {
+		return err
+	}
+	folders, err := clients.FileFolders.Search(ctx, nil, "")
+	if err != nil {
+		return err
+	}
+
+	ownedFiles := make([]hubspot.ManagedFile, 0)
+	for _, file := range files {
+		if file.Archived || !strings.HasPrefix(file.Name, prefix) {
+			continue
+		}
+		if !generatedFilesJanitorID.MatchString(file.ID) || !generatedFilesJanitorID.MatchString(file.FolderID) || !strings.HasSuffix(file.Path, "/"+file.Name) {
+			return errors.New("prefix-owned Managed file has an unsupported identity or placement")
+		}
+		ownedFiles = append(ownedFiles, file)
+	}
+
+	ownedFolders := make([]hubspot.FileFolder, 0)
+	ownedFolderIDs := make(map[string]struct{})
+	for _, folder := range folders {
+		if folder.Archived || !strings.HasPrefix(folder.Name, prefix) {
+			continue
+		}
+		if !generatedFilesJanitorID.MatchString(folder.ID) || !strings.HasSuffix(folder.Path, "/"+folder.Name) {
+			return errors.New("prefix-owned File folder has an unsupported identity or path")
+		}
+		ownedFolders = append(ownedFolders, folder)
+		ownedFolderIDs[folder.ID] = struct{}{}
+	}
+	for _, file := range files {
+		if file.Archived {
+			continue
+		}
+		if _, parentOwned := ownedFolderIDs[file.FolderID]; parentOwned && !strings.HasPrefix(file.Name, prefix) {
+			return errors.New("prefix-owned File folder contains an unowned Managed file")
+		}
+	}
+	for _, folder := range folders {
+		if folder.Archived || folder.ParentFolderID == nil {
+			continue
+		}
+		if _, parentOwned := ownedFolderIDs[*folder.ParentFolderID]; parentOwned && !strings.HasPrefix(folder.Name, prefix) {
+			return errors.New("prefix-owned File folder contains an unowned child folder")
+		}
+	}
+
+	sort.Slice(ownedFiles, func(left, right int) bool { return ownedFiles[left].ID < ownedFiles[right].ID })
+	for _, file := range ownedFiles {
+		if err := deleteManagedFileAndVerifyAbsent(ctx, clients, file.ID); err != nil {
+			return fmt.Errorf("delete prefix-owned Managed file: %w", err)
+		}
+	}
+	sort.Slice(ownedFolders, func(left, right int) bool {
+		leftDepth := strings.Count(ownedFolders[left].Path, "/")
+		rightDepth := strings.Count(ownedFolders[right].Path, "/")
+		if leftDepth == rightDepth {
+			return ownedFolders[left].Path > ownedFolders[right].Path
+		}
+		return leftDepth > rightDepth
+	})
+	for _, folder := range ownedFolders {
+		if err := deleteFileFolderAndVerifyAbsent(ctx, clients, folder.ID); err != nil {
+			return fmt.Errorf("delete prefix-owned File folder leaf-first: %w", err)
+		}
+	}
+
+	filesRemaining, foldersRemaining, err := acceptance.CountActiveFilesConfiguration(ctx, clients, prefix)
+	if err != nil {
+		return err
+	}
+	if filesRemaining != 0 || foldersRemaining != 0 {
+		return errors.New("manual cleanup could not verify zero active prefix-owned Files configuration")
+	}
+	return nil
+}
+
+func deleteManagedFileAndVerifyAbsent(ctx context.Context, clients *hubspot.ClientSet, id string) error {
+	return deleteFilesConfigurationAndVerifyAbsent(ctx, clients.Files.Delete, func(ctx context.Context, id string) error {
+		_, err := clients.Files.Get(ctx, id)
+		return err
+	}, id)
+}
+
+func deleteFileFolderAndVerifyAbsent(ctx context.Context, clients *hubspot.ClientSet, id string) error {
+	return deleteFilesConfigurationAndVerifyAbsent(ctx, clients.FileFolders.Delete, func(ctx context.Context, id string) error {
+		_, err := clients.FileFolders.Get(ctx, id)
+		return err
+	}, id)
+
+}
+
+func deleteFilesConfigurationAndVerifyAbsent(ctx context.Context, deleteByID func(context.Context, string) error, readByID func(context.Context, string) error, id string) error {
+	deleteErr := deleteByID(ctx, id)
+	if deleteErr != nil && !formJanitorNotFound(deleteErr) {
+		var apiError *hubspot.Error
+		if !errors.As(deleteErr, &apiError) || !apiError.Ambiguous {
+			return deleteErr
+		}
+	}
+	for {
+		readErr := readByID(ctx, id)
+		if formJanitorNotFound(readErr) {
+			return nil
+		}
+		if readErr != nil {
+			return readErr
+		}
+		select {
+		case <-ctx.Done():
+			return errors.New("Files active absence was not verified before the operation deadline")
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
 }
 
 func countOwnedForms(ctx context.Context, clients *hubspot.ClientSet, prefix string) (int, int, error) {

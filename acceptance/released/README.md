@@ -11,6 +11,14 @@ journey rather than as independent per-engine shards. Terraform creates one Form
 definition, the state and generated ID migrate to OpenTofu's provider source and
 back, and the final Terraform phase archives that exact identity once.
 
+The `files_configuration` fixture is also one serialized state journey.
+Terraform creates one explicit two-level hierarchy and one Managed file, then
+the state and all three generated IDs move to OpenTofu's provider source and
+back. Both engines update metadata, access, and reviewed bytes in place, repair
+exact-ID drift, and prove file-first, leaf-first active cleanup.
+
 The verification harness installs the published provider from its registry; it
-does not use a development override. A missing fixture, unavailable entitlement,
-non-empty second plan, or failed destroy keeps release verification red.
+does not use a development override. Registry-selected archive digests must also
+occur in the immutable GitHub checksum inventory. A missing fixture, unavailable
+entitlement, changed generated identity, non-empty second plan, or failed destroy
+keeps release verification red.

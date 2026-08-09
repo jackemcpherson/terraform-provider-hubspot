@@ -45,6 +45,7 @@ check-go:
 	@"$(STATICCHECK_BIN)" ./...
 	@go test ./...
 	@go test -tags=acceptance ./cmd/northstar-lifecycle
+	@go test -tags=acceptance ./cmd/released-files-lifecycle
 	@go test -tags=acceptance ./internal/acceptance -run '^Test.*AcceptanceConfigurationSyntax$$'
 	@go test -race ./...
 	@go mod tidy -diff
@@ -68,12 +69,16 @@ check-release-tools:
 
 check-workflows:
 	@./scripts/one-portal-free-lifecycle_test.sh
+	@./scripts/validate-candidate-compatibility_test.sh
+	@./scripts/candidate-preflight_test.sh
 	@./scripts/northstar-candidate-lifecycle_test.sh
 	@./scripts/acceptance-cleanup_test.sh
 	@./scripts/acceptance-shard_test.sh
 	@./scripts/released-provider-journey_test.sh
 	@./scripts/released-form-migration_test.sh
+	@./scripts/released-files-migration_test.sh
 	@./scripts/released-northstar-journey_test.sh
+	@./scripts/prepare-released-demo_test.sh
 	@./scripts/verify-released-provider_test.sh
 	@./scripts/observe-release_test.sh
 	@./scripts/verify-release-assets_test.sh
@@ -100,7 +105,7 @@ release-snapshot:
 
 docs:
 	@test -x "$(TOOLS_BIN)/tfplugindocs" || { echo "tfplugindocs $(TFPLUGINDOCS_VERSION) required; run make tools"; exit 1; }
-	@"$(TOOLS_BIN)/tfplugindocs" generate --provider-name hubspot
+	@GOFLAGS="-ldflags=-X=main.providerAddress=registry.terraform.io/hashicorp/hubspot" "$(TOOLS_BIN)/tfplugindocs" generate --provider-name hubspot
 
 docs-portal:
 	@go run ./cmd/docs-portal

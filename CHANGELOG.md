@@ -2,6 +2,32 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+## [0.4.0] - 2026-08-09
+
+### Added
+
+- Manage explicit HubSpot File folder hierarchies and Managed files by generated
+  ID through the GA Files API, requiring only the minimum `files` scope.
+- Publish the stable-keyed `files-configuration` consumer module, generated
+  references, composable hierarchy example, and Files lifecycle guidance.
+- Validate a requested candidate against the cumulative root, every referenced
+  local consumer module, and both committed engine locks before candidate bundle
+  construction or protected Northstar mutation.
+- Integrate exact-ID Files configuration into cumulative Northstar and prove one
+  released identity across Terraform and OpenTofu Registry source migration,
+  metadata and byte replacement, drift repair, and terminal cleanup.
+
+### Fixed
+
+- Accept standalone clones and linked worktrees as protected provider and demo
+  provenance while still requiring the exact clean 40-character commit and
+  checkout root.
+- Require both public Registries' ordinary versions responses to advertise a
+  published release, with bounded cache revalidation and safe stale-response
+  diagnostics that cannot confuse source discovery with Registry ingestion.
+
 ## [0.3.0] - 2026-08-03
 
 ### Added

@@ -28,6 +28,7 @@ jobs:
       HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
       HUBSPOT_ACCEPTANCE_PORTAL_ID: ${{ vars.HUBSPOT_ACCEPTANCE_PORTAL_ID }}
       HUBSPOT_ACCEPTANCE_PREFIX: tf_acc_${{ github.run_id }}_${{ github.run_attempt }}_
+      HUBSPOT_PROVIDER_EXPECTED_COMMIT: ${{ github.sha }}
       HUBSPOT_PORTAL_LOCK_ID: free-configuration
     steps:
       - name: Check out provider source
@@ -64,8 +65,11 @@ jobs:
       HUBSPOT_DEMO_SCRIPT: ${{ github.workspace }}/.release-demo/scripts/demo
       HUBSPOT_PROVIDER_REPO: ${{ github.workspace }}
       HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
+      # Distinct Northstar secret: CRM schema union plus forms and files.
+      HUBSPOT_NORTHSTAR_SCOPE_FAMILIES: crm.schemas.contacts,crm.schemas.companies,crm.schemas.deals,tickets,forms,files
       HUBSPOT_ACCEPTANCE_PORTAL_ID: ${{ vars.HUBSPOT_ACCEPTANCE_PORTAL_ID }}
-      HUBSPOT_DEMO_EXPECTED_COMMIT: fed9fab1904a73cb01cfc962d028ec689bcca741
+      HUBSPOT_PROVIDER_EXPECTED_COMMIT: ${{ github.sha }}
+      HUBSPOT_DEMO_EXPECTED_COMMIT: 891c44b5bf0b4c5e5defaa4ca90ed72b70849340
       HUBSPOT_REQUIRE_CLEAN_PROVENANCE: '1'
       HUBSPOT_PORTAL_LOCK_ID: free-configuration
     steps:
@@ -77,7 +81,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: jackemcpherson/terraform-hubspot-instance-demo
-          ref: fed9fab1904a73cb01cfc962d028ec689bcca741
+          ref: 891c44b5bf0b4c5e5defaa4ca90ed72b70849340
           path: .release-demo
           persist-credentials: false
       - name: Set up provider toolchain
@@ -86,13 +90,15 @@ jobs:
           tofu-version: '1.12.3'
           terraform-version: '1.15.8'
       - name: Run fail-closed cumulative dual-engine Northstar lifecycle
-        run: ./scripts/northstar-candidate-lifecycle.sh
+        run: ./scripts/northstar-candidate-lifecycle.sh v0.4.0
       - name: Upload sanitized Northstar terminal records
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: scheduled-northstar-terminal
-          path: .release-demo/.demo/local-*-destroy/form-terminal.json
+          path: |
+            .release-demo/.demo/local-*-destroy/form-terminal.json
+            .release-demo/.demo/local-*-destroy/files-terminal.json
           if-no-files-found: error
 
   source-forms-acceptance:
@@ -111,6 +117,7 @@ jobs:
       HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
       HUBSPOT_ACCEPTANCE_PORTAL_ID: ${{ vars.HUBSPOT_ACCEPTANCE_PORTAL_ID }}
       HUBSPOT_ACCEPTANCE_PREFIX: tf_acc_${{ github.run_id }}_${{ github.run_attempt }}_forms_
+      HUBSPOT_PROVIDER_EXPECTED_COMMIT: ${{ github.sha }}
       HUBSPOT_PORTAL_LOCK_ID: free-configuration
     steps:
       - name: Check out provider source
@@ -130,6 +137,53 @@ jobs:
         with:
           name: scheduled-acceptance-form_definitions
           path: acceptance-report/form_definitions*.json
+          if-no-files-found: error
+
+  source-files-acceptance:
+    name: Scheduled Files source acceptance
+    if: github.event_name == 'schedule'
+    environment: files_configuration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    concurrency:
+      group: hubspot-account-free-configuration
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      CAPABILITY_SHARD: files_configuration
+      HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
+      HUBSPOT_ACCEPTANCE_PORTAL_ID: ${{ vars.HUBSPOT_ACCEPTANCE_PORTAL_ID }}
+      HUBSPOT_ACCEPTANCE_PREFIX: tf_acc_${{ github.run_id }}_${{ github.run_attempt }}_files_
+      HUBSPOT_PROVIDER_EXPECTED_COMMIT: ${{ github.sha }}
+      HUBSPOT_CANDIDATE_VERSION: v0.4.0
+      HUBSPOT_DEMO_REPO: ${{ github.workspace }}/.candidate-demo
+      HUBSPOT_PORTAL_LOCK_ID: free-configuration
+    steps:
+      - name: Check out provider source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check out exact candidate demo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: jackemcpherson/terraform-hubspot-instance-demo
+          ref: 891c44b5bf0b4c5e5defaa4ca90ed72b70849340
+          path: .candidate-demo
+          persist-credentials: false
+      - name: Set up provider toolchain
+        uses: ./.github/actions/setup-provider-toolchain
+        with:
+          tofu-version: '1.12.3'
+          terraform-version: '1.15.8'
+      - name: Run fail-closed Files source acceptance
+        run: ./scripts/acceptance-shard.sh
+      - name: Upload sanitized Files acceptance result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: scheduled-acceptance-files_configuration
+          path: acceptance-report/files_configuration*.json
           if-no-files-found: error
 
   property-report:
@@ -179,3 +233,27 @@ jobs:
         uses: ./.github/actions/setup-provider-toolchain
       - name: Report stale active and retained Archived form definitions
         run: ./scripts/acceptance-cleanup.sh report form_definitions
+
+  files-report:
+    name: Owned Files configuration report
+    environment: files_configuration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    concurrency:
+      group: hubspot-account-free-configuration
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
+      HUBSPOT_ACCEPTANCE_PORTAL_ID: ${{ vars.HUBSPOT_ACCEPTANCE_PORTAL_ID }}
+      HUBSPOT_PORTAL_LOCK_ID: free-configuration
+    steps:
+      - name: Check out provider source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up provider toolchain
+        uses: ./.github/actions/setup-provider-toolchain
+      - name: Report stale active Files configuration
+        run: ./scripts/acceptance-cleanup.sh report files_configuration

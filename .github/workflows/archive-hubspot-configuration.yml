@@ -10,12 +10,13 @@ on:
         options:
           - free_properties
           - form_definitions
+          - files_configuration
       prefix:
         description: Exact tf_acc_ prefix ending in underscore
         required: true
         type: string
       confirmation:
-        description: Type archive-prefixed-crm-configuration or archive-prefixed-form-definitions
+        description: Type archive-prefixed-crm-configuration, archive-prefixed-form-definitions, or delete-prefixed-files-configuration
         required: true
         type: string
 
@@ -79,3 +80,30 @@ jobs:
         uses: ./.github/actions/setup-provider-toolchain
       - name: Archive exact owned Form definitions
         run: ./scripts/acceptance-cleanup.sh archive form_definitions "$PREFIX" "$CONFIRMATION"
+
+  delete-files:
+    name: Delete exact owned Files configuration prefix
+    if: inputs.shard == 'files_configuration'
+    environment: files_configuration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    concurrency:
+      group: hubspot-account-free-configuration
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
+      HUBSPOT_ACCEPTANCE_PORTAL_ID: ${{ vars.HUBSPOT_ACCEPTANCE_PORTAL_ID }}
+      HUBSPOT_PORTAL_LOCK_ID: free-configuration
+      PREFIX: ${{ inputs.prefix }}
+      CONFIRMATION: ${{ inputs.confirmation }}
+    steps:
+      - name: Check out provider source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up provider toolchain
+        uses: ./.github/actions/setup-provider-toolchain
+      - name: Delete exact owned Files configuration
+        run: ./scripts/acceptance-cleanup.sh archive files_configuration "$PREFIX" "$CONFIRMATION"

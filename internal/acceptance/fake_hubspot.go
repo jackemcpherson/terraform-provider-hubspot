@@ -24,9 +24,10 @@ import (
 // NewFakeHubSpot and serve it with httptest.NewServer; all state access is
 // mutex-guarded so it tolerates concurrent requests from the Terraform CLI.
 //
-// It deliberately does not implement pagination, throttling emulation, or
-// CRM record endpoints: the provider under test never exercises those
-// surfaces, and adding them would only make the fake harder to trust.
+// Files search implements deterministic cursor pagination because collision
+// and cleanup safety depend on complete parent-scoped scans. The older CRM
+// surfaces deliberately omit pagination and throttling emulation where the
+// provider does not exercise those behaviors.
 type FakeHubSpot struct {
 	mu sync.Mutex
 
@@ -59,6 +60,18 @@ type FakeHubSpot struct {
 	formCreateCount  int
 	nextFormFault    FormFault
 	failActiveReads  int
+
+	fileFolders                  map[string]*hubspot.FileFolder
+	managedFiles                 map[string]*fakeManagedFile
+	folderTasks                  map[string]hubspot.FolderUpdateTask
+	pendingFolderTasks           map[string]bool
+	nextFileFolderID             int
+	nextManagedFileID            int
+	nextFolderTaskID             int
+	nextFilesRevision            int64
+	nextFilesFault               FilesFault
+	malformedNextManagedFileRead bool
+	staleFilesSearchCursor       bool
 }
 
 type fakeFormDefinition struct {
@@ -87,12 +100,16 @@ const (
 // endpoint.
 func NewFakeHubSpot(token string, portalID int64) *FakeHubSpot {
 	return &FakeHubSpot{
-		token:      token,
-		portalID:   portalID,
-		groups:     make(map[string]map[string]*hubspot.PropertyGroup),
-		properties: make(map[string]map[string]*fakePropertyVersions),
-		pipelines:  make(map[string]map[string]*hubspot.Pipeline),
-		forms:      make(map[string]*fakeFormDefinition),
+		token:              token,
+		portalID:           portalID,
+		groups:             make(map[string]map[string]*hubspot.PropertyGroup),
+		properties:         make(map[string]map[string]*fakePropertyVersions),
+		pipelines:          make(map[string]map[string]*hubspot.Pipeline),
+		forms:              make(map[string]*fakeFormDefinition),
+		fileFolders:        make(map[string]*hubspot.FileFolder),
+		managedFiles:       make(map[string]*fakeManagedFile),
+		folderTasks:        make(map[string]hubspot.FolderUpdateTask),
+		pendingFolderTasks: make(map[string]bool),
 	}
 }
 
@@ -113,6 +130,8 @@ func (f *FakeHubSpot) ServeHTTP(response http.ResponseWriter, request *http.Requ
 		f.handlePipelines(response, request, segments[3:])
 	case len(segments) >= 3 && segments[0] == "marketing" && segments[1] == "v3" && segments[2] == "forms":
 		f.handleForms(response, request, segments[3:])
+	case len(segments) >= 3 && segments[0] == "files" && segments[1] == "2026-03":
+		f.handleFiles(response, request, segments[2:])
 	default:
 		writeFakeError(response, http.StatusNotFound, "OBJECT_NOT_FOUND", "", "No route matched this request.")
 	}

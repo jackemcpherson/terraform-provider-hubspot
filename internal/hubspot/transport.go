@@ -24,10 +24,11 @@ import (
 )
 
 const (
-	maxAttempts       = 5
-	maxSuccessBody    = 32 << 20
-	maxErrorBody      = 64 << 10
-	defaultBurstLimit = 10
+	maxAttempts             = 5
+	maxSuccessBody          = 32 << 20
+	maxErrorBody            = 64 << 10
+	defaultBurstLimit       = 10
+	defaultOperationTimeout = time.Minute
 )
 
 // ReplaySafety describes whether a request can be replayed after a transient
@@ -43,10 +44,13 @@ const (
 // Operation is a typed request contract. Paths are route paths, never complete
 // URLs, so the transport owns the configured origin and secret boundary.
 type Operation struct {
-	Name   string
-	Method string
-	Path   string
-	Replay ReplaySafety
+	Name        string
+	Method      string
+	Path        string
+	Replay      ReplaySafety
+	ContentType string
+	Timeout     time.Duration
+	HeaderSink  func(http.Header)
 }
 
 // Event contains only safe transport telemetry. It deliberately has no URL,
@@ -148,7 +152,10 @@ func NewTransport(config TransportConfig) (*Transport, error) {
 		transport.ResponseHeaderTimeout = 30 * time.Second
 		client = &http.Client{
 			Transport: transport,
-			Timeout:   60 * time.Second,
+			// Typed operations own their exact request and overall deadlines.
+			// Leaving the client timeout unset permits bounded five-minute Files
+			// transfers without weakening 30-second non-transfer requests.
+			Timeout: 0,
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 				return http.ErrUseLastResponse
 			},
@@ -198,12 +205,15 @@ func (t *Transport) Do(ctx context.Context, operation Operation, requestBody io.
 		if err := t.limiter.Wait(ctx); err != nil {
 			return &Error{Operation: operation.Name, Cause: err}
 		}
-		request, err := t.newRequest(ctx, operation, body)
+		requestContext, cancel := context.WithTimeout(ctx, effectiveOperationTimeout(operation))
+		request, err := t.newRequest(requestContext, operation, body)
 		if err != nil {
+			cancel()
 			return &Error{Operation: operation.Name, Cause: err}
 		}
 		response, requestErr := t.client.Do(request)
 		if requestErr != nil {
+			cancel()
 			if operation.Replay == ReplaySafe && attempt < maxAttempts {
 				t.emit(Event{Operation: operation.Name, Attempt: attempt, Retry: true})
 				if err := t.sleep(ctx, t.jitter(backoff(attempt))); err != nil {
@@ -213,10 +223,14 @@ func (t *Transport) Do(ctx context.Context, operation Operation, requestBody io.
 			}
 			return &Error{Operation: operation.Name, Cause: requestErr, Ambiguous: true}
 		}
+		if operation.HeaderSink != nil {
+			operation.HeaderSink(response.Header.Clone())
+		}
 
 		if response.StatusCode >= 200 && response.StatusCode < 300 {
 			err := decodeSuccess(response.Body, responseBody)
 			response.Body.Close()
+			cancel()
 			if err != nil {
 				return &Error{Operation: operation.Name, Status: response.StatusCode, Cause: err}
 			}
@@ -227,6 +241,7 @@ func (t *Transport) Do(ctx context.Context, operation Operation, requestBody io.
 
 		errorBody, readErr := io.ReadAll(io.LimitReader(response.Body, maxErrorBody+1))
 		response.Body.Close()
+		cancel()
 		apiError := parseError(operation.Name, response.StatusCode, response.Header, errorBody, readErr, t.clock())
 		isDailyLimit := response.StatusCode == http.StatusTooManyRequests && apiError.PolicyName == dailyLimitPolicyName
 		retryable := isRetryableStatus(response.StatusCode) && !isDailyLimit
@@ -244,6 +259,13 @@ func (t *Transport) Do(ctx context.Context, operation Operation, requestBody io.
 	}
 
 	return &Error{Operation: operation.Name, Cause: errors.New("retry budget exhausted")}
+}
+
+func effectiveOperationTimeout(operation Operation) time.Duration {
+	if operation.Timeout > 0 {
+		return operation.Timeout
+	}
+	return defaultOperationTimeout
 }
 
 func (t *Transport) newRequest(ctx context.Context, operation Operation, body []byte) (*http.Request, error) {
@@ -272,7 +294,11 @@ func (t *Transport) newRequest(ctx context.Context, operation Operation, body []
 		request.Header.Set("Authorization", "Bearer "+t.accessToken)
 	}
 	if len(body) != 0 {
-		request.Header.Set("Content-Type", "application/json")
+		contentType := operation.ContentType
+		if contentType == "" {
+			contentType = "application/json"
+		}
+		request.Header.Set("Content-Type", contentType)
 	}
 	return request, nil
 }

@@ -35,10 +35,7 @@ if test "$tag_exists" != "$release_exists"; then
 	exit 1
 fi
 if test "$tag_exists" = false; then
-	test "$(git rev-parse HEAD)" = "$candidate_commit" || {
-		echo 'checked-out commit does not match the new release commit' >&2
-		exit 1
-	}
+	GOTOOLCHAIN=local go run "$root/cmd/validate-checkout" "$root" "$candidate_commit"
 	release_commit=$candidate_commit
 else
 	git fetch --quiet --force origin "refs/tags/$version:refs/tags/$version"
@@ -118,5 +115,8 @@ fi
 if jq -e '.draft == true' "$tmp/release.json" >/dev/null; then
 	printf 'draft %s\n' "$release_commit"
 else
-	printf 'published %s\n' "$release_commit"
+	printf 'source release observed: published %s\n' "$release_commit"
+	registry_ingestion_verifier=${REGISTRY_INGESTION_VERIFIER:-"$root/scripts/verify-registry-ingestion.sh"}
+	"$registry_ingestion_verifier" "$version"
+	printf 'release observation complete: registries ingested %s\n' "$release_commit"
 fi

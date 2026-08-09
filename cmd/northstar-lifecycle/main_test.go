@@ -44,7 +44,7 @@ func TestExecuteAuthorsDriftAndArchivesRefreshTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := execute(ctx, "drift", form.ID, clients); err != nil {
+	if _, err := execute(ctx, "drift", []string{form.ID}, clients); err != nil {
 		t.Fatal(err)
 	}
 	drifted, err := clients.Properties.Get(ctx, "contacts", "ns_buyer_role", false, "non_sensitive", "")
@@ -55,21 +55,83 @@ func TestExecuteAuthorsDriftAndArchivesRefreshTarget(t *testing.T) {
 	if err != nil || driftedForm.Name != "ns_contact_us_drift" || driftedForm.FieldGroups[0].Fields[0].Label != "Out-of-band work email" {
 		t.Fatalf("drifted form = %#v, %v", driftedForm, err)
 	}
-	if _, err := execute(ctx, "archive-for-refresh", "", clients); err != nil {
+	if _, err := execute(ctx, "archive-for-refresh", nil, clients); err != nil {
 		t.Fatal(err)
 	}
 	if err := clients.Forms.Archive(ctx, form.ID); err != nil {
 		t.Fatal(err)
 	}
-	record, err := execute(ctx, "verify-form-terminal", form.ID, clients)
+	record, err := execute(ctx, "verify-form-terminal", []string{form.ID}, clients)
 	if err != nil || record == "" || strings.Contains(record, form.ID) || !strings.Contains(record, `"terminal":"archived"`) {
 		t.Fatalf("terminal record = %q, %v", record, err)
 	}
 }
 
 func TestExecuteRejectsUnknownAction(t *testing.T) {
-	if _, err := execute(context.Background(), "unknown", "", &hubspot.ClientSet{}); err == nil {
+	if _, err := execute(context.Background(), "unknown", nil, &hubspot.ClientSet{}); err == nil {
 		t.Fatal("unknown action accepted")
+	}
+}
+
+func TestExecuteManagesNorthstarFilesLifecycle(t *testing.T) {
+	server := httptest.NewServer(acceptance.NewFakeHubSpot("token", 123))
+	defer server.Close()
+	origin, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clients, err := hubspot.NewClientSet(hubspot.TransportConfig{BaseURL: origin, AccessToken: "token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	brand, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: "ns_brand"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	downloads, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: "ns_downloads", ParentFolderID: &brand.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateFile, err := clients.Files.Upload(ctx, hubspot.FileUpload{Name: "ns_private_readme.txt", FolderID: brand.ID, Access: "PRIVATE", Bytes: []byte("Northstar private file\n")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicFile, err := clients.Files.Upload(ctx, hubspot.FileUpload{Name: "ns_public_logo.svg", FolderID: downloads.ID, Access: "PUBLIC_NOT_INDEXABLE", Bytes: []byte("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1 1\"><path d=\"M0 0h1v1H0z\"/></svg>\n")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := []string{brand.ID, downloads.ID, privateFile.ID, publicFile.ID}
+	if _, err := execute(ctx, "verify-files", ids, clients); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(ctx, "drift-files", []string{publicFile.ID}, clients); err != nil {
+		t.Fatal(err)
+	}
+	drifted, err := clients.Files.Get(ctx, publicFile.ID)
+	if err != nil || drifted.Name != "ns_public_logo_drift.svg" || drifted.Access != "PRIVATE" || drifted.FileMD5 == publicFile.FileMD5 {
+		t.Fatalf("drifted file = %#v, %v", drifted, err)
+	}
+	if _, err := execute(ctx, "drift-folder-path", []string{brand.ID, downloads.ID}, clients); err != nil {
+		t.Fatal(err)
+	}
+	driftedDownloads, err := clients.FileFolders.Get(ctx, downloads.ID)
+	if err != nil || driftedDownloads.Path != "/ns_brand_refresh/ns_downloads" {
+		t.Fatalf("drifted folder = %#v, %v", driftedDownloads, err)
+	}
+	for _, id := range []string{privateFile.ID, publicFile.ID} {
+		if err := clients.Files.Delete(ctx, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range []string{downloads.ID, brand.ID} {
+		if err := clients.FileFolders.Delete(ctx, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	record, err := execute(ctx, "verify-files-terminal", ids, clients)
+	if err != nil || strings.Contains(record, brand.ID) || strings.Contains(record, publicFile.ID) || !strings.Contains(record, `"active_owned_files":0`) || !strings.Contains(record, `"active_owned_folders":0`) {
+		t.Fatalf("terminal record = %q, %v", record, err)
 	}
 }
 

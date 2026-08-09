@@ -264,6 +264,184 @@ func (s *Session) RequireFormsTerminal(prefix string, expectedIDs ...string) {
 	}
 }
 
+// MutateManagedFileContent replaces bytes through the exact generated ID while
+// preserving the provider-owned metadata. Live acceptance uses this external
+// boundary to prove content drift and repair without exposing the bytes.
+func (s *Session) MutateManagedFileContent(address string, contents []byte) {
+	s.t.Helper()
+	clients, err := s.probeClients()
+	if err != nil {
+		s.t.Fatalf("configure sanitized Managed file drift probe: %v", err)
+	}
+	id := s.OpaqueStateString(address, "id")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	current, err := clients.Files.Get(ctx, id)
+	if err != nil {
+		s.t.Fatalf("read Managed file for content drift probe: %s", SanitizedHubSpotError(err))
+	}
+	if _, err := clients.Files.Replace(ctx, id, hubspot.FileReplacement{Name: current.Name, Access: current.Access, Bytes: contents}); err != nil {
+		s.t.Fatalf("replace Managed file content for drift probe: %s", SanitizedHubSpotError(err))
+	}
+	updated, err := clients.Files.Get(ctx, id)
+	if err != nil {
+		s.t.Fatalf("verify Managed file content drift probe: %s", SanitizedHubSpotError(err))
+	}
+	if updated.ID != id || updated.CreatedAt != current.CreatedAt || updated.Size != int64(len(contents)) || updated.FileMD5 == current.FileMD5 {
+		s.t.Fatal("Managed file content drift probe did not preserve identity and change content")
+	}
+}
+
+// RequireManagedFileDuplicateRejected submits the already-owned target through
+// the typed upload boundary and proves HubSpot's exact-folder REJECT behavior
+// did not return or create another generated identity.
+func (s *Session) RequireManagedFileDuplicateRejected(address string, contents []byte) {
+	s.t.Helper()
+	clients, err := s.probeClients()
+	if err != nil {
+		s.t.Fatalf("configure sanitized Managed file duplicate probe: %v", err)
+	}
+	id := s.OpaqueStateString(address, "id")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	current, err := clients.Files.Get(ctx, id)
+	if err != nil {
+		s.t.Fatalf("read Managed file for duplicate probe: %s", SanitizedHubSpotError(err))
+	}
+	before, err := clients.Files.Search(ctx, &current.FolderID, "")
+	if err != nil {
+		s.t.Fatalf("capture Managed files before duplicate probe: %s", SanitizedHubSpotError(err))
+	}
+	beforeIDs := make(map[string]struct{}, len(before))
+	for _, file := range before {
+		if !file.Archived {
+			beforeIDs[file.ID] = struct{}{}
+		}
+	}
+	if _, exists := beforeIDs[id]; !exists {
+		s.t.Fatal("Managed file duplicate probe could not verify the owned identity before upload")
+	}
+	_, uploadErr := clients.Files.Upload(ctx, hubspot.FileUpload{Name: current.Name, FolderID: current.FolderID, Access: current.Access, Bytes: contents})
+	var apiError *hubspot.Error
+	if !errors.As(uploadErr, &apiError) || apiError.Status != 400 {
+		s.t.Fatal("Managed file duplicate probe was not rejected by the exact-folder boundary")
+	}
+	files, err := clients.Files.Search(ctx, &current.FolderID, "")
+	if err != nil {
+		s.t.Fatalf("verify Managed file duplicate rejection: %s", SanitizedHubSpotError(err))
+	}
+	afterIDs := make(map[string]struct{}, len(files))
+	for _, file := range files {
+		if file.Archived {
+			continue
+		}
+		afterIDs[file.ID] = struct{}{}
+	}
+	if len(afterIDs) != len(beforeIDs) {
+		s.t.Fatal("Managed file duplicate rejection changed the active folder contents")
+	}
+	for beforeID := range beforeIDs {
+		if _, exists := afterIDs[beforeID]; !exists {
+			s.t.Fatal("Managed file duplicate rejection changed an active generated identity")
+		}
+	}
+}
+
+// DeleteManagedFileOutOfBand removes one exact active generated identity and
+// verifies active absence before returning it to the lifecycle test.
+func (s *Session) DeleteManagedFileOutOfBand(address string) string {
+	s.t.Helper()
+	clients, err := s.probeClients()
+	if err != nil {
+		s.t.Fatalf("configure sanitized Managed file disappearance probe: %v", err)
+	}
+	id := s.OpaqueStateString(address, "id")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	deleteErr := clients.Files.Delete(ctx, id)
+	_, readErr := clients.Files.Get(ctx, id)
+	if isFilesNotFound(readErr) {
+		return id
+	}
+	if deleteErr != nil {
+		s.t.Fatalf("delete Managed file for disappearance probe: %s", SanitizedHubSpotError(deleteErr))
+	}
+	if readErr != nil {
+		s.t.Fatalf("verify Managed file disappearance probe: %s", SanitizedHubSpotError(readErr))
+	}
+	s.t.Fatal("Managed file disappearance probe did not verify active absence")
+	return ""
+}
+
+// RequireFilesTerminal verifies exact-ID active absence and zero active
+// prefix-owned Files configuration. HubSpot-managed Trash retention is not
+// treated as a failure because the active Files API is the lifecycle boundary.
+func (s *Session) RequireFilesTerminal(prefix string, fileIDs, folderIDs []string) (int, int) {
+	s.t.Helper()
+	clients, err := s.probeClients()
+	if err != nil {
+		s.t.Fatalf("configure sanitized Files cleanup probe: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	activeFiles, activeFolders, err := CountActiveFilesConfiguration(ctx, clients, prefix)
+	if err != nil {
+		s.t.Fatalf("search Files configuration for terminal probe: %s", SanitizedHubSpotError(err))
+	}
+	if activeFiles != 0 || activeFolders != 0 {
+		s.t.Fatal("Files terminal probe found active prefix-owned configuration")
+	}
+	for _, id := range fileIDs {
+		if _, err := clients.Files.Get(ctx, id); !isFilesNotFound(err) {
+			if err != nil {
+				s.t.Fatalf("verify exact Managed file active absence: %s", SanitizedHubSpotError(err))
+			}
+			s.t.Fatal("Files terminal probe found an expected Managed file identity active")
+		}
+	}
+	for _, id := range folderIDs {
+		if _, err := clients.FileFolders.Get(ctx, id); !isFilesNotFound(err) {
+			if err != nil {
+				s.t.Fatalf("verify exact File folder active absence: %s", SanitizedHubSpotError(err))
+			}
+			s.t.Fatal("Files terminal probe found an expected File folder identity active")
+		}
+	}
+	return activeFiles, activeFolders
+}
+
+// CountActiveFilesConfiguration reports active prefix-owned Managed files and
+// File folders through the same paginated search boundary used by terminal and
+// janitor verification.
+func CountActiveFilesConfiguration(ctx context.Context, clients *hubspot.ClientSet, prefix string) (int, int, error) {
+	files, err := clients.Files.Search(ctx, nil, "")
+	if err != nil {
+		return 0, 0, err
+	}
+	folders, err := clients.FileFolders.Search(ctx, nil, "")
+	if err != nil {
+		return 0, 0, err
+	}
+	activeFiles := 0
+	for _, file := range files {
+		if !file.Archived && strings.HasPrefix(file.Name, prefix) {
+			activeFiles++
+		}
+	}
+	activeFolders := 0
+	for _, folder := range folders {
+		if !folder.Archived && strings.HasPrefix(folder.Name, prefix) {
+			activeFolders++
+		}
+	}
+	return activeFiles, activeFolders, nil
+}
+
+func isFilesNotFound(err error) bool {
+	var apiError *hubspot.Error
+	return errors.As(err, &apiError) && apiError.Status == 404
+}
+
 func (s *Session) MutatePropertyGroupLabel(objectType, name, label string) {
 	s.MutatePropertyGroup(objectType, name, label, nil)
 }
