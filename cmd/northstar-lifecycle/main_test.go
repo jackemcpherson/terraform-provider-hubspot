@@ -74,7 +74,7 @@ func TestExecuteRejectsUnknownAction(t *testing.T) {
 }
 
 func TestExecuteCleansInterruptedNorthstarLifecycle(t *testing.T) {
-	t.Setenv("HUBSPOT_NORTHSTAR_FILES_PREFIX", "ns_31298253120_1_")
+	t.Setenv("HUBSPOT_NORTHSTAR_FILES_PREFIX", "ns_31298253120_1_tofu_")
 	names, err := northstarFilesNamesFromEnvironment()
 	if err != nil {
 		t.Fatal(err)
@@ -176,7 +176,7 @@ func TestExecuteCleanupRejectsUnexpectedPrefixBeforeMutation(t *testing.T) {
 }
 
 func TestExecuteManagesNorthstarFilesLifecycle(t *testing.T) {
-	t.Setenv("HUBSPOT_NORTHSTAR_FILES_PREFIX", "ns_31298253120_1_")
+	t.Setenv("HUBSPOT_NORTHSTAR_FILES_PREFIX", "ns_31298253120_1_tofu_")
 	names, err := northstarFilesNamesFromEnvironment()
 	if err != nil {
 		t.Fatal(err)

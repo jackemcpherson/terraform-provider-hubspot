@@ -8,11 +8,18 @@ log="$tmp/calls"
 demo_root="$tmp/demo-root"
 mkdir -p "$demo_root/scripts" "$demo_root/locks/tofu" "$demo_root/locks/terraform"
 
+# The fixture expands these variables when it runs.
+# shellcheck disable=SC2016
 printf '%s\n' '#!/bin/sh' \
+  'test "$HUBSPOT_NORTHSTAR_FILES_PREFIX" = "ns_test_${ENGINE}_"' \
   'printf "%s:%s:%s\n" "$ENGINE" "$1" "$2" >>"$CALL_LOG"' \
   'test "${FAIL_PHASE:-none}" != "$ENGINE:$2"' >"$demo_root/scripts/demo"
 chmod +x "$demo_root/scripts/demo"
-printf '%s\n' '#!/bin/sh' 'printf "%s\n" cleanup >>"$CALL_LOG"' >"$tmp/cleanup"
+# The fixture expands these variables when it runs.
+# shellcheck disable=SC2016
+printf '%s\n' '#!/bin/sh' \
+  'test "$HUBSPOT_NORTHSTAR_FILES_PREFIX" = "ns_test_tofu_"' \
+  'printf "%s\n" cleanup >>"$CALL_LOG"' >"$tmp/cleanup"
 chmod +x "$tmp/cleanup"
 cat >"$demo_root/versions.tf" <<'EOF'
 terraform {
@@ -41,6 +48,7 @@ done
 run() {
   CALL_LOG="$log" HUBSPOT_DEMO_REPO="$demo_root" HUBSPOT_DEMO_SCRIPT="$demo_root/scripts/demo" \
     HUBSPOT_NORTHSTAR_CLEANUP_SCRIPT="$tmp/cleanup" \
+    HUBSPOT_NORTHSTAR_FILES_PREFIX=ns_test_ \
     HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
     "$root/scripts/northstar-candidate-lifecycle.sh" v0.4.0
 }
@@ -60,6 +68,7 @@ fi
 : >"$log"
 if CALL_LOG="$log" FAIL_PHASE=tofu:repair HUBSPOT_DEMO_REPO="$demo_root" \
   HUBSPOT_DEMO_SCRIPT="$demo_root/scripts/demo" HUBSPOT_NORTHSTAR_CLEANUP_SCRIPT="$tmp/cleanup" \
+  HUBSPOT_NORTHSTAR_FILES_PREFIX=ns_test_ \
   HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
   "$root/scripts/northstar-candidate-lifecycle.sh" v0.4.0; then
   echo "Northstar lifecycle accepted a skipped or failed Forms phase" >&2
