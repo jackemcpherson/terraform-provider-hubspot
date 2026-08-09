@@ -65,7 +65,10 @@ for engine in tofu terraform; do
   done
 done >"$tmp/expected"
 cmp "$log" "$tmp/expected"
-test ! -e "$tmp/lock"
+if test -e "$tmp/lock"; then
+  echo "Northstar lifecycle retained the portal lock after rejecting wrong provenance" >&2
+  exit 1
+fi
 
 : >"$log"
 if CALL_LOG="$log" FAIL_PHASE=tofu:repair HUBSPOT_DEMO_SCRIPT="$demo_root/scripts/demo" HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
