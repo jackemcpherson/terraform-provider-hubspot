@@ -91,14 +91,10 @@ CALL_LOG="$log" HUBSPOT_DEMO_SCRIPT="$worktree/scripts/demo" HUBSPOT_ONE_PORTAL_
   "$root/scripts/northstar-candidate-lifecycle.sh" v0.4.0
 test "$(wc -l <"$log" | tr -d ' ')" = 20
 
-set +e
-CALL_LOG="$log" HUBSPOT_DEMO_SCRIPT="$worktree/scripts/demo" HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
+if CALL_LOG="$log" HUBSPOT_DEMO_SCRIPT="$worktree/scripts/demo" HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
   HUBSPOT_REQUIRE_CLEAN_PROVENANCE=1 HUBSPOT_PROVIDER_REPO="$provider_root" \
   HUBSPOT_PROVIDER_EXPECTED_COMMIT=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa HUBSPOT_DEMO_EXPECTED_COMMIT="$demo_commit" \
-  "$root/scripts/northstar-candidate-lifecycle.sh" v0.4.0
-wrong_provenance_status=$?
-set -e
-if test "$wrong_provenance_status" -eq 0; then
+  "$root/scripts/northstar-candidate-lifecycle.sh" v0.4.0; then
   echo "Northstar lifecycle accepted the wrong provider provenance" >&2
   exit 1
 fi
