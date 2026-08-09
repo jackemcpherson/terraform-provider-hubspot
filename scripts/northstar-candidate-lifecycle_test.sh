@@ -71,8 +71,12 @@ if test -e "$tmp/lock"; then
 fi
 
 : >"$log"
-if CALL_LOG="$log" FAIL_PHASE=tofu:repair HUBSPOT_DEMO_SCRIPT="$demo_root/scripts/demo" HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
-  "$root/scripts/northstar-candidate-lifecycle.sh" v0.4.0; then
+set +e
+CALL_LOG="$log" FAIL_PHASE=tofu:repair HUBSPOT_DEMO_SCRIPT="$demo_root/scripts/demo" HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
+  "$root/scripts/northstar-candidate-lifecycle.sh" v0.4.0
+failed_phase_status=$?
+set -e
+if test "$failed_phase_status" -eq 0; then
   echo "Northstar lifecycle accepted a skipped or failed Forms phase" >&2
   exit 1
 fi
@@ -91,10 +95,14 @@ CALL_LOG="$log" HUBSPOT_DEMO_SCRIPT="$worktree/scripts/demo" HUBSPOT_ONE_PORTAL_
   "$root/scripts/northstar-candidate-lifecycle.sh" v0.4.0
 test "$(wc -l <"$log" | tr -d ' ')" = 20
 
-if CALL_LOG="$log" HUBSPOT_DEMO_SCRIPT="$worktree/scripts/demo" HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
+set +e
+CALL_LOG="$log" HUBSPOT_DEMO_SCRIPT="$worktree/scripts/demo" HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
   HUBSPOT_REQUIRE_CLEAN_PROVENANCE=1 HUBSPOT_PROVIDER_REPO="$provider_root" \
   HUBSPOT_PROVIDER_EXPECTED_COMMIT=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa HUBSPOT_DEMO_EXPECTED_COMMIT="$demo_commit" \
-  "$root/scripts/northstar-candidate-lifecycle.sh" v0.4.0; then
+  "$root/scripts/northstar-candidate-lifecycle.sh" v0.4.0
+wrong_provenance_status=$?
+set -e
+if test "$wrong_provenance_status" -eq 0; then
   echo "Northstar lifecycle accepted the wrong provider provenance" >&2
   exit 1
 fi
