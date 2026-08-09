@@ -45,6 +45,7 @@ check-go:
 	@"$(STATICCHECK_BIN)" ./...
 	@go test ./...
 	@go test -tags=acceptance ./cmd/northstar-lifecycle
+	@go test -tags=acceptance ./cmd/released-files-lifecycle
 	@go test -tags=acceptance ./internal/acceptance -run '^Test.*AcceptanceConfigurationSyntax$$'
 	@go test -race ./...
 	@go mod tidy -diff
@@ -75,7 +76,9 @@ check-workflows:
 	@./scripts/acceptance-shard_test.sh
 	@./scripts/released-provider-journey_test.sh
 	@./scripts/released-form-migration_test.sh
+	@./scripts/released-files-migration_test.sh
 	@./scripts/released-northstar-journey_test.sh
+	@./scripts/prepare-released-demo_test.sh
 	@./scripts/verify-released-provider_test.sh
 	@./scripts/observe-release_test.sh
 	@./scripts/verify-release-assets_test.sh

@@ -21,8 +21,8 @@ import (
 const driftLabel = "Out-of-band Northstar buyer role"
 
 func main() {
-	if len(os.Args) < 2 || len(os.Args) > 3 {
-		fatal(errors.New("usage: northstar-lifecycle drift|archive-for-refresh|verify-form-terminal [form-id]"))
+	if len(os.Args) < 2 {
+		fatal(errors.New("usage: northstar-lifecycle <action> [generated-id ...]"))
 	}
 	token := os.Getenv("HUBSPOT_ACCESS_TOKEN")
 	if token == "" {
@@ -34,11 +34,7 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
-	formID := ""
-	if len(os.Args) == 3 {
-		formID = os.Args[2]
-	}
-	result, err := execute(ctx, os.Args[1], formID, clients)
+	result, err := execute(ctx, os.Args[1], os.Args[2:], clients)
 	if err != nil {
 		fatal(err)
 	}
@@ -47,20 +43,23 @@ func main() {
 	}
 }
 
-func execute(ctx context.Context, action, formID string, clients *hubspot.ClientSet) (string, error) {
+func execute(ctx context.Context, action string, ids []string, clients *hubspot.ClientSet) (string, error) {
 	switch action {
 	case "drift":
-		if formID == "" {
+		if len(ids) != 1 {
 			return "", errors.New("northstar form ID is required for drift")
 		}
 		if err := driftNorthstarProperty(ctx, clients); err != nil {
 			return "", err
 		}
-		if err := driftNorthstarForm(ctx, clients, formID); err != nil {
+		if err := driftNorthstarForm(ctx, clients, ids[0]); err != nil {
 			return "", err
 		}
 		return "", nil
 	case "archive-for-refresh":
+		if len(ids) != 0 {
+			return "", errors.New("archive-for-refresh does not accept generated IDs")
+		}
 		const name = "ns_last_success_review"
 		if err := clients.Properties.Archive(ctx, "contacts", name); err != nil {
 			return "", fmt.Errorf("archive Northstar refresh target: %s", acceptance.SanitizedHubSpotError(err))
@@ -72,10 +71,185 @@ func execute(ctx context.Context, action, formID string, clients *hubspot.Client
 		}
 		return "", nil
 	case "verify-form-terminal":
-		return verifyNorthstarFormTerminal(ctx, clients, formID)
+		if len(ids) != 1 {
+			return "", errors.New("northstar form ID is required for terminal verification")
+		}
+		return verifyNorthstarFormTerminal(ctx, clients, ids[0])
+	case "verify-files":
+		if len(ids) != 4 {
+			return "", errors.New("four Northstar Files generated IDs are required for verification")
+		}
+		return "", verifyNorthstarFiles(ctx, clients, ids)
+	case "drift-files":
+		if len(ids) != 1 {
+			return "", errors.New("one Northstar Managed file ID is required for drift")
+		}
+		return "", driftNorthstarFile(ctx, clients, ids[0])
+	case "drift-folder-path":
+		if len(ids) != 2 {
+			return "", errors.New("northstar parent and child folder IDs are required for path drift")
+		}
+		return "", driftNorthstarFolderPath(ctx, clients, ids[0], ids[1])
+	case "verify-files-terminal":
+		if len(ids) != 4 {
+			return "", errors.New("four Northstar Files generated IDs are required for terminal verification")
+		}
+		return verifyNorthstarFilesTerminal(ctx, clients, ids)
 	default:
-		return "", errors.New("action must be drift, archive-for-refresh, or verify-form-terminal")
+		return "", errors.New("unknown Northstar lifecycle action")
 	}
+}
+
+func verifyNorthstarFiles(ctx context.Context, clients *hubspot.ClientSet, ids []string) error {
+	brand, err := clients.FileFolders.Get(ctx, ids[0])
+	if err != nil {
+		return fmt.Errorf("read Northstar brand folder: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	downloads, err := clients.FileFolders.Get(ctx, ids[1])
+	if err != nil {
+		return fmt.Errorf("read Northstar downloads folder: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	privateFile, err := clients.Files.Get(ctx, ids[2])
+	if err != nil {
+		return fmt.Errorf("read Northstar private file: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	publicFile, err := clients.Files.Get(ctx, ids[3])
+	if err != nil {
+		return fmt.Errorf("read Northstar public file: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	if brand.ID != ids[0] || brand.Name != "ns_brand" || brand.ParentFolderID != nil || brand.Path != "/ns_brand" {
+		return errors.New("northstar brand folder did not match canonical exact-ID state")
+	}
+	if downloads.ID != ids[1] || downloads.Name != "ns_downloads" || downloads.ParentFolderID == nil || *downloads.ParentFolderID != ids[0] || downloads.Path != "/ns_brand/ns_downloads" {
+		return errors.New("northstar downloads folder did not match canonical exact-ID state")
+	}
+	if privateFile.ID != ids[2] || privateFile.Name != "ns_private_readme.txt" || privateFile.FolderID != ids[0] || privateFile.Access != "PRIVATE" || privateFile.FileMD5 != "6062568b21ab5f9deb2a2c2f25cfbc37" || privateFile.Size != 23 {
+		return errors.New("northstar private file did not match canonical exact-ID state")
+	}
+	if publicFile.ID != ids[3] || publicFile.Name != "ns_public_logo.svg" || publicFile.FolderID != ids[1] || publicFile.Access != "PUBLIC_NOT_INDEXABLE" || publicFile.FileMD5 != "21ebff031bb7f11ce0a0ab78c4347832" || publicFile.Size != 88 {
+		return errors.New("northstar public file did not match canonical exact-ID state")
+	}
+	return nil
+}
+
+func driftNorthstarFile(ctx context.Context, clients *hubspot.ClientSet, id string) error {
+	current, err := clients.Files.Get(ctx, id)
+	if err != nil {
+		return fmt.Errorf("read Northstar file drift target: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	name, access := "ns_public_logo_drift.svg", "PRIVATE"
+	updated, err := clients.Files.Update(ctx, id, hubspot.FilePatch{Name: &name, Access: &access})
+	if err != nil {
+		return fmt.Errorf("author Northstar file metadata drift: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	updated, err = clients.Files.Replace(ctx, id, hubspot.FileReplacement{Name: updated.Name, Access: updated.Access, Bytes: []byte("out-of-band Northstar content\n")})
+	if err != nil {
+		return fmt.Errorf("author Northstar file content drift: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	if updated.ID != id || updated.Name != name || updated.Access != access || updated.FileMD5 == current.FileMD5 || updated.CreatedAt != current.CreatedAt {
+		return errors.New("northstar file drift mutation was not observable with preserved identity")
+	}
+	return nil
+}
+
+func driftNorthstarFolderPath(ctx context.Context, clients *hubspot.ClientSet, parentID, childID string) error {
+	parent, err := clients.FileFolders.Get(ctx, parentID)
+	if err != nil {
+		return fmt.Errorf("read Northstar folder path drift target: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	task, err := clients.FileFolders.Update(ctx, parentID, hubspot.FileFolderWrite{Name: "ns_brand_refresh", ParentFolderID: parent.ParentFolderID})
+	if err != nil {
+		return fmt.Errorf("author Northstar folder path drift: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	if err := waitForFolderTask(ctx, clients, task.ID); err != nil {
+		return err
+	}
+	child, err := clients.FileFolders.Get(ctx, childID)
+	if err != nil {
+		return fmt.Errorf("read Northstar refreshed child folder: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	if child.ID != childID || child.ParentFolderID == nil || *child.ParentFolderID != parentID || child.Path != "/ns_brand_refresh/ns_downloads" {
+		return errors.New("northstar child folder path drift was not observable with preserved identity")
+	}
+	return nil
+}
+
+func waitForFolderTask(ctx context.Context, clients *hubspot.ClientSet, id string) error {
+	for {
+		task, err := clients.FileFolders.GetUpdateTask(ctx, id)
+		if err != nil {
+			return fmt.Errorf("read Northstar folder update task: %s", acceptance.SanitizedHubSpotError(err))
+		}
+		if len(task.Errors) > 0 {
+			return errors.New("northstar folder path drift task reported errors")
+		}
+		switch task.Status {
+		case "COMPLETE":
+			return nil
+		case "PENDING", "RUNNING", "PROCESSING":
+		default:
+			return errors.New("northstar folder path drift task did not complete")
+		}
+		delay := task.RetryAfter
+		if delay <= 0 {
+			delay = 250 * time.Millisecond
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return errors.New("northstar folder path drift task timed out")
+		case <-timer.C:
+		}
+	}
+}
+
+func verifyNorthstarFilesTerminal(ctx context.Context, clients *hubspot.ClientSet, ids []string) (string, error) {
+	for index, id := range ids {
+		var err error
+		if index < 2 {
+			_, err = clients.FileFolders.Get(ctx, id)
+		} else {
+			_, err = clients.Files.Get(ctx, id)
+		}
+		var apiError *hubspot.Error
+		if !errors.As(err, &apiError) || apiError.Status != 404 {
+			return "", errors.New("northstar Files identity remained active after teardown")
+		}
+	}
+	folders, err := clients.FileFolders.Search(ctx, nil, "")
+	if err != nil {
+		return "", fmt.Errorf("list active Northstar folders: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	files, err := clients.Files.Search(ctx, nil, "")
+	if err != nil {
+		return "", fmt.Errorf("list active Northstar files: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	activeFolders, activeFiles := 0, 0
+	for _, folder := range folders {
+		if strings.HasPrefix(folder.Name, "ns_") {
+			activeFolders++
+		}
+	}
+	for _, file := range files {
+		if strings.HasPrefix(file.Name, "ns_") {
+			activeFiles++
+		}
+	}
+	if activeFolders != 0 || activeFiles != 0 {
+		return "", errors.New("northstar teardown retained active owned Files configuration")
+	}
+	digest := sha256.Sum256([]byte("northstar-files-identities\x00" + strings.Join(ids, "\x00")))
+	record, err := json.Marshal(struct {
+		GeneratedIdentityHash string `json:"generated_identity_hash"`
+		ActiveOwnedFiles      int    `json:"active_owned_files"`
+		ActiveOwnedFolders    int    `json:"active_owned_folders"`
+		Cleanup               string `json:"cleanup"`
+	}{hex.EncodeToString(digest[:]), activeFiles, activeFolders, "passed"})
+	if err != nil {
+		return "", errors.New("encode Northstar Files terminal record")
+	}
+	return string(record), nil
 }
 
 func driftNorthstarProperty(ctx context.Context, clients *hubspot.ClientSet) error {

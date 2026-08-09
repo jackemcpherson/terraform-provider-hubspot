@@ -7,7 +7,7 @@ fixture=${RELEASED_FORM_FIXTURE_DIR:-acceptance/released/form_definitions}
 evidence=${FORM_MIGRATION_EVIDENCE_FILE:-acceptance-report/released-form-migration.json}
 : "${HUBSPOT_ACCESS_TOKEN:?HUBSPOT_ACCESS_TOKEN is required}"
 
-test "$version" = v0.3.0 || { echo "released Form migration requires v0.3.0" >&2; exit 1; }
+test "$version" = v0.4.0 || { echo "released Form migration requires v0.4.0" >&2; exit 1; }
 printf '%s\n' "$prefix" | grep -Eq '^tf_acc_[A-Za-z0-9_]+_$' || { echo "unsafe released Form prefix" >&2; exit 1; }
 test -f "$fixture/main.tf.tmpl" || { echo "released Form fixture is missing" >&2; exit 1; }
 
@@ -93,8 +93,8 @@ drift_and_repair() {
 }
 
 rm -f "$evidence"
-export TF_VAR_hubspot_access_token=$HUBSPOT_ACCESS_TOKEN
-export TF_VAR_acceptance_prefix=$prefix
+export TF_VAR_hubspot_access_token="$HUBSPOT_ACCESS_TOKEN"
+export TF_VAR_acceptance_prefix="$prefix"
 
 write_config "$terraform_source"
 write_presentation initial

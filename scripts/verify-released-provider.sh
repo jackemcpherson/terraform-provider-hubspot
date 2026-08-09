@@ -30,6 +30,8 @@ schema=$("$engine" -chdir="$tmp" providers schema -json)
 printf '%s' "$schema" | grep -q 'hubspot_property_group'
 printf '%s' "$schema" | grep -q 'hubspot_property_definition'
 printf '%s' "$schema" | grep -q 'hubspot_form_definition'
+printf '%s' "$schema" | grep -q 'hubspot_file_folder'
+printf '%s' "$schema" | grep -q 'hubspot_file'
 if printf '%s' "$schema" | grep -Eq 'hubspot_pipeline|hubspot_custom_object_schema'; then
   echo "released provider exposes a deferred resource" >&2
   exit 1
@@ -46,4 +48,9 @@ case "$(uname -m)" in arm64|aarch64) arch=arm64 ;; x86_64|amd64) arch=amd64 ;; *
 archive=$(find "$assets" -type f -name "terraform-provider-hubspot_${release_version}_${os}_${arch}.zip" -print -quit)
 test -n "$archive" || { echo "matching GitHub archive is missing" >&2; exit 1; }
 digest=$(shasum -a 256 "$archive" | awk '{print $1}')
+checksum_inventory="$assets/terraform-provider-hubspot_${release_version}_SHA256SUMS"
+test -f "$checksum_inventory" || { echo "GitHub checksum inventory is missing" >&2; exit 1; }
+awk -v digest="$digest" -v archive_name="$(basename "$archive")" \
+  '$1 == digest && $2 == archive_name { matches++ } END { exit matches == 1 ? 0 : 1 }' \
+  "$checksum_inventory" || { echo "GitHub checksum inventory does not bind the selected archive" >&2; exit 1; }
 grep -q "zh:$digest" "$tmp/.terraform.lock.hcl" || { echo "registry digest does not match the GitHub release" >&2; exit 1; }

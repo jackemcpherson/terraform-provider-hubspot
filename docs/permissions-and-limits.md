@@ -11,8 +11,9 @@ used by the configuration:
 | `tickets` | `tickets` | `tickets` |
 
 Read-only property data sources need only the read scope. Form definition
-management needs the exact `forms` scope. The provider needs no CRM record or
-form-submission scope and never reads CRM record values or submissions.
+management needs the exact `forms` scope. Files configuration management needs
+the exact `files` scope. The provider needs no CRM record, form-submission, or
+CMS content scope and never reads CRM record values or submissions.
 
 Some resources also depend on account features:
 
@@ -21,8 +22,9 @@ Some resources also depend on account features:
 | Property group | Supported CRM object schema access | Nonempty or protected groups may reject archive. |
 | Ordinary non-sensitive property | Supported CRM object schema access | Limit telemetry is advisory; remote create responses are authoritative. Definition archive has no provider restore operation. |
 | Contact email Form definition | HubSpot Free plus `forms` scope | Only no-consent definitions are supported. Archive is terminal and retained as a tombstone. |
+| File folder and Managed file | HubSpot Free plus `files` scope | Only explicit folders and locally supplied reviewed bytes are supported. Normal deletion leaves HubSpot-managed Trash retention. |
 
-v0.3 accepts only `data_sensitivity = "non_sensitive"`. Sensitive and
+v0.4 accepts only `data_sensitivity = "non_sensitive"`. Sensitive and
 highly-sensitive definitions, pipelines, custom schemas, form consent,
 notifications, automation, and non-email form structures are deferred from this
 release.

@@ -65,9 +65,11 @@ jobs:
       HUBSPOT_DEMO_SCRIPT: ${{ github.workspace }}/.release-demo/scripts/demo
       HUBSPOT_PROVIDER_REPO: ${{ github.workspace }}
       HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
+      # Distinct Northstar secret: CRM schema union plus forms and files.
+      HUBSPOT_NORTHSTAR_SCOPE_FAMILIES: crm.schemas.contacts,crm.schemas.companies,crm.schemas.deals,tickets,forms,files
       HUBSPOT_ACCEPTANCE_PORTAL_ID: ${{ vars.HUBSPOT_ACCEPTANCE_PORTAL_ID }}
       HUBSPOT_PROVIDER_EXPECTED_COMMIT: ${{ github.sha }}
-      HUBSPOT_DEMO_EXPECTED_COMMIT: fed9fab1904a73cb01cfc962d028ec689bcca741
+      HUBSPOT_DEMO_EXPECTED_COMMIT: 6e3430c7b1af2877dc9ee1318dbb18f2185d4ab7
       HUBSPOT_REQUIRE_CLEAN_PROVENANCE: '1'
       HUBSPOT_PORTAL_LOCK_ID: free-configuration
     steps:
@@ -79,7 +81,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: jackemcpherson/terraform-hubspot-instance-demo
-          ref: fed9fab1904a73cb01cfc962d028ec689bcca741
+          ref: 6e3430c7b1af2877dc9ee1318dbb18f2185d4ab7
           path: .release-demo
           persist-credentials: false
       - name: Set up provider toolchain
@@ -94,7 +96,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: scheduled-northstar-terminal
-          path: .release-demo/.demo/local-*-destroy/form-terminal.json
+          path: |
+            .release-demo/.demo/local-*-destroy/form-terminal.json
+            .release-demo/.demo/local-*-destroy/files-terminal.json
           if-no-files-found: error
 
   source-forms-acceptance:
@@ -164,7 +168,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: jackemcpherson/terraform-hubspot-instance-demo
-          ref: fed9fab1904a73cb01cfc962d028ec689bcca741
+          ref: 6e3430c7b1af2877dc9ee1318dbb18f2185d4ab7
           path: .candidate-demo
           persist-credentials: false
       - name: Set up provider toolchain

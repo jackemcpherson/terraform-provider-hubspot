@@ -123,7 +123,9 @@ grep -q 'path: acceptance-report/form_definitions\*\.json' "$maintenance"
 grep -q 'path: acceptance-report/files_configuration\*\.json' "$maintenance"
 grep -q 'HUBSPOT_CANDIDATE_VERSION: v0.4.0' "$maintenance"
 grep -q 'HUBSPOT_DEMO_REPO:.*\.candidate-demo' "$maintenance"
-grep -q 'path: .release-demo/.demo/local-\*-destroy/form-terminal.json' "$maintenance"
+grep -q '.release-demo/.demo/local-\*-destroy/form-terminal.json' "$maintenance"
+grep -q '.release-demo/.demo/local-\*-destroy/files-terminal.json' "$maintenance"
+grep -q 'HUBSPOT_NORTHSTAR_SCOPE_FAMILIES: crm.schemas.contacts,crm.schemas.companies,crm.schemas.deals,tickets,forms,files' "$maintenance"
 grep -q "HUBSPOT_REQUIRE_CLEAN_PROVENANCE: '1'" "$maintenance"
 test "$(grep -c 'HUBSPOT_PROVIDER_EXPECTED_COMMIT:.*github.sha' "$maintenance")" -eq 4
 grep -q 'HUBSPOT_DEMO_EXPECTED_COMMIT: [0-9a-f]\{40\}' "$maintenance"
@@ -237,12 +239,16 @@ test "$(cat "$files_manifest")" = '{"shard":"files_configuration","tier":"free",
 
 released_journey=scripts/released-provider-journey.sh
 released_forms=scripts/released-form-migration.sh
+released_files=scripts/released-files-migration.sh
 released_northstar=scripts/released-northstar-journey.sh
-grep -q 'released provider journey requires v0.3.0' "$released_journey"
-grep -q 'released Form migration requires v0.3.0' "$released_forms"
-grep -q 'Northstar release journey requires v0.3.0' "$released_northstar"
+grep -q 'released provider journey requires v0.4.0' "$released_journey"
+grep -q 'released Form migration requires v0.4.0' "$released_forms"
+grep -q 'released Files migration requires v0.4.0' "$released_files"
+grep -q 'Northstar release journey requires v0.4.0' "$released_northstar"
 grep -q 'registry.terraform.io/jackemcpherson/hubspot' "$released_forms"
 grep -q 'registry.opentofu.org/jackemcpherson/hubspot' "$released_forms"
+grep -q 'registry.terraform.io/jackemcpherson/hubspot' "$released_files"
+grep -q 'registry.opentofu.org/jackemcpherson/hubspot' "$released_files"
 test "$(grep -c 'state replace-provider' "$released_forms")" -eq 2 || {
 	echo 'released Forms must migrate one state to OpenTofu and back' >&2
 	exit 1
@@ -253,10 +259,28 @@ test "$(grep -c 'run_helper drift' "$released_forms")" -eq 1 || {
 }
 grep -q 'run_helper verify-terminal' "$released_forms"
 grep -q 'identity_preserved":true' "$released_forms"
+test "$(grep -c 'state replace-provider' "$released_files")" -eq 2 || {
+	echo 'released Files must migrate one state to OpenTofu and back' >&2
+	exit 1
+}
+test "$(grep -c 'run_helper drift' "$released_files")" -eq 1 || {
+	echo 'released Files must use one reusable exact-ID drift phase' >&2
+	exit 1
+}
+grep -q 'run_helper verify-terminal' "$released_files"
+grep -q 'identity_preserved":true' "$released_files"
 grep -q 'form_identity_preserved":true' "$released_journey"
+grep -q 'files_identity_preserved":true' "$released_journey"
+grep -q 'verify_registry_ingestion.*"$version"' "$released_journey"
+grep -q 'prepare_released_demo.*"$version".*"$demo_repo".*"$demo_commit"' "$released_journey"
 grep -q 'HUBSPOT_ONE_PORTAL_LOCK_DIR' "$released_journey"
 grep -q 'hubspot_form_definition' scripts/verify-released-provider.sh
+grep -q 'hubspot_file_folder' scripts/verify-released-provider.sh
+grep -q 'hubspot_file' scripts/verify-released-provider.sh
+grep -q 'GitHub checksum inventory does not bind the selected archive' scripts/verify-released-provider.sh
 grep -q 'released-form-migration_test.sh' Makefile
+grep -q 'released-files-migration_test.sh' Makefile
+grep -q 'prepare-released-demo_test.sh' Makefile
 ! grep -Eqi 'hub[_-]?id|app[_-]?id|record[_-]?id|form[_-]?id|portal[_-]?id|access[_-]?token|pat-' "$forms_manifest" || {
 	echo 'Forms capability manifest contains a forbidden identifier or credential marker' >&2
 	exit 1

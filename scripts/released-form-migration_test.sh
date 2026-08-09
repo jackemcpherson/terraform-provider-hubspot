@@ -61,7 +61,7 @@ log="$tmp/success.log"
 evidence="$tmp/success.json"
 PATH="$bin:$PATH" CALL_LOG="$log" DRIFT_MARKER="$tmp/drift" HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ACCEPTANCE_PREFIX=tf_acc_released_ \
   RELEASED_FORM_FIXTURE_DIR="$fixture" RELEASED_FORM_HELPER_SCRIPT="$tmp/helper" FORM_MIGRATION_EVIDENCE_FILE="$evidence" \
-  "$root/scripts/released-form-migration.sh" v0.3.0
+  "$root/scripts/released-form-migration.sh" v0.4.0
 
 test "$(grep -c '^helper:verify-active 00000000-0000-4000-8000-000000000001 tf_acc_released_$' "$log")" -ge 9
 test "$(grep -c '^helper:drift 00000000-0000-4000-8000-000000000001 tf_acc_released_$' "$log")" -eq 3
@@ -79,13 +79,16 @@ test "$tofu_to_tf_line" -lt "$final_tf_init_line"
 grep -q '"state_migration":"passed"' "$evidence"
 grep -q '"identity_preserved":true' "$evidence"
 grep -q '"cleanup":"passed"' "$evidence"
-! grep -q '00000000-0000-4000-8000-000000000001' "$evidence"
+if grep -q '00000000-0000-4000-8000-000000000001' "$evidence"; then
+  echo 'released Form evidence exposed a raw identity' >&2
+  exit 1
+fi
 
 failure_log="$tmp/failure.log"
 if PATH="$bin:$PATH" CALL_LOG="$failure_log" DRIFT_MARKER="$tmp/failure-drift" FAIL_MATCH='tofu:plan -detailed-exitcode -input=false' \
   HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ACCEPTANCE_PREFIX=tf_acc_failure_ RELEASED_FORM_FIXTURE_DIR="$fixture" \
   RELEASED_FORM_HELPER_SCRIPT="$tmp/helper" FORM_MIGRATION_EVIDENCE_FILE="$tmp/failure.json" \
-  "$root/scripts/released-form-migration.sh" v0.3.0 >/dev/null 2>&1; then
+  "$root/scripts/released-form-migration.sh" v0.4.0 >/dev/null 2>&1; then
   echo "expected early migration failure" >&2
   exit 1
 fi
@@ -96,7 +99,7 @@ test ! -e "$tmp/failure.json"
 if PATH="$bin:$PATH" CALL_LOG="$tmp/identity.log" DRIFT_MARKER="$tmp/identity-drift" MISMATCH_ENGINE=tofu \
   HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ACCEPTANCE_PREFIX=tf_acc_identity_ RELEASED_FORM_FIXTURE_DIR="$fixture" \
   RELEASED_FORM_HELPER_SCRIPT="$tmp/helper" FORM_MIGRATION_EVIDENCE_FILE="$tmp/identity.json" \
-  "$root/scripts/released-form-migration.sh" v0.3.0 >/dev/null 2>&1; then
+  "$root/scripts/released-form-migration.sh" v0.4.0 >/dev/null 2>&1; then
   echo "expected identity-change rejection" >&2
   exit 1
 fi
@@ -105,7 +108,7 @@ test ! -e "$tmp/identity.json"
 
 if PATH="$bin:$PATH" CALL_LOG="$tmp/wrong-version.log" DRIFT_MARKER="$tmp/wrong-drift" HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ACCEPTANCE_PREFIX=tf_acc_wrong_ \
   RELEASED_FORM_FIXTURE_DIR="$fixture" RELEASED_FORM_HELPER_SCRIPT="$tmp/helper" \
-  "$root/scripts/released-form-migration.sh" v0.2.0 >/dev/null 2>&1; then
+  "$root/scripts/released-form-migration.sh" v0.3.0 >/dev/null 2>&1; then
   echo "expected wrong-version rejection" >&2
   exit 1
 fi
