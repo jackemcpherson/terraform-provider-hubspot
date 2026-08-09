@@ -141,6 +141,7 @@ grep -q 'HUBSPOT_DEMO_REPO:.*\.candidate-demo' "$maintenance"
 grep -q '.release-demo/.demo/local-\*-destroy/form-terminal.json' "$maintenance"
 grep -q '.release-demo/.demo/local-\*-destroy/files-terminal.json' "$maintenance"
 grep -q 'HUBSPOT_NORTHSTAR_SCOPE_FAMILIES: crm.schemas.contacts,crm.schemas.companies,crm.schemas.deals,tickets,forms,files' "$maintenance"
+grep -q 'HUBSPOT_NORTHSTAR_FILES_PREFIX: ns_${{ github.run_id }}_${{ github.run_attempt }}_' "$maintenance"
 grep -q "HUBSPOT_REQUIRE_CLEAN_PROVENANCE: '1'" "$maintenance"
 test "$(grep -c 'HUBSPOT_PROVIDER_EXPECTED_COMMIT:.*github.sha' "$maintenance")" -eq 4
 grep -q 'HUBSPOT_DEMO_EXPECTED_COMMIT: [0-9a-f]\{40\}' "$maintenance"

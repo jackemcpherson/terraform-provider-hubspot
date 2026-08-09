@@ -74,6 +74,11 @@ func TestExecuteRejectsUnknownAction(t *testing.T) {
 }
 
 func TestExecuteCleansInterruptedNorthstarLifecycle(t *testing.T) {
+	t.Setenv("HUBSPOT_NORTHSTAR_FILES_PREFIX", "ns_31298253120_1_tofu_")
+	names, err := northstarFilesNamesFromEnvironment()
+	if err != nil {
+		t.Fatal(err)
+	}
 	server := httptest.NewServer(acceptance.NewFakeHubSpot("token", 123))
 	defer server.Close()
 	origin, err := url.Parse(server.URL)
@@ -110,18 +115,18 @@ func TestExecuteCleansInterruptedNorthstarLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	brand, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: "ns_brand"})
+	brand, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: names.BrandFolder})
 	if err != nil {
 		t.Fatal(err)
 	}
-	downloads, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: "ns_downloads", ParentFolderID: &brand.ID})
+	downloads, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: names.DownloadsFolder, ParentFolderID: &brand.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := clients.Files.Upload(ctx, hubspot.FileUpload{Name: "ns_private_readme.txt", FolderID: brand.ID, Access: "PRIVATE", Bytes: []byte("Northstar private file\n")}); err != nil {
+	if _, err := clients.Files.Upload(ctx, hubspot.FileUpload{Name: names.PrivateFile, FolderID: brand.ID, Access: "PRIVATE", Bytes: []byte("Northstar private file\n")}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := clients.Files.Upload(ctx, hubspot.FileUpload{Name: "ns_public_logo.svg", FolderID: downloads.ID, Access: "PUBLIC_NOT_INDEXABLE", Bytes: []byte("Northstar public file\n")}); err != nil {
+	if _, err := clients.Files.Upload(ctx, hubspot.FileUpload{Name: names.PublicFile, FolderID: downloads.ID, Access: "PUBLIC_NOT_INDEXABLE", Bytes: []byte("Northstar public file\n")}); err != nil {
 		t.Fatal(err)
 	}
 	result, err := execute(ctx, "cleanup", nil, clients)
@@ -134,7 +139,7 @@ func TestExecuteCleansInterruptedNorthstarLifecycle(t *testing.T) {
 	if _, err := clients.Forms.GetArchived(ctx, form.ID); err != nil {
 		t.Fatal("cleanup did not retain the Northstar Form tombstone")
 	}
-	if err := verifyNorthstarCleanup(ctx, clients); err != nil {
+	if err := verifyNorthstarCleanup(ctx, clients, names); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -171,6 +176,11 @@ func TestExecuteCleanupRejectsUnexpectedPrefixBeforeMutation(t *testing.T) {
 }
 
 func TestExecuteManagesNorthstarFilesLifecycle(t *testing.T) {
+	t.Setenv("HUBSPOT_NORTHSTAR_FILES_PREFIX", "ns_31298253120_1_tofu_")
+	names, err := northstarFilesNamesFromEnvironment()
+	if err != nil {
+		t.Fatal(err)
+	}
 	server := httptest.NewServer(acceptance.NewFakeHubSpot("token", 123))
 	defer server.Close()
 	origin, err := url.Parse(server.URL)
@@ -182,19 +192,19 @@ func TestExecuteManagesNorthstarFilesLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	brand, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: "ns_brand"})
+	brand, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: names.BrandFolder})
 	if err != nil {
 		t.Fatal(err)
 	}
-	downloads, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: "ns_downloads", ParentFolderID: &brand.ID})
+	downloads, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: names.DownloadsFolder, ParentFolderID: &brand.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	privateFile, err := clients.Files.Upload(ctx, hubspot.FileUpload{Name: "ns_private_readme.txt", FolderID: brand.ID, Access: "PRIVATE", Bytes: []byte("Northstar private file\n")})
+	privateFile, err := clients.Files.Upload(ctx, hubspot.FileUpload{Name: names.PrivateFile, FolderID: brand.ID, Access: "PRIVATE", Bytes: []byte("Northstar private file\n")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	publicFile, err := clients.Files.Upload(ctx, hubspot.FileUpload{Name: "ns_public_logo.svg", FolderID: downloads.ID, Access: "PUBLIC_NOT_INDEXABLE", Bytes: []byte("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1 1\"><path d=\"M0 0h1v1H0z\"/></svg>\n")})
+	publicFile, err := clients.Files.Upload(ctx, hubspot.FileUpload{Name: names.PublicFile, FolderID: downloads.ID, Access: "PUBLIC_NOT_INDEXABLE", Bytes: []byte("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1 1\"><path d=\"M0 0h1v1H0z\"/></svg>\n")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,14 +216,14 @@ func TestExecuteManagesNorthstarFilesLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	drifted, err := clients.Files.Get(ctx, publicFile.ID)
-	if err != nil || drifted.Name != "ns_public_logo_drift.svg" || drifted.Access != "PRIVATE" || drifted.FileMD5 == publicFile.FileMD5 {
+	if err != nil || drifted.Name != names.PublicFileDrift || drifted.Access != "PRIVATE" || drifted.FileMD5 == publicFile.FileMD5 {
 		t.Fatalf("drifted file = %#v, %v", drifted, err)
 	}
 	if _, err := execute(ctx, "drift-folder-path", []string{brand.ID, downloads.ID}, clients); err != nil {
 		t.Fatal(err)
 	}
 	driftedDownloads, err := clients.FileFolders.Get(ctx, downloads.ID)
-	if err != nil || driftedDownloads.Path != "/ns_brand_refresh/ns_downloads" {
+	if err != nil || driftedDownloads.Path != "/"+names.BrandFolderRefresh+"/"+names.DownloadsFolder {
 		t.Fatalf("drifted folder = %#v, %v", driftedDownloads, err)
 	}
 	for _, id := range []string{privateFile.ID, publicFile.ID} {
@@ -229,6 +239,13 @@ func TestExecuteManagesNorthstarFilesLifecycle(t *testing.T) {
 	record, err := execute(ctx, "verify-files-terminal", ids, clients)
 	if err != nil || strings.Contains(record, brand.ID) || strings.Contains(record, publicFile.ID) || !strings.Contains(record, `"active_owned_files":0`) || !strings.Contains(record, `"active_owned_folders":0`) {
 		t.Fatalf("terminal record = %q, %v", record, err)
+	}
+}
+
+func TestNorthstarFilesPrefixRejectsUnboundedNames(t *testing.T) {
+	t.Setenv("HUBSPOT_NORTHSTAR_FILES_PREFIX", "unsafe-prefix")
+	if _, err := northstarFilesNamesFromEnvironment(); err == nil {
+		t.Fatal("unsafe Northstar Files prefix accepted")
 	}
 }
 

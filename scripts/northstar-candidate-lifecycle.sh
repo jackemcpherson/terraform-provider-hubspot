@@ -8,10 +8,13 @@ lock_dir=${HUBSPOT_ONE_PORTAL_LOCK_DIR:-"${TMPDIR:-/tmp}/hubspot-free-portal-${H
 test -x "$demo" || { echo "Northstar demo script is not executable" >&2; exit 1; }
 demo_root=${HUBSPOT_DEMO_REPO:-"$(CDPATH='' cd -- "$(dirname -- "$demo")/.." && pwd)"}
 provider_root=${HUBSPOT_PROVIDER_REPO:-$root}
+northstar_files_prefix=${HUBSPOT_NORTHSTAR_FILES_PREFIX:-"ns_local_$$_"}
+active_files_prefix=$northstar_files_prefix
 
 if [ "${HUBSPOT_REQUIRE_CLEAN_PROVENANCE:-}" = 1 ]; then
 	provider_commit=${HUBSPOT_PROVIDER_EXPECTED_COMMIT:?HUBSPOT_PROVIDER_EXPECTED_COMMIT is required for protected Northstar runs}
 	demo_commit=${HUBSPOT_DEMO_EXPECTED_COMMIT:?HUBSPOT_DEMO_EXPECTED_COMMIT is required for protected Northstar runs}
+	: "${HUBSPOT_NORTHSTAR_FILES_PREFIX:?HUBSPOT_NORTHSTAR_FILES_PREFIX is required for protected Northstar runs}"
 	GOTOOLCHAIN=local go run "$root/cmd/validate-checkout" "$provider_root" "$provider_commit"
 	GOTOOLCHAIN=local go run "$root/cmd/validate-checkout" "$demo_root" "$demo_commit"
 fi
@@ -20,10 +23,10 @@ fi
 mkdir "$lock_dir" 2>/dev/null || { echo "Northstar portal lifecycle is already running: $lock_dir" >&2; exit 1; }
 run_failure_cleanup() {
   if [ -n "${HUBSPOT_NORTHSTAR_CLEANUP_SCRIPT:-}" ]; then
-    "$HUBSPOT_NORTHSTAR_CLEANUP_SCRIPT"
+    HUBSPOT_NORTHSTAR_FILES_PREFIX=$active_files_prefix "$HUBSPOT_NORTHSTAR_CLEANUP_SCRIPT"
     return
   fi
-  GOTOOLCHAIN=local go run "$root/cmd/northstar-lifecycle" cleanup
+  HUBSPOT_NORTHSTAR_FILES_PREFIX=$active_files_prefix GOTOOLCHAIN=local go run "$root/cmd/northstar-lifecycle" cleanup
 }
 cleanup() {
   status=$?
@@ -40,7 +43,9 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 run() {
-  ENGINE=$1 HUBSPOT_PORTAL_LOCK_HELD=1 "$demo" local "$2"
+	engine=$1
+	active_files_prefix=${northstar_files_prefix}${engine}_
+	ENGINE=$engine HUBSPOT_NORTHSTAR_FILES_PREFIX=$active_files_prefix HUBSPOT_PORTAL_LOCK_HELD=1 "$demo" local "$2"
 }
 
 for engine in tofu terraform; do
