@@ -66,7 +66,7 @@ for engine in tofu terraform; do
 done >"$tmp/expected"
 cmp "$log" "$tmp/expected"
 if test -e "$tmp/lock"; then
-  echo "Northstar lifecycle retained the portal lock after rejecting wrong provenance" >&2
+  echo "Northstar lifecycle retained the portal lock after a successful candidate lifecycle" >&2
   exit 1
 fi
 
@@ -77,7 +77,10 @@ if CALL_LOG="$log" FAIL_PHASE=tofu:repair HUBSPOT_DEMO_SCRIPT="$demo_root/script
   exit 1
 fi
 test "$(tail -1 "$log")" = 'tofu:local:repair'
-test ! -e "$tmp/lock"
+if test -e "$tmp/lock"; then
+  echo "Northstar lifecycle retained the portal lock after a failed phase" >&2
+  exit 1
+fi
 
 worktree="$tmp/demo-worktree"
 git -C "$demo_root" worktree add --quiet --detach "$worktree" "$demo_commit"
@@ -99,7 +102,10 @@ if test "$wrong_provenance_status" -eq 0; then
   echo "Northstar lifecycle accepted the wrong provider provenance" >&2
   exit 1
 fi
-test ! -e "$tmp/lock"
+if test -e "$tmp/lock"; then
+  echo "Northstar lifecycle retained the portal lock after rejecting wrong provenance" >&2
+  exit 1
+fi
 
 mkdir "$tmp/lock"
 if run; then
