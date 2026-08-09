@@ -190,22 +190,28 @@ func (f *FakeHubSpot) handleFileFolderUpdate(response http.ResponseWriter, reque
 		writeFakeError(response, http.StatusMethodNotAllowed, "VALIDATION_ERROR", "", "Unsupported method.")
 		return
 	}
-	var input struct {
-		ID string `json:"folderId"`
-		hubspot.FileFolderWrite
+	var payload struct {
+		ID             string `json:"id"`
+		Name           string `json:"name"`
+		ParentFolderID *int64 `json:"parentFolderId"`
 	}
-	if !decodeFakeBody(response, request, &input) {
+	if !decodeFakeBody(response, request, &payload) {
 		return
+	}
+	input := hubspot.FileFolderWrite{Name: payload.Name}
+	if payload.ParentFolderID != nil {
+		parent := strconv.FormatInt(*payload.ParentFolderID, 10)
+		input.ParentFolderID = &parent
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	folder := f.fileFolders[input.ID]
+	folder := f.fileFolders[payload.ID]
 	if folder == nil {
 		writeFakeError(response, http.StatusNotFound, "OBJECT_NOT_FOUND", "", "No active File folder matched this identity.")
 		return
 	}
 	for id, candidate := range f.fileFolders {
-		if id != input.ID && candidate.Name == input.Name && fakeNullableStringEqual(candidate.ParentFolderID, input.ParentFolderID) {
+		if id != payload.ID && candidate.Name == input.Name && fakeNullableStringEqual(candidate.ParentFolderID, input.ParentFolderID) {
 			writeFakeError(response, http.StatusConflict, "VALIDATION_ERROR", "", "Target File folder already exists.")
 			return
 		}

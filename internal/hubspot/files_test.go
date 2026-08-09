@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -38,6 +39,14 @@ func TestFileFolderClientPinsGeneratedIDLifecycleAndPagination(t *testing.T) {
 		case request.Method == http.MethodGet && request.URL.Path == "/files/2026-03/folders/11":
 			io.WriteString(writer, `{"id":"11","name":"child","parentFolderId":"7","path":"/root/child","createdAt":"2026-08-01T00:00:00Z","updatedAt":"2026-08-01T00:00:00Z"}`)
 		case request.Method == http.MethodPost && request.URL.Path == "/files/2026-03/folders/update/async":
+			var payload struct {
+				ID             string `json:"id"`
+				Name           string `json:"name"`
+				ParentFolderID *int64 `json:"parentFolderId"`
+			}
+			if err := json.NewDecoder(request.Body).Decode(&payload); err != nil || payload.ID != "11" || payload.Name != "renamed" || payload.ParentFolderID == nil || *payload.ParentFolderID != 7 {
+				t.Fatalf("folder update payload = %#v, %v", payload, err)
+			}
 			io.WriteString(writer, `{"id":"task-1"}`)
 		case request.Method == http.MethodGet && request.URL.Path == "/files/2026-03/folders/update/async/tasks/task-1/status":
 			writer.Header().Set("Retry-After", "7")
@@ -85,6 +94,11 @@ func TestManagedFileClientUsesExactFolderDuplicateRejectionAndBoundedUpdates(t *
 		requests = append(requests, request.Method+" "+request.URL.RequestURI())
 		writer.Header().Set("Content-Type", "application/json")
 		switch {
+		case request.Method == http.MethodGet && request.URL.Path == "/files/2026-03/files/search":
+			if request.URL.Query().Get("name") != "fixture" || request.URL.Query().Get("parentFolderId") != "7" {
+				t.Fatalf("file search query = %q", request.URL.RawQuery)
+			}
+			io.WriteString(writer, `{"results":[`+canonicalManagedFileJSON("21", "fixture.txt", "7", "PRIVATE")+`]}`)
 		case request.Method == http.MethodPost && request.URL.Path == "/files/2026-03/files":
 			assertManagedFileMultipart(t, request, "fixture.txt", "7", "PRIVATE", true)
 			writer.WriteHeader(http.StatusCreated)
@@ -107,21 +121,28 @@ func TestManagedFileClientUsesExactFolderDuplicateRejectionAndBoundedUpdates(t *
 	defer server.Close()
 
 	client := &FileClient{transport: newTestTransport(t, server.URL)}
+	folderID := "7"
+	files, err := client.Search(context.Background(), &folderID, "fixture.txt")
+	if err != nil || len(files) != 1 || files[0].Name != "fixture.txt" {
+		t.Fatalf("search = %#v, %v", files, err)
+	}
 	created, err := client.Upload(context.Background(), FileUpload{Name: "fixture.txt", FolderID: "7", Access: "PRIVATE", Bytes: []byte("bytes")})
-	if err != nil || created.ID != "21" {
+	if err != nil || created.ID != "21" || created.Name != "fixture.txt" {
 		t.Fatalf("upload = %#v, %v", created, err)
 	}
 	name := "renamed.txt"
-	if _, err := client.Update(context.Background(), "21", FilePatch{Name: &name}); err != nil {
-		t.Fatal(err)
+	updated, err := client.Update(context.Background(), "21", FilePatch{Name: &name})
+	if err != nil || updated.Name != name {
+		t.Fatalf("update = %#v, %v", updated, err)
 	}
-	if _, err := client.Replace(context.Background(), "21", FileReplacement{Name: name, Access: "PUBLIC_NOT_INDEXABLE", Bytes: []byte("new bytes")}); err != nil {
-		t.Fatal(err)
+	replaced, err := client.Replace(context.Background(), "21", FileReplacement{Name: name, Access: "PUBLIC_NOT_INDEXABLE", Bytes: []byte("new bytes")})
+	if err != nil || replaced.Name != name {
+		t.Fatalf("replace = %#v, %v", replaced, err)
 	}
 	if err := client.Delete(context.Background(), "21"); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"POST /files/2026-03/files", "PATCH /files/2026-03/files/21", "PUT /files/2026-03/files/21", "DELETE /files/2026-03/files/21"}
+	want := []string{"GET /files/2026-03/files/search?limit=100&name=fixture&parentFolderId=7", "POST /files/2026-03/files", "PATCH /files/2026-03/files/21", "PUT /files/2026-03/files/21", "DELETE /files/2026-03/files/21"}
 	if !reflect.DeepEqual(requests, want) {
 		t.Fatalf("requests = %#v, want %#v", requests, want)
 	}
@@ -161,5 +182,44 @@ func assertManagedFileMultipart(t *testing.T, request *http.Request, name, folde
 }
 
 func canonicalManagedFileJSON(id, name, folderID, access string) string {
-	return `{"id":"` + id + `","name":"` + name + `","parentFolderId":"` + folderID + `","path":"/folder/` + name + `","access":"` + access + `","fileMd5":"4f2a91e15af2631ff9424564b8a45fb2","size":5,"extension":"txt","type":"DOCUMENT","url":"https://example.invalid/` + name + `","defaultHostingUrl":"https://example.invalid/` + name + `","createdAt":"2026-08-01T00:00:00Z","updatedAt":"2026-08-01T00:00:01Z"}`
+	return `{"id":"` + id + `","name":"` + managedFileSearchName(name) + `","parentFolderId":"` + folderID + `","path":"/folder/` + name + `","access":"` + access + `","fileMd5":"4f2a91e15af2631ff9424564b8a45fb2","size":5,"extension":"txt","type":"DOCUMENT","url":"https://example.invalid/` + name + `","defaultHostingUrl":"https://example.invalid/` + name + `","createdAt":"2026-08-01T00:00:00Z","updatedAt":"2026-08-01T00:00:01Z"}`
+}
+
+func TestManagedFileWireNameCanonicalization(t *testing.T) {
+	for _, test := range []struct {
+		filename string
+		search   string
+	}{
+		{filename: "guide.txt", search: "guide"},
+		{filename: "archive.tar.gz", search: "archive.tar"},
+		{filename: "README", search: "README"},
+		{filename: ".well-known", search: ".well-known"},
+	} {
+		if got := managedFileSearchName(test.filename); got != test.search {
+			t.Fatalf("managedFileSearchName(%q) = %q, want %q", test.filename, got, test.search)
+		}
+		if got := canonicalManagedFilename(test.search, "/folder/"+test.filename); got != test.filename {
+			t.Fatalf("canonicalManagedFilename(%q) = %q, want %q", test.filename, got, test.filename)
+		}
+	}
+	if got := canonicalManagedFilename("different", "/folder/guide.txt"); got != "different" {
+		t.Fatalf("inconsistent wire name was canonicalized to %q", got)
+	}
+	var partial ManagedFile
+	if err := json.Unmarshal([]byte(`{"id":"21","archived":"invalid"}`), &partial); err == nil || partial.ID != "21" {
+		t.Fatalf("malformed response did not retain its known identity: %#v, %v", partial, err)
+	}
+}
+
+func TestFilesSearchOmitsNamesAboveServiceQueryLimit(t *testing.T) {
+	query := make(url.Values)
+	setFilesSearchName(query, strings.Repeat("x", filesSearchNameLimit))
+	if got := query.Get("name"); got == "" {
+		t.Fatal("service-safe search name was omitted")
+	}
+	query = make(url.Values)
+	setFilesSearchName(query, strings.Repeat("x", filesSearchNameLimit+1))
+	if query.Has("name") {
+		t.Fatal("over-limit search name was sent to HubSpot")
+	}
 }

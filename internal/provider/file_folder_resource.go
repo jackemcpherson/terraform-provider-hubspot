@@ -206,12 +206,8 @@ func (r *FileFolderResource) Update(ctx context.Context, request resource.Update
 		response.Diagnostics.AddError("File folder update did not complete", "HubSpot did not report a valid terminal COMPLETE task. Prior identity and state were retained for a safe retry.")
 		return
 	}
-	verified, err := r.folders.Get(ctx, state.ID.ValueString())
+	verified, err := r.waitForFolderPlan(ctx, state.ID.ValueString(), plan, state.CreatedAt.ValueString())
 	if err != nil {
-		appendHubSpotDiagnostic(&response.Diagnostics, "File folder update was not verified", err)
-		return
-	}
-	if !folderMatchesPlan(verified, state.ID.ValueString(), plan) || verified.CreatedAt != state.CreatedAt.ValueString() {
 		response.Diagnostics.AddError("File folder update was not verified", "Exact-ID read-back did not match every planned managed value. Prior identity and state were retained for a safe retry.")
 		return
 	}
@@ -319,6 +315,27 @@ func (r *FileFolderResource) waitForFolderTask(ctx context.Context, id string) e
 			return err
 		}
 	}
+}
+
+func (r *FileFolderResource) waitForFolderPlan(ctx context.Context, id string, plan fileFolderResourceModel, createdAt string) (hubspot.FileFolder, error) {
+	const attempts = 7
+	var observed hubspot.FileFolder
+	for attempt := 0; attempt < attempts; attempt++ {
+		folder, err := r.folders.Get(ctx, id)
+		if err != nil {
+			return folder, err
+		}
+		observed = folder
+		if folderMatchesPlan(folder, id, plan) && folder.CreatedAt == createdAt {
+			return folder, nil
+		}
+		if attempt+1 < attempts {
+			if err := sleepResourcePoll(ctx, attempt); err != nil {
+				return observed, err
+			}
+		}
+	}
+	return observed, errors.New("file folder read-back did not converge")
 }
 
 func (r *FileFolderResource) waitForFolderAbsent(ctx context.Context, id string) error {

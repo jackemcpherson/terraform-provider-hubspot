@@ -12,8 +12,11 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	pathpkg "path"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const filesAPIRoot = "/files/2026-03"
@@ -21,6 +24,7 @@ const filesAPIRoot = "/files/2026-03"
 const (
 	filesRequestTimeout  = 30 * time.Second
 	filesTransferTimeout = 5 * time.Minute
+	filesSearchNameLimit = 19
 )
 
 // FileFolderClient owns the typed File folder boundary. Its API routing is
@@ -73,6 +77,18 @@ type ManagedFile struct {
 	Archived          bool    `json:"archived"`
 }
 
+// UnmarshalJSON translates HubSpot's wire-level file stem back to the full
+// filename represented by the Files path. The API accepts a full fileName on
+// writes, but returns the final extension separately from name on reads.
+func (f *ManagedFile) UnmarshalJSON(data []byte) error {
+	type managedFileWire ManagedFile
+	var decoded managedFileWire
+	err := json.Unmarshal(data, &decoded)
+	decoded.Name = canonicalManagedFilename(decoded.Name, decoded.Path)
+	*f = ManagedFile(decoded)
+	return err
+}
+
 type FileUpload struct {
 	Name     string
 	FolderID string
@@ -109,9 +125,7 @@ func (c *FileFolderClient) Search(ctx context.Context, parentFolderID *string, n
 	if parentFolderID != nil {
 		query.Set("parentFolderId", *parentFolderID)
 	}
-	if name != "" {
-		query.Set("name", name)
-	}
+	setFilesSearchName(query, name)
 	return searchFilesPages[FileFolder](ctx, c.transport, "file-folder-search", fileFoldersPath()+"/search", query)
 }
 
@@ -149,10 +163,19 @@ func (c *FileFolderClient) Update(ctx context.Context, id string, input FileFold
 	if err := validateGeneratedFilesID(id); err != nil {
 		return FolderUpdateTask{}, err
 	}
+	var parentFolderID *int64
+	if input.ParentFolderID != nil {
+		parsed, err := strconv.ParseInt(*input.ParentFolderID, 10, 64)
+		if err != nil || parsed <= 0 {
+			return FolderUpdateTask{}, errors.New("parent folder id must be a non-zero decimal integer")
+		}
+		parentFolderID = &parsed
+	}
 	payload := struct {
-		ID string `json:"folderId"`
-		FileFolderWrite
-	}{ID: id, FileFolderWrite: input}
+		ID             string `json:"id"`
+		Name           string `json:"name"`
+		ParentFolderID *int64 `json:"parentFolderId,omitempty"`
+	}{ID: id, Name: input.Name, ParentFolderID: parentFolderID}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return FolderUpdateTask{}, err
@@ -196,9 +219,7 @@ func (c *FileClient) Search(ctx context.Context, folderID *string, name string) 
 	if folderID != nil {
 		query.Set("parentFolderId", *folderID)
 	}
-	if name != "" {
-		query.Set("name", name)
-	}
+	setFilesSearchName(query, managedFileSearchName(name))
 	return searchFilesPages[ManagedFile](ctx, c.transport, "managed-file-search", managedFilesPath()+"/search", query)
 }
 
@@ -339,4 +360,36 @@ func validateGeneratedFilesID(id string) error {
 		}
 	}
 	return nil
+}
+
+func managedFileSearchName(filename string) string {
+	extension := pathpkg.Ext(filename)
+	stem := strings.TrimSuffix(filename, extension)
+	if stem == "" {
+		return filename
+	}
+	return stem
+}
+
+// HubSpot rejects name filters of 20 characters or more. Omitting the filter
+// keeps the paginated search valid; provider callers still exact-match results.
+func setFilesSearchName(query url.Values, name string) {
+	if name != "" && utf8.RuneCountInString(name) <= filesSearchNameLimit {
+		query.Set("name", name)
+	}
+}
+
+func canonicalManagedFilename(remoteName, remotePath string) string {
+	trimmedPath := strings.TrimSuffix(remotePath, "/")
+	filename := trimmedPath
+	if separator := strings.LastIndex(trimmedPath, "/"); separator >= 0 {
+		filename = trimmedPath[separator+1:]
+	}
+	if filename == "" {
+		return remoteName
+	}
+	if remoteName == filename || remoteName == managedFileSearchName(filename) {
+		return filename
+	}
+	return remoteName
 }

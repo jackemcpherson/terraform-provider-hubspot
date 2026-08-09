@@ -282,8 +282,10 @@ func (r *FileResource) Update(ctx context.Context, request resource.UpdateReques
 			patch.Access = &value
 		}
 		_, patchErr := r.client.Update(ctx, state.ID.ValueString(), patch)
-		verified, verifyErr := r.client.Get(ctx, state.ID.ValueString())
-		if verifyErr != nil || !managedFileMetadataMatches(verified, state.ID.ValueString(), plan) || verified.CreatedAt != current.CreatedAt {
+		verified, verifyErr := r.waitForManagedFile(ctx, state.ID.ValueString(), func(file hubspot.ManagedFile) bool {
+			return managedFileMetadataMatches(file, state.ID.ValueString(), plan) && file.CreatedAt == current.CreatedAt
+		})
+		if verifyErr != nil {
 			response.Diagnostics.AddError("Managed file update was not verified", "PATCH outcome could not be proven by exact-ID read-back. Prior identity and state were retained for a safe retry.")
 			return
 		}
@@ -300,8 +302,10 @@ func (r *FileResource) Update(ctx context.Context, request resource.UpdateReques
 	contentChanged := current.FileMD5 != source.MD5 || current.Size != source.Size
 	if contentChanged {
 		_, replaceErr := r.client.Replace(ctx, state.ID.ValueString(), hubspot.FileReplacement{Name: plan.Name.ValueString(), Access: plan.Access.ValueString(), Bytes: source.Bytes})
-		verified, verifyErr := r.client.Get(ctx, state.ID.ValueString())
-		if verifyErr != nil || !managedFileMatchesPlan(verified, state.ID.ValueString(), plan, source) || verified.CreatedAt != current.CreatedAt {
+		verified, verifyErr := r.waitForManagedFile(ctx, state.ID.ValueString(), func(file hubspot.ManagedFile) bool {
+			return managedFileMatchesPlan(file, state.ID.ValueString(), plan, source) && file.CreatedAt == current.CreatedAt
+		})
+		if verifyErr != nil {
 			response.Diagnostics.AddError("Managed file update was not verified", "PUT outcome could not be proven with preserved identity, creation time, planned MD5, and size. Prior state was retained for a safe retry.")
 			return
 		}
@@ -381,6 +385,27 @@ func (r *FileResource) fileCollision(ctx context.Context, folderID, name, exclud
 		}
 	}
 	return false, nil
+}
+
+func (r *FileResource) waitForManagedFile(ctx context.Context, id string, matches func(hubspot.ManagedFile) bool) (hubspot.ManagedFile, error) {
+	const attempts = 7
+	var observed hubspot.ManagedFile
+	for attempt := 0; attempt < attempts; attempt++ {
+		file, err := r.client.Get(ctx, id)
+		if err != nil {
+			return file, err
+		}
+		observed = file
+		if matches(file) {
+			return file, nil
+		}
+		if attempt+1 < attempts {
+			if err := sleepResourcePoll(ctx, attempt); err != nil {
+				return observed, err
+			}
+		}
+	}
+	return observed, errors.New("managed file read-back did not converge")
 }
 
 func (r *FileResource) cleanupMismatchedCreate(ctx context.Context, id string, response *resource.CreateResponse) {
