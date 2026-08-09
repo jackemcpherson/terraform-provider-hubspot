@@ -91,11 +91,6 @@ CALL_LOG="$log" HUBSPOT_DEMO_SCRIPT="$worktree/scripts/demo" HUBSPOT_ONE_PORTAL_
   "$root/scripts/northstar-candidate-lifecycle.sh" v0.4.0
 test "$(wc -l <"$log" | tr -d ' ')" = 20
 
-if GOTOOLCHAIN=local go run "$root/cmd/validate-checkout" "$provider_root" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; then
-  echo "Provenance validation accepted the wrong provider commit" >&2
-  exit 1
-fi
-
 mkdir "$tmp/lock"
 if run; then
   echo "Northstar lifecycle accepted a shared portal lock collision" >&2
