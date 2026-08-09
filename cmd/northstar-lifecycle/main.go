@@ -28,6 +28,40 @@ type northstarFilesIDs struct {
 	PublicFile      string
 }
 
+type northstarFilesNames struct {
+	Prefix             string
+	BrandFolder        string
+	BrandFolderRefresh string
+	DownloadsFolder    string
+	PrivateFile        string
+	PublicFile         string
+	PublicFileDrift    string
+}
+
+func northstarFilesNamesFromEnvironment() (northstarFilesNames, error) {
+	prefix := os.Getenv("HUBSPOT_NORTHSTAR_FILES_PREFIX")
+	if prefix == "" {
+		prefix = "ns_"
+	}
+	if !strings.HasPrefix(prefix, "ns_") || !strings.HasSuffix(prefix, "_") || len(prefix) > 100 {
+		return northstarFilesNames{}, errors.New("HUBSPOT_NORTHSTAR_FILES_PREFIX must start with ns_, end with _, and be at most 100 characters")
+	}
+	for _, character := range prefix {
+		if (character < 'a' || character > 'z') && (character < 'A' || character > 'Z') && (character < '0' || character > '9') && character != '_' {
+			return northstarFilesNames{}, errors.New("HUBSPOT_NORTHSTAR_FILES_PREFIX may contain only letters, digits, and underscores")
+		}
+	}
+	return northstarFilesNames{
+		Prefix:             prefix,
+		BrandFolder:        prefix + "brand",
+		BrandFolderRefresh: prefix + "brand_refresh",
+		DownloadsFolder:    prefix + "downloads",
+		PrivateFile:        prefix + "private_readme.txt",
+		PublicFile:         prefix + "public_logo.svg",
+		PublicFileDrift:    prefix + "public_logo_drift.svg",
+	}, nil
+}
+
 func newNorthstarFilesIDs(values []string) northstarFilesIDs {
 	return northstarFilesIDs{
 		BrandFolder: values[0], DownloadsFolder: values[1],
@@ -94,27 +128,47 @@ func execute(ctx context.Context, action string, ids []string, clients *hubspot.
 		if len(ids) != 4 {
 			return "", errors.New("four Northstar Files generated IDs are required for verification")
 		}
-		return "", verifyNorthstarFiles(ctx, clients, newNorthstarFilesIDs(ids))
+		names, err := northstarFilesNamesFromEnvironment()
+		if err != nil {
+			return "", err
+		}
+		return "", verifyNorthstarFiles(ctx, clients, newNorthstarFilesIDs(ids), names)
 	case "drift-files":
 		if len(ids) != 1 {
 			return "", errors.New("one Northstar Managed file ID is required for drift")
 		}
-		return "", driftNorthstarFile(ctx, clients, ids[0])
+		names, err := northstarFilesNamesFromEnvironment()
+		if err != nil {
+			return "", err
+		}
+		return "", driftNorthstarFile(ctx, clients, ids[0], names)
 	case "drift-folder-path":
 		if len(ids) != 2 {
 			return "", errors.New("northstar parent and child folder IDs are required for path drift")
 		}
-		return "", driftNorthstarFolderPath(ctx, clients, ids[0], ids[1])
+		names, err := northstarFilesNamesFromEnvironment()
+		if err != nil {
+			return "", err
+		}
+		return "", driftNorthstarFolderPath(ctx, clients, ids[0], ids[1], names)
 	case "verify-files-terminal":
 		if len(ids) != 4 {
 			return "", errors.New("four Northstar Files generated IDs are required for terminal verification")
 		}
-		return verifyNorthstarFilesTerminal(ctx, clients, newNorthstarFilesIDs(ids))
+		names, err := northstarFilesNamesFromEnvironment()
+		if err != nil {
+			return "", err
+		}
+		return verifyNorthstarFilesTerminal(ctx, clients, newNorthstarFilesIDs(ids), names)
 	case "cleanup":
 		if len(ids) != 0 {
 			return "", errors.New("northstar cleanup does not accept generated IDs")
 		}
-		if err := cleanupNorthstar(ctx, clients); err != nil {
+		names, err := northstarFilesNamesFromEnvironment()
+		if err != nil {
+			return "", err
+		}
+		if err := cleanupNorthstar(ctx, clients, names); err != nil {
 			return "", err
 		}
 		return "Northstar cleanup verified zero active owned configuration", nil
@@ -163,8 +217,8 @@ func stringSet(values ...string) map[string]struct{} {
 	return result
 }
 
-func cleanupNorthstar(ctx context.Context, clients *hubspot.ClientSet) error {
-	plan, err := inspectNorthstarCleanup(ctx, clients)
+func cleanupNorthstar(ctx context.Context, clients *hubspot.ClientSet, names northstarFilesNames) error {
+	plan, err := inspectNorthstarCleanup(ctx, clients, names)
 	if err != nil {
 		return err
 	}
@@ -211,10 +265,10 @@ func cleanupNorthstar(ctx context.Context, clients *hubspot.ClientSet) error {
 			}
 		}
 	}
-	return verifyNorthstarCleanup(ctx, clients)
+	return verifyNorthstarCleanup(ctx, clients, names)
 }
 
-func inspectNorthstarCleanup(ctx context.Context, clients *hubspot.ClientSet) (northstarCleanupPlan, error) {
+func inspectNorthstarCleanup(ctx context.Context, clients *hubspot.ClientSet, names northstarFilesNames) (northstarCleanupPlan, error) {
 	plan := northstarCleanupPlan{properties: map[string][]string{}, groups: map[string][]string{}}
 	for objectType, expected := range northstarCRMNames {
 		properties, err := clients.Properties.List(ctx, objectType, false, "non_sensitive", "")
@@ -265,25 +319,40 @@ func inspectNorthstarCleanup(ctx context.Context, clients *hubspot.ClientSet) (n
 	if err != nil {
 		return plan, fmt.Errorf("list Northstar File folders: %s", acceptance.SanitizedHubSpotError(err))
 	}
-	ownedFolderIDs := map[string]struct{}{}
+	expectedFolderNames := stringSet(names.BrandFolder, names.BrandFolderRefresh, names.DownloadsFolder)
+	expectedFileNames := stringSet(names.PrivateFile, names.PublicFile, names.PublicFileDrift)
+	ownedFolderNames := map[string]string{}
 	for _, folder := range folders {
 		if folder.Archived || !strings.HasPrefix(folder.Name, "ns_") {
 			continue
 		}
-		if folder.Name != "ns_brand" && folder.Name != "ns_brand_refresh" && folder.Name != "ns_downloads" {
+		if _, ok := expectedFolderNames[folder.Name]; !ok {
 			return plan, fmt.Errorf("refusing unexpected Northstar File folder %q", folder.Name)
 		}
-		if !strings.HasSuffix(folder.Path, "/"+folder.Name) {
-			return plan, errors.New("refusing Northstar File folder with unexpected placement")
-		}
 		plan.folders = append(plan.folders, folder)
-		ownedFolderIDs[folder.ID] = struct{}{}
+		ownedFolderNames[folder.ID] = folder.Name
+	}
+	for _, folder := range plan.folders {
+		switch folder.Name {
+		case names.BrandFolder, names.BrandFolderRefresh:
+			if folder.ParentFolderID != nil || folder.Path != "/"+folder.Name {
+				return plan, errors.New("refusing Northstar brand folder with unexpected placement")
+			}
+		case names.DownloadsFolder:
+			if folder.ParentFolderID == nil {
+				return plan, errors.New("refusing Northstar downloads folder without its owned parent")
+			}
+			parentName, ok := ownedFolderNames[*folder.ParentFolderID]
+			if !ok || (parentName != names.BrandFolder && parentName != names.BrandFolderRefresh) || folder.Path != "/"+parentName+"/"+folder.Name {
+				return plan, errors.New("refusing Northstar downloads folder with unexpected placement")
+			}
+		}
 	}
 	for _, file := range files {
 		if file.Archived {
 			continue
 		}
-		_, inOwnedFolder := ownedFolderIDs[file.FolderID]
+		folderName, inOwnedFolder := ownedFolderNames[file.FolderID]
 		ownedName := strings.HasPrefix(file.Name, "ns_")
 		if inOwnedFolder && !ownedName {
 			return plan, errors.New("refusing Northstar File folder containing an unowned Managed file")
@@ -291,7 +360,17 @@ func inspectNorthstarCleanup(ctx context.Context, clients *hubspot.ClientSet) (n
 		if !ownedName {
 			continue
 		}
-		if !inOwnedFolder || !strings.HasSuffix(file.Path, "/"+file.Name) {
+		if _, ok := expectedFileNames[file.Name]; !ok {
+			return plan, fmt.Errorf("refusing unexpected Northstar Managed file %q", file.Name)
+		}
+		expectedFolderName := names.DownloadsFolder
+		if file.Name == names.PrivateFile {
+			expectedFolderName = names.BrandFolder
+			if folderName == names.BrandFolderRefresh {
+				expectedFolderName = names.BrandFolderRefresh
+			}
+		}
+		if !inOwnedFolder || folderName != expectedFolderName || !strings.HasSuffix(file.Path, "/"+file.Name) {
 			return plan, errors.New("refusing Northstar Managed file with unexpected placement")
 		}
 		plan.files = append(plan.files, file.ID)
@@ -300,15 +379,17 @@ func inspectNorthstarCleanup(ctx context.Context, clients *hubspot.ClientSet) (n
 		if folder.Archived || folder.ParentFolderID == nil {
 			continue
 		}
-		if _, inOwnedFolder := ownedFolderIDs[*folder.ParentFolderID]; inOwnedFolder && !strings.HasPrefix(folder.Name, "ns_") {
-			return plan, errors.New("refusing Northstar File folder containing an unowned child folder")
+		if _, inOwnedFolder := ownedFolderNames[*folder.ParentFolderID]; inOwnedFolder {
+			if _, expected := expectedFolderNames[folder.Name]; !expected {
+				return plan, errors.New("refusing Northstar File folder containing an unowned child folder")
+			}
 		}
 	}
 	return plan, nil
 }
 
-func verifyNorthstarCleanup(ctx context.Context, clients *hubspot.ClientSet) error {
-	plan, err := inspectNorthstarCleanup(ctx, clients)
+func verifyNorthstarCleanup(ctx context.Context, clients *hubspot.ClientSet, names northstarFilesNames) error {
+	plan, err := inspectNorthstarCleanup(ctx, clients, names)
 	if err != nil {
 		return err
 	}
@@ -358,7 +439,7 @@ func northstarNotFound(err error) bool {
 	return errors.As(err, &apiError) && apiError.Status == 404
 }
 
-func verifyNorthstarFiles(ctx context.Context, clients *hubspot.ClientSet, ids northstarFilesIDs) error {
+func verifyNorthstarFiles(ctx context.Context, clients *hubspot.ClientSet, ids northstarFilesIDs, names northstarFilesNames) error {
 	brand, err := clients.FileFolders.Get(ctx, ids.BrandFolder)
 	if err != nil {
 		return fmt.Errorf("read Northstar brand folder: %s", acceptance.SanitizedHubSpotError(err))
@@ -375,27 +456,27 @@ func verifyNorthstarFiles(ctx context.Context, clients *hubspot.ClientSet, ids n
 	if err != nil {
 		return fmt.Errorf("read Northstar public file: %s", acceptance.SanitizedHubSpotError(err))
 	}
-	if brand.ID != ids.BrandFolder || brand.Name != "ns_brand" || brand.ParentFolderID != nil || brand.Path != "/ns_brand" {
+	if brand.ID != ids.BrandFolder || brand.Name != names.BrandFolder || brand.ParentFolderID != nil || brand.Path != "/"+names.BrandFolder {
 		return errors.New("northstar brand folder did not match canonical exact-ID state")
 	}
-	if downloads.ID != ids.DownloadsFolder || downloads.Name != "ns_downloads" || downloads.ParentFolderID == nil || *downloads.ParentFolderID != ids.BrandFolder || downloads.Path != "/ns_brand/ns_downloads" {
+	if downloads.ID != ids.DownloadsFolder || downloads.Name != names.DownloadsFolder || downloads.ParentFolderID == nil || *downloads.ParentFolderID != ids.BrandFolder || downloads.Path != "/"+names.BrandFolder+"/"+names.DownloadsFolder {
 		return errors.New("northstar downloads folder did not match canonical exact-ID state")
 	}
-	if privateFile.ID != ids.PrivateFile || privateFile.Name != "ns_private_readme.txt" || privateFile.FolderID != ids.BrandFolder || privateFile.Access != "PRIVATE" || privateFile.FileMD5 != "6062568b21ab5f9deb2a2c2f25cfbc37" || privateFile.Size != 23 {
+	if privateFile.ID != ids.PrivateFile || privateFile.Name != names.PrivateFile || privateFile.FolderID != ids.BrandFolder || privateFile.Access != "PRIVATE" || privateFile.FileMD5 != "6062568b21ab5f9deb2a2c2f25cfbc37" || privateFile.Size != 23 {
 		return errors.New("northstar private file did not match canonical exact-ID state")
 	}
-	if publicFile.ID != ids.PublicFile || publicFile.Name != "ns_public_logo.svg" || publicFile.FolderID != ids.DownloadsFolder || publicFile.Access != "PUBLIC_NOT_INDEXABLE" || publicFile.FileMD5 != "21ebff031bb7f11ce0a0ab78c4347832" || publicFile.Size != 88 {
+	if publicFile.ID != ids.PublicFile || publicFile.Name != names.PublicFile || publicFile.FolderID != ids.DownloadsFolder || publicFile.Access != "PUBLIC_NOT_INDEXABLE" || publicFile.FileMD5 != "21ebff031bb7f11ce0a0ab78c4347832" || publicFile.Size != 88 {
 		return errors.New("northstar public file did not match canonical exact-ID state")
 	}
 	return nil
 }
 
-func driftNorthstarFile(ctx context.Context, clients *hubspot.ClientSet, id string) error {
+func driftNorthstarFile(ctx context.Context, clients *hubspot.ClientSet, id string, names northstarFilesNames) error {
 	current, err := clients.Files.Get(ctx, id)
 	if err != nil {
 		return fmt.Errorf("read Northstar file drift target: %s", acceptance.SanitizedHubSpotError(err))
 	}
-	name, access := "ns_public_logo_drift.svg", "PRIVATE"
+	name, access := names.PublicFileDrift, "PRIVATE"
 	updated, err := clients.Files.Update(ctx, id, hubspot.FilePatch{Name: &name, Access: &access})
 	if err != nil {
 		return fmt.Errorf("author Northstar file metadata drift: %s", acceptance.SanitizedHubSpotError(err))
@@ -410,12 +491,12 @@ func driftNorthstarFile(ctx context.Context, clients *hubspot.ClientSet, id stri
 	return nil
 }
 
-func driftNorthstarFolderPath(ctx context.Context, clients *hubspot.ClientSet, parentID, childID string) error {
+func driftNorthstarFolderPath(ctx context.Context, clients *hubspot.ClientSet, parentID, childID string, names northstarFilesNames) error {
 	parent, err := clients.FileFolders.Get(ctx, parentID)
 	if err != nil {
 		return fmt.Errorf("read Northstar folder path drift target: %s", acceptance.SanitizedHubSpotError(err))
 	}
-	task, err := clients.FileFolders.Update(ctx, parentID, hubspot.FileFolderWrite{Name: "ns_brand_refresh", ParentFolderID: parent.ParentFolderID})
+	task, err := clients.FileFolders.Update(ctx, parentID, hubspot.FileFolderWrite{Name: names.BrandFolderRefresh, ParentFolderID: parent.ParentFolderID})
 	if err != nil {
 		return fmt.Errorf("author Northstar folder path drift: %s", acceptance.SanitizedHubSpotError(err))
 	}
@@ -426,7 +507,7 @@ func driftNorthstarFolderPath(ctx context.Context, clients *hubspot.ClientSet, p
 	if err != nil {
 		return fmt.Errorf("read Northstar refreshed child folder: %s", acceptance.SanitizedHubSpotError(err))
 	}
-	if child.ID != childID || child.ParentFolderID == nil || *child.ParentFolderID != parentID || child.Path != "/ns_brand_refresh/ns_downloads" {
+	if child.ID != childID || child.ParentFolderID == nil || *child.ParentFolderID != parentID || child.Path != "/"+names.BrandFolderRefresh+"/"+names.DownloadsFolder {
 		return errors.New("northstar child folder path drift was not observable with preserved identity")
 	}
 	return nil
@@ -462,13 +543,13 @@ func waitForFolderTask(ctx context.Context, clients *hubspot.ClientSet, id strin
 	}
 }
 
-func verifyNorthstarFilesTerminal(ctx context.Context, clients *hubspot.ClientSet, ids northstarFilesIDs) (string, error) {
+func verifyNorthstarFilesTerminal(ctx context.Context, clients *hubspot.ClientSet, ids northstarFilesIDs, names northstarFilesNames) (string, error) {
 	return acceptance.VerifyFilesTerminal(
 		ctx,
 		clients,
 		[]string{ids.BrandFolder, ids.DownloadsFolder},
 		[]string{ids.PrivateFile, ids.PublicFile},
-		"ns_",
+		names.Prefix,
 		"northstar-files-identities",
 	)
 }

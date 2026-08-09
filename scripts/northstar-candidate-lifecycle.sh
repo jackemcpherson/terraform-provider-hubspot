@@ -12,6 +12,7 @@ provider_root=${HUBSPOT_PROVIDER_REPO:-$root}
 if [ "${HUBSPOT_REQUIRE_CLEAN_PROVENANCE:-}" = 1 ]; then
 	provider_commit=${HUBSPOT_PROVIDER_EXPECTED_COMMIT:?HUBSPOT_PROVIDER_EXPECTED_COMMIT is required for protected Northstar runs}
 	demo_commit=${HUBSPOT_DEMO_EXPECTED_COMMIT:?HUBSPOT_DEMO_EXPECTED_COMMIT is required for protected Northstar runs}
+	: "${HUBSPOT_NORTHSTAR_FILES_PREFIX:?HUBSPOT_NORTHSTAR_FILES_PREFIX is required for protected Northstar runs}"
 	GOTOOLCHAIN=local go run "$root/cmd/validate-checkout" "$provider_root" "$provider_commit"
 	GOTOOLCHAIN=local go run "$root/cmd/validate-checkout" "$demo_root" "$demo_commit"
 fi

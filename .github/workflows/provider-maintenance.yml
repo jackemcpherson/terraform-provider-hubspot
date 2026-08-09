@@ -69,8 +69,9 @@ jobs:
       # Distinct Northstar secret: CRM schema union plus forms and files.
       HUBSPOT_NORTHSTAR_SCOPE_FAMILIES: crm.schemas.contacts,crm.schemas.companies,crm.schemas.deals,tickets,forms,files
       HUBSPOT_ACCEPTANCE_PORTAL_ID: ${{ vars.HUBSPOT_ACCEPTANCE_PORTAL_ID }}
+      HUBSPOT_NORTHSTAR_FILES_PREFIX: ns_${{ github.run_id }}_${{ github.run_attempt }}_
       HUBSPOT_PROVIDER_EXPECTED_COMMIT: ${{ github.sha }}
-      HUBSPOT_DEMO_EXPECTED_COMMIT: 891c44b5bf0b4c5e5defaa4ca90ed72b70849340
+      HUBSPOT_DEMO_EXPECTED_COMMIT: fd6a4a327e11c40b3f0ec6a0557a13a6a7e7748b
       HUBSPOT_REQUIRE_CLEAN_PROVENANCE: '1'
       HUBSPOT_PORTAL_LOCK_ID: free-configuration
     steps:
@@ -82,7 +83,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: jackemcpherson/terraform-hubspot-instance-demo
-          ref: 891c44b5bf0b4c5e5defaa4ca90ed72b70849340
+          ref: fd6a4a327e11c40b3f0ec6a0557a13a6a7e7748b
           path: .release-demo
           persist-credentials: false
       - name: Set up provider toolchain
@@ -165,7 +166,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: jackemcpherson/terraform-hubspot-instance-demo
-          ref: 891c44b5bf0b4c5e5defaa4ca90ed72b70849340
+          ref: fd6a4a327e11c40b3f0ec6a0557a13a6a7e7748b
           path: .candidate-demo
           persist-credentials: false
       - name: Set up provider toolchain
