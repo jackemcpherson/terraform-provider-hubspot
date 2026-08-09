@@ -43,15 +43,15 @@ func northstarFilesNamesFromEnvironment() (northstarFilesNames, error) {
 	if prefix == "" {
 		prefix = "ns_"
 	}
-	if !strings.HasPrefix(prefix, "ns_") || !strings.HasSuffix(prefix, "_") || len(prefix) > 100 {
-		return northstarFilesNames{}, errors.New("HUBSPOT_NORTHSTAR_FILES_PREFIX must start with ns_, end with _, and be at most 100 characters")
+	if !strings.HasPrefix(prefix, "ns_") || !strings.HasSuffix(prefix, "_") || (prefix != "ns_" && len(prefix) > 14) {
+		return northstarFilesNames{}, errors.New("HUBSPOT_NORTHSTAR_FILES_PREFIX must be ns_ or a run prefix of at most 14 characters")
 	}
 	for _, character := range prefix {
 		if (character < 'a' || character > 'z') && (character < 'A' || character > 'Z') && (character < '0' || character > '9') && character != '_' {
 			return northstarFilesNames{}, errors.New("HUBSPOT_NORTHSTAR_FILES_PREFIX may contain only letters, digits, and underscores")
 		}
 	}
-	return northstarFilesNames{
+	names := northstarFilesNames{
 		Prefix:             prefix,
 		BrandFolder:        prefix + "brand",
 		BrandFolderRefresh: prefix + "brand_refresh",
@@ -59,7 +59,16 @@ func northstarFilesNamesFromEnvironment() (northstarFilesNames, error) {
 		PrivateFile:        prefix + "private_readme.txt",
 		PublicFile:         prefix + "public_logo.svg",
 		PublicFileDrift:    prefix + "public_logo_drift.svg",
-	}, nil
+	}
+	if prefix != "ns_" {
+		names.BrandFolder = prefix + "b"
+		names.BrandFolderRefresh = prefix + "br"
+		names.DownloadsFolder = prefix + "d"
+		names.PrivateFile = prefix + "p.txt"
+		names.PublicFile = prefix + "l.svg"
+		names.PublicFileDrift = prefix + "x.svg"
+	}
+	return names, nil
 }
 
 func newNorthstarFilesIDs(values []string) northstarFilesIDs {

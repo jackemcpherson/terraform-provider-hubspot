@@ -8,13 +8,21 @@ lock_dir=${HUBSPOT_ONE_PORTAL_LOCK_DIR:-"${TMPDIR:-/tmp}/hubspot-free-portal-${H
 test -x "$demo" || { echo "Northstar demo script is not executable" >&2; exit 1; }
 demo_root=${HUBSPOT_DEMO_REPO:-"$(CDPATH='' cd -- "$(dirname -- "$demo")/.." && pwd)"}
 provider_root=${HUBSPOT_PROVIDER_REPO:-$root}
-northstar_files_prefix=${HUBSPOT_NORTHSTAR_FILES_PREFIX:-"ns_local_$$_"}
-active_files_prefix=$northstar_files_prefix
+northstar_files_seed=${HUBSPOT_NORTHSTAR_FILES_SEED:-"local_$$_"}
+printf '%s\n' "$northstar_files_seed" | grep -Eq '^[[:alnum:]_]+$' || {
+  echo "HUBSPOT_NORTHSTAR_FILES_SEED must contain only letters, digits, and underscores" >&2
+  exit 1
+}
+test "$(printf '%s' "$northstar_files_seed" | wc -c | tr -d ' ')" -le 100 || {
+  echo "HUBSPOT_NORTHSTAR_FILES_SEED must be at most 100 characters" >&2
+  exit 1
+}
+active_files_prefix=ns_
 
 if [ "${HUBSPOT_REQUIRE_CLEAN_PROVENANCE:-}" = 1 ]; then
 	provider_commit=${HUBSPOT_PROVIDER_EXPECTED_COMMIT:?HUBSPOT_PROVIDER_EXPECTED_COMMIT is required for protected Northstar runs}
 	demo_commit=${HUBSPOT_DEMO_EXPECTED_COMMIT:?HUBSPOT_DEMO_EXPECTED_COMMIT is required for protected Northstar runs}
-	: "${HUBSPOT_NORTHSTAR_FILES_PREFIX:?HUBSPOT_NORTHSTAR_FILES_PREFIX is required for protected Northstar runs}"
+	: "${HUBSPOT_NORTHSTAR_FILES_SEED:?HUBSPOT_NORTHSTAR_FILES_SEED is required for protected Northstar runs}"
 	GOTOOLCHAIN=local go run "$root/cmd/validate-checkout" "$provider_root" "$provider_commit"
 	GOTOOLCHAIN=local go run "$root/cmd/validate-checkout" "$demo_root" "$demo_commit"
 fi
@@ -44,7 +52,13 @@ trap cleanup EXIT HUP INT TERM
 
 run() {
 	engine=$1
-	active_files_prefix=${northstar_files_prefix}${engine}_
+	case "$engine" in
+		tofu) engine_code=o ;;
+		terraform) engine_code=t ;;
+		*) echo "unsupported Northstar engine" >&2; return 1 ;;
+	esac
+	namespace=$(printf '%s' "${northstar_files_seed}_${engine}" | shasum -a 256 | cut -c1-8)
+	active_files_prefix=ns_${namespace}_${engine_code}_
 	ENGINE=$engine HUBSPOT_NORTHSTAR_FILES_PREFIX=$active_files_prefix HUBSPOT_PORTAL_LOCK_HELD=1 "$demo" local "$2"
 }
 

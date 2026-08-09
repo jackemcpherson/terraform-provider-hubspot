@@ -74,7 +74,7 @@ func TestExecuteRejectsUnknownAction(t *testing.T) {
 }
 
 func TestExecuteCleansInterruptedNorthstarLifecycle(t *testing.T) {
-	t.Setenv("HUBSPOT_NORTHSTAR_FILES_PREFIX", "ns_31298253120_1_tofu_")
+	t.Setenv("HUBSPOT_NORTHSTAR_FILES_PREFIX", "ns_1a2b3c4d_o_")
 	names, err := northstarFilesNamesFromEnvironment()
 	if err != nil {
 		t.Fatal(err)
@@ -176,7 +176,7 @@ func TestExecuteCleanupRejectsUnexpectedPrefixBeforeMutation(t *testing.T) {
 }
 
 func TestExecuteManagesNorthstarFilesLifecycle(t *testing.T) {
-	t.Setenv("HUBSPOT_NORTHSTAR_FILES_PREFIX", "ns_31298253120_1_tofu_")
+	t.Setenv("HUBSPOT_NORTHSTAR_FILES_PREFIX", "ns_1a2b3c4d_o_")
 	names, err := northstarFilesNamesFromEnvironment()
 	if err != nil {
 		t.Fatal(err)
@@ -246,6 +246,22 @@ func TestNorthstarFilesPrefixRejectsUnboundedNames(t *testing.T) {
 	t.Setenv("HUBSPOT_NORTHSTAR_FILES_PREFIX", "unsafe-prefix")
 	if _, err := northstarFilesNamesFromEnvironment(); err == nil {
 		t.Fatal("unsafe Northstar Files prefix accepted")
+	}
+}
+
+func TestNorthstarFilesRunNamesFitSearchLimit(t *testing.T) {
+	t.Setenv("HUBSPOT_NORTHSTAR_FILES_PREFIX", "ns_1a2b3c4d_o_")
+	names, err := northstarFilesNamesFromEnvironment()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for label, name := range map[string]string{
+		"brand": names.BrandFolder, "brand refresh": names.BrandFolderRefresh, "downloads": names.DownloadsFolder,
+		"private file": names.PrivateFile, "public file": names.PublicFile, "drifted public file": names.PublicFileDrift,
+	} {
+		if len(name) > 19 {
+			t.Fatalf("%s name %q exceeds the live Files search limit", label, name)
+		}
 	}
 }
 
