@@ -34,10 +34,6 @@ func newNorthstarFilesIDs(values []string) northstarFilesIDs {
 	}
 }
 
-func (ids northstarFilesIDs) values() []string {
-	return []string{ids.BrandFolder, ids.DownloadsFolder, ids.PrivateFile, ids.PublicFile}
-}
-
 func main() {
 	if len(os.Args) < 2 {
 		fatal(errors.New("usage: northstar-lifecycle <action> [generated-id ...]"))
@@ -223,51 +219,14 @@ func waitForFolderTask(ctx context.Context, clients *hubspot.ClientSet, id strin
 }
 
 func verifyNorthstarFilesTerminal(ctx context.Context, clients *hubspot.ClientSet, ids northstarFilesIDs) (string, error) {
-	for index, id := range ids.values() {
-		var err error
-		if index < 2 {
-			_, err = clients.FileFolders.Get(ctx, id)
-		} else {
-			_, err = clients.Files.Get(ctx, id)
-		}
-		var apiError *hubspot.Error
-		if !errors.As(err, &apiError) || apiError.Status != 404 {
-			return "", errors.New("northstar Files identity remained active after teardown")
-		}
-	}
-	folders, err := clients.FileFolders.Search(ctx, nil, "")
-	if err != nil {
-		return "", fmt.Errorf("list active Northstar folders: %s", acceptance.SanitizedHubSpotError(err))
-	}
-	files, err := clients.Files.Search(ctx, nil, "")
-	if err != nil {
-		return "", fmt.Errorf("list active Northstar files: %s", acceptance.SanitizedHubSpotError(err))
-	}
-	activeFolders, activeFiles := 0, 0
-	for _, folder := range folders {
-		if strings.HasPrefix(folder.Name, "ns_") {
-			activeFolders++
-		}
-	}
-	for _, file := range files {
-		if strings.HasPrefix(file.Name, "ns_") {
-			activeFiles++
-		}
-	}
-	if activeFolders != 0 || activeFiles != 0 {
-		return "", errors.New("northstar teardown retained active owned Files configuration")
-	}
-	digest := sha256.Sum256([]byte("northstar-files-identities\x00" + strings.Join(ids.values(), "\x00")))
-	record, err := json.Marshal(struct {
-		GeneratedIdentityHash string `json:"generated_identity_hash"`
-		ActiveOwnedFiles      int    `json:"active_owned_files"`
-		ActiveOwnedFolders    int    `json:"active_owned_folders"`
-		Cleanup               string `json:"cleanup"`
-	}{hex.EncodeToString(digest[:]), activeFiles, activeFolders, "passed"})
-	if err != nil {
-		return "", errors.New("encode Northstar Files terminal record")
-	}
-	return string(record), nil
+	return acceptance.VerifyFilesTerminal(
+		ctx,
+		clients,
+		[]string{ids.BrandFolder, ids.DownloadsFolder},
+		[]string{ids.PrivateFile, ids.PublicFile},
+		"ns_",
+		"northstar-files-identities",
+	)
 }
 
 func driftNorthstarProperty(ctx context.Context, clients *hubspot.ClientSet) error {

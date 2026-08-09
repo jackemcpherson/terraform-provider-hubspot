@@ -6,9 +6,7 @@ package main
 import (
 	"context"
 	"crypto/md5" // #nosec G501 -- HubSpot exposes content identity as MD5.
-	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -208,46 +206,14 @@ func cleanup(ctx context.Context, clients *hubspot.ClientSet, ids releasedFilesI
 }
 
 func verifyTerminal(ctx context.Context, clients *hubspot.ClientSet, ids releasedFilesIDs, prefix string) (string, error) {
-	for index, id := range ids.values() {
-		var err error
-		if index < 2 {
-			_, err = clients.FileFolders.Get(ctx, id)
-		} else {
-			_, err = clients.Files.Get(ctx, id)
-		}
-		if !isNotFound(err) {
-			return "", errors.New("released Files identity remained active after teardown")
-		}
-	}
-	folders, err := clients.FileFolders.Search(ctx, nil, "")
-	if err != nil {
-		return "", fmt.Errorf("list active released folders after teardown: %s", acceptance.SanitizedHubSpotError(err))
-	}
-	files, err := clients.Files.Search(ctx, nil, "")
-	if err != nil {
-		return "", fmt.Errorf("list active released files after teardown: %s", acceptance.SanitizedHubSpotError(err))
-	}
-	for _, candidate := range folders {
-		if strings.HasPrefix(candidate.Name, prefix) {
-			return "", errors.New("released Files teardown retained an active owned folder")
-		}
-	}
-	for _, candidate := range files {
-		if strings.HasPrefix(candidate.Name, prefix) {
-			return "", errors.New("released Files teardown retained an active owned Managed file")
-		}
-	}
-	digest := sha256.Sum256([]byte("released-files-identities\x00" + strings.Join(ids.values(), "\x00")))
-	record, err := json.Marshal(struct {
-		GeneratedIdentityHash string `json:"generated_identity_hash"`
-		ActiveOwnedFiles      int    `json:"active_owned_files"`
-		ActiveOwnedFolders    int    `json:"active_owned_folders"`
-		Cleanup               string `json:"cleanup"`
-	}{hex.EncodeToString(digest[:]), 0, 0, "passed"})
-	if err != nil {
-		return "", errors.New("encode released Files terminal record")
-	}
-	return string(record), nil
+	return acceptance.VerifyFilesTerminal(
+		ctx,
+		clients,
+		[]string{ids.RootFolder, ids.LeafFolder},
+		[]string{ids.ManagedFile},
+		prefix,
+		"released-files-identities",
+	)
 }
 
 func isGeneratedFilesID(id string) bool {
