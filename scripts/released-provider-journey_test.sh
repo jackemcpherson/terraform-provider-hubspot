@@ -55,7 +55,7 @@ printf '%s\n' '#!/bin/sh' 'printf "verify:%s\n" "$*" >>"$CALL_LOG"' >"$tmp/verif
 # shellcheck disable=SC2016
 printf '%s\n' '#!/bin/sh' 'printf "registry:%s\n" "$*" >>"$CALL_LOG"' >"$tmp/registry"
 # shellcheck disable=SC2016
-printf '%s\n' '#!/bin/sh' 'printf "prepare:%s:%s:%s\n" "$1" "$2" "$3" >>"$CALL_LOG"' 'mkdir -p "$4/scripts"' 'printf "#!/bin/sh\n" >"$4/scripts/demo"' 'chmod +x "$4/scripts/demo"' 'printf "%s\n" "$4/scripts/demo"' >"$tmp/prepare"
+printf '%s\n' '#!/bin/sh' 'printf "prepare:%s:%s:%s:%s\n" "$1" "$2" "$3" "$5" >>"$CALL_LOG"' 'mkdir -p "$4/scripts"' 'printf "#!/bin/sh\n" >"$4/scripts/demo"' 'chmod +x "$4/scripts/demo"' 'printf "%s\n" "$4/scripts/demo"' >"$tmp/prepare"
 chmod +x "$tmp/live" "$tmp/migration" "$tmp/files-migration" "$tmp/northstar" "$tmp/verify" "$tmp/registry" "$tmp/prepare"
 
 CALL_LOG="$log" \
@@ -77,7 +77,7 @@ CALL_LOG="$log" \
 test "$(cat "$log")" = "registry:v0.4.0
 verify:terraform registry.terraform.io/jackemcpherson/hubspot v0.4.0 $assets
 verify:tofu registry.opentofu.org/jackemcpherson/hubspot v0.4.0 $assets
-prepare:v0.4.0:$demo:$demo_commit
+prepare:v0.4.0:$demo:$demo_commit:$assets
 live:free_properties terraform registry.terraform.io/jackemcpherson/hubspot v0.4.0
 live:free_properties tofu registry.opentofu.org/jackemcpherson/hubspot v0.4.0
 migration:v0.4.0

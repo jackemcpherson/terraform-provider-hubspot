@@ -67,8 +67,11 @@ PATH="$bin:$PATH" CALL_LOG="$log" DRIFT_MARKER="$tmp/drift" HUBSPOT_ACCESS_TOKEN
   RELEASED_FILES_FIXTURE_DIR="$fixture" RELEASED_FILES_HELPER_SCRIPT="$tmp/helper" FILES_MIGRATION_EVIDENCE_FILE="$evidence" \
   "$root/scripts/released-files-migration.sh" v0.4.0
 
-test "$(grep -c '^helper:verify-active 10001 10002 20001 tf_acc_released_$' "$log")" -ge 9
-test "$(grep -c '^helper:drift 10001 10002 20001 tf_acc_released_$' "$log")" -eq 3
+test "$(grep -c '^helper:verify-active 10001 10002 20001 tf_acc_released_ ' "$log")" -ge 9
+grep -q '^helper:verify-active 10001 10002 20001 tf_acc_released_ tf_acc_released_released_file.txt PRIVATE bd5896cd8900fa47ef86e08817888671 16$' "$log"
+grep -q '^helper:verify-active 10001 10002 20001 tf_acc_released_ tf_acc_released_released_file_tofu.txt PRIVATE bd5896cd8900fa47ef86e08817888671 16$' "$log"
+grep -q '^helper:verify-active 10001 10002 20001 tf_acc_released_ tf_acc_released_released_file_final.txt PUBLIC_NOT_INDEXABLE eda9185c9484cbcaf9d416029b0456bd 15$' "$log"
+test "$(grep -c '^helper:drift 10001 10002 20001 tf_acc_released_ ' "$log")" -eq 3
 test "$(grep -c ':state replace-provider ' "$log")" -eq 2
 test "$(grep -c ':plan -input=false -out=reviewed.tfplan$' "$log")" -eq 4
 test "$(grep -c ':plan -destroy -input=false -out=reviewed.tfplan$' "$log")" -eq 1

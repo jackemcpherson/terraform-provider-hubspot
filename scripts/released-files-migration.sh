@@ -27,6 +27,10 @@ leaf_folder_id=
 file_id=
 active=false
 current_engine=
+desired_file_name=
+desired_file_access=
+desired_file_md5=
+desired_file_size=
 
 run_helper() {
   if [ -n "${RELEASED_FILES_HELPER_SCRIPT:-}" ]; then
@@ -68,6 +72,14 @@ write_desired() {
   sha=$4
   printf 'file_suffix = "%s"\nfile_access = "%s"\nsource_path = "%s"\nsource_sha256 = "%s"\n' \
     "$suffix" "$access" "$fixture/$asset" "$sha" >"$tmp/journey.auto.tfvars"
+  desired_file_name="$prefix$suffix"
+  desired_file_access=$access
+  if command -v md5sum >/dev/null 2>&1; then
+    desired_file_md5=$(md5sum "$fixture/$asset" | awk '{print $1}')
+  else
+    desired_file_md5=$(md5 -q "$fixture/$asset")
+  fi
+  desired_file_size=$(wc -c <"$fixture/$asset" | tr -d ' ')
 }
 
 init_engine() {
@@ -96,7 +108,8 @@ read_ids() {
       exit 1
     }
   fi
-  run_helper verify-active "$root_folder_id" "$leaf_folder_id" "$file_id" "$prefix"
+  run_helper verify-active "$root_folder_id" "$leaf_folder_id" "$file_id" "$prefix" \
+    "$desired_file_name" "$desired_file_access" "$desired_file_md5" "$desired_file_size"
 }
 
 apply_desired() {
@@ -109,7 +122,8 @@ apply_desired() {
 }
 
 drift_and_repair() {
-  run_helper drift "$root_folder_id" "$leaf_folder_id" "$file_id" "$prefix"
+  run_helper drift "$root_folder_id" "$leaf_folder_id" "$file_id" "$prefix" \
+    "$desired_file_name" "$desired_file_access" "$desired_file_md5" "$desired_file_size"
   set +e
   "$current_engine" -chdir="$tmp" plan -detailed-exitcode -input=false -out=reviewed.tfplan >/dev/null 2>&1
   drift_code=$?

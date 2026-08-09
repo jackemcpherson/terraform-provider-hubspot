@@ -20,6 +20,24 @@ import (
 
 const driftLabel = "Out-of-band Northstar buyer role"
 
+type northstarFilesIDs struct {
+	BrandFolder     string
+	DownloadsFolder string
+	PrivateFile     string
+	PublicFile      string
+}
+
+func newNorthstarFilesIDs(values []string) northstarFilesIDs {
+	return northstarFilesIDs{
+		BrandFolder: values[0], DownloadsFolder: values[1],
+		PrivateFile: values[2], PublicFile: values[3],
+	}
+}
+
+func (ids northstarFilesIDs) values() []string {
+	return []string{ids.BrandFolder, ids.DownloadsFolder, ids.PrivateFile, ids.PublicFile}
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		fatal(errors.New("usage: northstar-lifecycle <action> [generated-id ...]"))
@@ -79,7 +97,7 @@ func execute(ctx context.Context, action string, ids []string, clients *hubspot.
 		if len(ids) != 4 {
 			return "", errors.New("four Northstar Files generated IDs are required for verification")
 		}
-		return "", verifyNorthstarFiles(ctx, clients, ids)
+		return "", verifyNorthstarFiles(ctx, clients, newNorthstarFilesIDs(ids))
 	case "drift-files":
 		if len(ids) != 1 {
 			return "", errors.New("one Northstar Managed file ID is required for drift")
@@ -94,39 +112,39 @@ func execute(ctx context.Context, action string, ids []string, clients *hubspot.
 		if len(ids) != 4 {
 			return "", errors.New("four Northstar Files generated IDs are required for terminal verification")
 		}
-		return verifyNorthstarFilesTerminal(ctx, clients, ids)
+		return verifyNorthstarFilesTerminal(ctx, clients, newNorthstarFilesIDs(ids))
 	default:
 		return "", errors.New("unknown Northstar lifecycle action")
 	}
 }
 
-func verifyNorthstarFiles(ctx context.Context, clients *hubspot.ClientSet, ids []string) error {
-	brand, err := clients.FileFolders.Get(ctx, ids[0])
+func verifyNorthstarFiles(ctx context.Context, clients *hubspot.ClientSet, ids northstarFilesIDs) error {
+	brand, err := clients.FileFolders.Get(ctx, ids.BrandFolder)
 	if err != nil {
 		return fmt.Errorf("read Northstar brand folder: %s", acceptance.SanitizedHubSpotError(err))
 	}
-	downloads, err := clients.FileFolders.Get(ctx, ids[1])
+	downloads, err := clients.FileFolders.Get(ctx, ids.DownloadsFolder)
 	if err != nil {
 		return fmt.Errorf("read Northstar downloads folder: %s", acceptance.SanitizedHubSpotError(err))
 	}
-	privateFile, err := clients.Files.Get(ctx, ids[2])
+	privateFile, err := clients.Files.Get(ctx, ids.PrivateFile)
 	if err != nil {
 		return fmt.Errorf("read Northstar private file: %s", acceptance.SanitizedHubSpotError(err))
 	}
-	publicFile, err := clients.Files.Get(ctx, ids[3])
+	publicFile, err := clients.Files.Get(ctx, ids.PublicFile)
 	if err != nil {
 		return fmt.Errorf("read Northstar public file: %s", acceptance.SanitizedHubSpotError(err))
 	}
-	if brand.ID != ids[0] || brand.Name != "ns_brand" || brand.ParentFolderID != nil || brand.Path != "/ns_brand" {
+	if brand.ID != ids.BrandFolder || brand.Name != "ns_brand" || brand.ParentFolderID != nil || brand.Path != "/ns_brand" {
 		return errors.New("northstar brand folder did not match canonical exact-ID state")
 	}
-	if downloads.ID != ids[1] || downloads.Name != "ns_downloads" || downloads.ParentFolderID == nil || *downloads.ParentFolderID != ids[0] || downloads.Path != "/ns_brand/ns_downloads" {
+	if downloads.ID != ids.DownloadsFolder || downloads.Name != "ns_downloads" || downloads.ParentFolderID == nil || *downloads.ParentFolderID != ids.BrandFolder || downloads.Path != "/ns_brand/ns_downloads" {
 		return errors.New("northstar downloads folder did not match canonical exact-ID state")
 	}
-	if privateFile.ID != ids[2] || privateFile.Name != "ns_private_readme.txt" || privateFile.FolderID != ids[0] || privateFile.Access != "PRIVATE" || privateFile.FileMD5 != "6062568b21ab5f9deb2a2c2f25cfbc37" || privateFile.Size != 23 {
+	if privateFile.ID != ids.PrivateFile || privateFile.Name != "ns_private_readme.txt" || privateFile.FolderID != ids.BrandFolder || privateFile.Access != "PRIVATE" || privateFile.FileMD5 != "6062568b21ab5f9deb2a2c2f25cfbc37" || privateFile.Size != 23 {
 		return errors.New("northstar private file did not match canonical exact-ID state")
 	}
-	if publicFile.ID != ids[3] || publicFile.Name != "ns_public_logo.svg" || publicFile.FolderID != ids[1] || publicFile.Access != "PUBLIC_NOT_INDEXABLE" || publicFile.FileMD5 != "21ebff031bb7f11ce0a0ab78c4347832" || publicFile.Size != 88 {
+	if publicFile.ID != ids.PublicFile || publicFile.Name != "ns_public_logo.svg" || publicFile.FolderID != ids.DownloadsFolder || publicFile.Access != "PUBLIC_NOT_INDEXABLE" || publicFile.FileMD5 != "21ebff031bb7f11ce0a0ab78c4347832" || publicFile.Size != 88 {
 		return errors.New("northstar public file did not match canonical exact-ID state")
 	}
 	return nil
@@ -204,8 +222,8 @@ func waitForFolderTask(ctx context.Context, clients *hubspot.ClientSet, id strin
 	}
 }
 
-func verifyNorthstarFilesTerminal(ctx context.Context, clients *hubspot.ClientSet, ids []string) (string, error) {
-	for index, id := range ids {
+func verifyNorthstarFilesTerminal(ctx context.Context, clients *hubspot.ClientSet, ids northstarFilesIDs) (string, error) {
+	for index, id := range ids.values() {
 		var err error
 		if index < 2 {
 			_, err = clients.FileFolders.Get(ctx, id)
@@ -239,7 +257,7 @@ func verifyNorthstarFilesTerminal(ctx context.Context, clients *hubspot.ClientSe
 	if activeFolders != 0 || activeFiles != 0 {
 		return "", errors.New("northstar teardown retained active owned Files configuration")
 	}
-	digest := sha256.Sum256([]byte("northstar-files-identities\x00" + strings.Join(ids, "\x00")))
+	digest := sha256.Sum256([]byte("northstar-files-identities\x00" + strings.Join(ids.values(), "\x00")))
 	record, err := json.Marshal(struct {
 		GeneratedIdentityHash string `json:"generated_identity_hash"`
 		ActiveOwnedFiles      int    `json:"active_owned_files"`

@@ -43,7 +43,7 @@ cleanup() {
   exit "$code"
 }
 trap cleanup EXIT HUP INT TERM
-prepared_demo_script=$("$prepare_released_demo" "$version" "$demo_repo" "$demo_commit" "$prepared_root/demo")
+prepared_demo_script=$("$prepare_released_demo" "$version" "$demo_repo" "$demo_commit" "$prepared_root/demo" "$assets")
 test -x "$prepared_demo_script" || { echo "prepared released Northstar demo is not executable" >&2; exit 1; }
 
 mkdir "$lock_dir" 2>/dev/null || { echo "released provider portal lifecycle is already running: $lock_dir" >&2; exit 1; }

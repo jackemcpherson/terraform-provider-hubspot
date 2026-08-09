@@ -42,21 +42,32 @@ func TestReleasedFilesActionsPreserveExactIdentitiesAndCleanupLeafFirst(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	ids := []string{root.ID, leaf.ID, file.ID}
-	if _, err := execute(ctx, "verify-active", ids, prefix, clients); err != nil {
+	ids := releasedFilesIDs{RootFolder: root.ID, LeafFolder: leaf.ID, ManagedFile: file.ID}
+	expected := releasedFileExpectation{Name: prefix + "released_file.txt", Access: "PRIVATE", MD5: file.FileMD5, Size: file.Size}
+	if _, err := execute(ctx, "verify-active", ids, prefix, &expected, clients); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := execute(ctx, "drift", ids, prefix, clients); err != nil {
+	wrongAccess := "PUBLIC_NOT_INDEXABLE"
+	if _, err := clients.Files.Update(ctx, file.ID, hubspot.FilePatch{Access: &wrongAccess}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(ctx, "verify-active", ids, prefix, &expected, clients); err == nil {
+		t.Fatal("exact verification accepted wrong file access")
+	}
+	if _, err := clients.Files.Update(ctx, file.ID, hubspot.FilePatch{Access: &expected.Access}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(ctx, "drift", ids, prefix, &expected, clients); err != nil {
 		t.Fatal(err)
 	}
 	drifted, err := clients.Files.Get(ctx, file.ID)
 	if err != nil || drifted.ID != file.ID || drifted.Name != prefix+"released_file_drift.txt" || drifted.Access != "PUBLIC_NOT_INDEXABLE" || drifted.FileMD5 == file.FileMD5 {
 		t.Fatalf("drifted file = %#v, %v", drifted, err)
 	}
-	if _, err := execute(ctx, "cleanup", ids, prefix, clients); err != nil {
+	if _, err := execute(ctx, "cleanup", ids, prefix, nil, clients); err != nil {
 		t.Fatal(err)
 	}
-	record, err := execute(ctx, "verify-terminal", ids, prefix, clients)
+	record, err := execute(ctx, "verify-terminal", ids, prefix, nil, clients)
 	if err != nil || strings.Contains(record, root.ID) || strings.Contains(record, file.ID) || !strings.Contains(record, `"active_owned_files":0`) || !strings.Contains(record, `"active_owned_folders":0`) {
 		t.Fatalf("unsafe terminal record = %q, %v", record, err)
 	}
@@ -64,10 +75,11 @@ func TestReleasedFilesActionsPreserveExactIdentitiesAndCleanupLeafFirst(t *testi
 
 func TestReleasedFilesActionsRejectUnsafeOwnership(t *testing.T) {
 	clients := &hubspot.ClientSet{}
-	if _, err := execute(context.Background(), "verify-active", []string{"1", "2", "3"}, "released_", clients); err == nil {
+	ids := releasedFilesIDs{RootFolder: "1", LeafFolder: "2", ManagedFile: "3"}
+	if _, err := execute(context.Background(), "verify-active", ids, "released_", &releasedFileExpectation{}, clients); err == nil {
 		t.Fatal("unsafe prefix accepted")
 	}
-	if _, err := execute(context.Background(), "unknown", []string{"1", "2", "3"}, "tf_acc_released_", clients); err == nil {
+	if _, err := execute(context.Background(), "unknown", ids, "tf_acc_released_", nil, clients); err == nil {
 		t.Fatal("unknown action accepted")
 	}
 }

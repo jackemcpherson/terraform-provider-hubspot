@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"crypto/md5" // #nosec G501 -- HubSpot exposes content identity as MD5.
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,9 +23,26 @@ import (
 
 var releasedPrefixPattern = regexp.MustCompile(`^tf_acc_[A-Za-z0-9_]+_$`)
 
+type releasedFilesIDs struct {
+	RootFolder  string
+	LeafFolder  string
+	ManagedFile string
+}
+
+func (ids releasedFilesIDs) values() []string {
+	return []string{ids.RootFolder, ids.LeafFolder, ids.ManagedFile}
+}
+
+type releasedFileExpectation struct {
+	Name   string
+	Access string
+	MD5    string
+	Size   int64
+}
+
 func main() {
-	if len(os.Args) != 6 {
-		fatal(errors.New("usage: released-files-lifecycle verify-active|drift|cleanup|verify-terminal root-folder-id leaf-folder-id file-id acceptance-prefix"))
+	if len(os.Args) < 6 {
+		fatal(errors.New("usage: released-files-lifecycle verify-active|drift|cleanup|verify-terminal root-folder-id leaf-folder-id file-id acceptance-prefix [expected-name expected-access expected-md5 expected-size]"))
 	}
 	token := os.Getenv("HUBSPOT_ACCESS_TOKEN")
 	if token == "" {
@@ -35,7 +54,24 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
-	record, err := execute(ctx, os.Args[1], os.Args[2:5], os.Args[5], clients)
+	ids := releasedFilesIDs{RootFolder: os.Args[2], LeafFolder: os.Args[3], ManagedFile: os.Args[4]}
+	var expected *releasedFileExpectation
+	switch os.Args[1] {
+	case "verify-active", "drift":
+		if len(os.Args) != 10 {
+			fatal(errors.New("active released Files actions require exact expected file metadata"))
+		}
+		size, parseErr := strconv.ParseInt(os.Args[9], 10, 64)
+		if parseErr != nil || size < 0 {
+			fatal(errors.New("expected released Managed file size must be a non-negative integer"))
+		}
+		expected = &releasedFileExpectation{Name: os.Args[6], Access: os.Args[7], MD5: os.Args[8], Size: size}
+	default:
+		if len(os.Args) != 6 {
+			fatal(errors.New("terminal released Files actions do not accept expected metadata"))
+		}
+	}
+	record, err := execute(ctx, os.Args[1], ids, os.Args[5], expected, clients)
 	if err != nil {
 		fatal(err)
 	}
@@ -44,23 +80,20 @@ func main() {
 	}
 }
 
-func execute(ctx context.Context, action string, ids []string, prefix string, clients *hubspot.ClientSet) (string, error) {
+func execute(ctx context.Context, action string, ids releasedFilesIDs, prefix string, expected *releasedFileExpectation, clients *hubspot.ClientSet) (string, error) {
 	if !releasedPrefixPattern.MatchString(prefix) {
 		return "", errors.New("unsafe released Files prefix")
 	}
-	if len(ids) != 3 {
-		return "", errors.New("three released Files generated IDs are required")
-	}
-	for _, id := range ids {
+	for _, id := range ids.values() {
 		if !isGeneratedFilesID(id) {
 			return "", errors.New("released Files identity must be a non-zero decimal generated ID")
 		}
 	}
 	switch action {
 	case "verify-active":
-		return "", verifyActive(ctx, clients, ids, prefix)
+		return "", verifyActive(ctx, clients, ids, prefix, expected)
 	case "drift":
-		return "", drift(ctx, clients, ids, prefix)
+		return "", drift(ctx, clients, ids, prefix, expected)
 	case "cleanup":
 		return "", cleanup(ctx, clients, ids)
 	case "verify-terminal":
@@ -70,26 +103,31 @@ func execute(ctx context.Context, action string, ids []string, prefix string, cl
 	}
 }
 
-func verifyActive(ctx context.Context, clients *hubspot.ClientSet, ids []string, prefix string) error {
-	root, err := clients.FileFolders.Get(ctx, ids[0])
+func verifyActive(ctx context.Context, clients *hubspot.ClientSet, ids releasedFilesIDs, prefix string, expected *releasedFileExpectation) error {
+	if expected == nil {
+		return errors.New("exact released Managed file expectation is required")
+	}
+	root, err := clients.FileFolders.Get(ctx, ids.RootFolder)
 	if err != nil {
 		return fmt.Errorf("read released root folder identity: %s", acceptance.SanitizedHubSpotError(err))
 	}
-	leaf, err := clients.FileFolders.Get(ctx, ids[1])
+	leaf, err := clients.FileFolders.Get(ctx, ids.LeafFolder)
 	if err != nil {
 		return fmt.Errorf("read released leaf folder identity: %s", acceptance.SanitizedHubSpotError(err))
 	}
-	file, err := clients.Files.Get(ctx, ids[2])
+	file, err := clients.Files.Get(ctx, ids.ManagedFile)
 	if err != nil {
 		return fmt.Errorf("read released Managed file identity: %s", acceptance.SanitizedHubSpotError(err))
 	}
-	if root.ID != ids[0] || root.ParentFolderID != nil || !strings.HasPrefix(root.Name, prefix) || root.Archived {
+	rootName := prefix + "released_root"
+	leafName := prefix + "released_leaf"
+	if root.ID != ids.RootFolder || root.ParentFolderID != nil || root.Name != rootName || root.Path != "/"+rootName || root.Archived {
 		return errors.New("released root folder active identity was not exact")
 	}
-	if leaf.ID != ids[1] || leaf.ParentFolderID == nil || *leaf.ParentFolderID != ids[0] || !strings.HasPrefix(leaf.Name, prefix) || leaf.Archived {
+	if leaf.ID != ids.LeafFolder || leaf.ParentFolderID == nil || *leaf.ParentFolderID != ids.RootFolder || leaf.Name != leafName || leaf.Path != "/"+rootName+"/"+leafName || leaf.Archived {
 		return errors.New("released leaf folder active identity was not exact")
 	}
-	if file.ID != ids[2] || file.FolderID != ids[1] || !strings.HasPrefix(file.Name, prefix) || file.Archived {
+	if file.ID != ids.ManagedFile || file.FolderID != ids.LeafFolder || file.Name != expected.Name || file.Access != expected.Access || file.FileMD5 != expected.MD5 || file.Size != expected.Size || file.Archived {
 		return errors.New("released Managed file active identity was not exact")
 	}
 	folders, err := clients.FileFolders.Search(ctx, nil, "")
@@ -104,7 +142,7 @@ func verifyActive(ctx context.Context, clients *hubspot.ClientSet, ids []string,
 	for _, candidate := range folders {
 		if strings.HasPrefix(candidate.Name, prefix) {
 			ownedFolders++
-			if candidate.ID != ids[0] && candidate.ID != ids[1] {
+			if candidate.ID != ids.RootFolder && candidate.ID != ids.LeafFolder {
 				return errors.New("released Files journey created a second folder identity")
 			}
 		}
@@ -112,7 +150,7 @@ func verifyActive(ctx context.Context, clients *hubspot.ClientSet, ids []string,
 	for _, candidate := range files {
 		if strings.HasPrefix(candidate.Name, prefix) {
 			ownedFiles++
-			if candidate.ID != ids[2] {
+			if candidate.ID != ids.ManagedFile {
 				return errors.New("released Files journey created a second Managed file identity")
 			}
 		}
@@ -123,38 +161,41 @@ func verifyActive(ctx context.Context, clients *hubspot.ClientSet, ids []string,
 	return nil
 }
 
-func drift(ctx context.Context, clients *hubspot.ClientSet, ids []string, prefix string) error {
-	if err := verifyActive(ctx, clients, ids, prefix); err != nil {
+func drift(ctx context.Context, clients *hubspot.ClientSet, ids releasedFilesIDs, prefix string, expected *releasedFileExpectation) error {
+	if err := verifyActive(ctx, clients, ids, prefix, expected); err != nil {
 		return err
 	}
-	current, err := clients.Files.Get(ctx, ids[2])
+	current, err := clients.Files.Get(ctx, ids.ManagedFile)
 	if err != nil {
 		return fmt.Errorf("read released Managed file drift target: %s", acceptance.SanitizedHubSpotError(err))
 	}
 	name, access := prefix+"released_file_drift.txt", "PUBLIC_NOT_INDEXABLE"
-	updated, err := clients.Files.Update(ctx, ids[2], hubspot.FilePatch{Name: &name, Access: &access})
+	updated, err := clients.Files.Update(ctx, ids.ManagedFile, hubspot.FilePatch{Name: &name, Access: &access})
 	if err != nil {
 		return fmt.Errorf("author released Managed file metadata drift: %s", acceptance.SanitizedHubSpotError(err))
 	}
-	updated, err = clients.Files.Replace(ctx, ids[2], hubspot.FileReplacement{Name: updated.Name, Access: updated.Access, Bytes: []byte("out-of-band released content\n")})
+	driftBytes := []byte("out-of-band released content\n")
+	updated, err = clients.Files.Replace(ctx, ids.ManagedFile, hubspot.FileReplacement{Name: updated.Name, Access: updated.Access, Bytes: driftBytes})
 	if err != nil {
 		return fmt.Errorf("author released Managed file content drift: %s", acceptance.SanitizedHubSpotError(err))
 	}
-	if updated.ID != ids[2] || updated.Name != name || updated.Access != access || updated.FileMD5 == current.FileMD5 || updated.CreatedAt != current.CreatedAt {
+	if updated.ID != ids.ManagedFile || updated.Name != name || updated.Access != access || updated.FileMD5 == current.FileMD5 || updated.CreatedAt != current.CreatedAt {
 		return errors.New("released Managed file drift was not observable with preserved identity")
 	}
-	return verifyActive(ctx, clients, ids, prefix)
+	driftMD5 := md5.Sum(driftBytes) // #nosec G401 -- compare with HubSpot's content fingerprint.
+	drifted := &releasedFileExpectation{Name: name, Access: access, MD5: hex.EncodeToString(driftMD5[:]), Size: int64(len(driftBytes))}
+	return verifyActive(ctx, clients, ids, prefix, drifted)
 }
 
-func cleanup(ctx context.Context, clients *hubspot.ClientSet, ids []string) error {
-	if _, err := clients.Files.Get(ctx, ids[2]); err == nil {
-		if err := clients.Files.Delete(ctx, ids[2]); err != nil {
+func cleanup(ctx context.Context, clients *hubspot.ClientSet, ids releasedFilesIDs) error {
+	if _, err := clients.Files.Get(ctx, ids.ManagedFile); err == nil {
+		if err := clients.Files.Delete(ctx, ids.ManagedFile); err != nil {
 			return fmt.Errorf("delete released Managed file: %s", acceptance.SanitizedHubSpotError(err))
 		}
 	} else if !isNotFound(err) {
 		return fmt.Errorf("read released Managed file before cleanup: %s", acceptance.SanitizedHubSpotError(err))
 	}
-	for _, id := range []string{ids[1], ids[0]} {
+	for _, id := range []string{ids.LeafFolder, ids.RootFolder} {
 		if _, err := clients.FileFolders.Get(ctx, id); err == nil {
 			if err := clients.FileFolders.Delete(ctx, id); err != nil {
 				return fmt.Errorf("delete released File folder leaf-first: %s", acceptance.SanitizedHubSpotError(err))
@@ -166,8 +207,8 @@ func cleanup(ctx context.Context, clients *hubspot.ClientSet, ids []string) erro
 	return nil
 }
 
-func verifyTerminal(ctx context.Context, clients *hubspot.ClientSet, ids []string, prefix string) (string, error) {
-	for index, id := range ids {
+func verifyTerminal(ctx context.Context, clients *hubspot.ClientSet, ids releasedFilesIDs, prefix string) (string, error) {
+	for index, id := range ids.values() {
 		var err error
 		if index < 2 {
 			_, err = clients.FileFolders.Get(ctx, id)
@@ -196,7 +237,7 @@ func verifyTerminal(ctx context.Context, clients *hubspot.ClientSet, ids []strin
 			return "", errors.New("released Files teardown retained an active owned Managed file")
 		}
 	}
-	digest := sha256.Sum256([]byte("released-files-identities\x00" + strings.Join(ids, "\x00")))
+	digest := sha256.Sum256([]byte("released-files-identities\x00" + strings.Join(ids.values(), "\x00")))
 	record, err := json.Marshal(struct {
 		GeneratedIdentityHash string `json:"generated_identity_hash"`
 		ActiveOwnedFiles      int    `json:"active_owned_files"`

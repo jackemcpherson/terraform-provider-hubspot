@@ -13,6 +13,9 @@ All notable changes to this project are documented here.
 - Validate a requested candidate against the cumulative root, every referenced
   local consumer module, and both committed engine locks before candidate bundle
   construction or protected Northstar mutation.
+- Integrate exact-ID Files configuration into cumulative Northstar and prove one
+  released identity across Terraform and OpenTofu Registry source migration,
+  metadata and byte replacement, drift repair, and terminal cleanup.
 
 ### Fixed
 
