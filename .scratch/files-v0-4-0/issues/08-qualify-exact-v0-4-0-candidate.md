@@ -2,6 +2,8 @@
 
 **What to build:** Produce one clean, reviewable v0.4.0 provider/demo candidate whose additive public contract, complete cumulative behavior, and immutable publication shape are proven before any release is created.
 
+**Type:** task
+
 **Blocked by:** 01 — Validate candidate compatibility before mutation; 02 — Accept clones and worktrees as exact provenance; 03 — Revalidate stale registry version responses; 04 — Deliver Files provider resources end to end; 05 — Deliver the Files module and executable documentation; 06 — Prove and maintain the protected Files shard; 07 — Integrate cumulative and released Files journeys.
 
 **Status:** claimed
