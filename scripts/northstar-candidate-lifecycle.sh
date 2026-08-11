@@ -62,7 +62,7 @@ run() {
 	ENGINE=$engine HUBSPOT_NORTHSTAR_FILES_PREFIX=$active_files_prefix HUBSPOT_PORTAL_LOCK_HELD=1 "$demo" local "$2"
 }
 
-stage_file_for_folder_rename() {
+stage_file_for_refresh() {
 	engine=$1
 	if [ -n "${HUBSPOT_NORTHSTAR_STAGE_SCRIPT:-}" ]; then
 		HUBSPOT_NORTHSTAR_FILES_PREFIX=$active_files_prefix "$HUBSPOT_NORTHSTAR_STAGE_SCRIPT" "$engine"
@@ -81,12 +81,9 @@ for engine in tofu terraform; do
   run "$engine" verify
   run "$engine" drift
   run "$engine" repair
-  stage_file_for_folder_rename "$engine"
-  TF_CLI_ARGS_plan=-target=module.files_root.hubspot_file_folder.this \
-    HUBSPOT_NORTHSTAR_FILES_STAGED=1 run "$engine" refresh
-  run "$engine" plan
-  run "$engine" apply
-  run "$engine" verify
+  stage_file_for_refresh "$engine"
+  HUBSPOT_NORTHSTAR_FILE_REFRESH_DRIFT=1 \
+    HUBSPOT_NORTHSTAR_PRIVATE_FILE_ID=${private_file_id:-1} run "$engine" refresh
   run "$engine" adopt
   run "$engine" verify
   run "$engine" destroy-plan

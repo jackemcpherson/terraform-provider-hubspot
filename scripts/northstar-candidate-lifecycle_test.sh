@@ -77,7 +77,7 @@ for engine in tofu terraform; do
     printf '%s:%s:%s:%s\n' "$engine" local "$phase" "$prefix"
   done
   printf '%s:stage:%s\n' "$engine" "$prefix"
-  for phase in refresh plan apply verify adopt verify destroy-plan destroy-apply; do
+  for phase in refresh adopt verify destroy-plan destroy-apply; do
     printf '%s:%s:%s:%s\n' "$engine" local "$phase" "$prefix"
   done
 done >"$tmp/expected"

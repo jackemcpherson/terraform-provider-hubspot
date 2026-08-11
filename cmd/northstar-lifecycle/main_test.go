@@ -220,6 +220,12 @@ func TestExecuteManagesNorthstarFilesLifecycle(t *testing.T) {
 	if _, err := execute(ctx, "verify-files", ids, clients); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("HUBSPOT_NORTHSTAR_FILE_REFRESH_DRIFT", "1")
+	t.Setenv("HUBSPOT_NORTHSTAR_PRIVATE_FILE_ID", privateFile.ID)
+	if _, err := execute(ctx, "drift-folder-path", []string{brand.ID, downloads.ID}, clients); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HUBSPOT_NORTHSTAR_FILE_REFRESH_DRIFT", "")
 	t.Setenv("HUBSPOT_NORTHSTAR_FILES_STAGED", "")
 	if _, err := execute(ctx, "drift-files", []string{publicFile.ID}, clients); err != nil {
 		t.Fatal(err)

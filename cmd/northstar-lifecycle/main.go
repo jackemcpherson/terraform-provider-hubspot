@@ -170,6 +170,13 @@ func execute(ctx context.Context, action string, ids []string, clients *hubspot.
 		if err != nil {
 			return "", err
 		}
+		if os.Getenv("HUBSPOT_NORTHSTAR_FILE_REFRESH_DRIFT") == "1" {
+			fileID := os.Getenv("HUBSPOT_NORTHSTAR_PRIVATE_FILE_ID")
+			if fileID == "" {
+				return "", errors.New("HUBSPOT_NORTHSTAR_PRIVATE_FILE_ID is required for staged file refresh drift")
+			}
+			return "", verifyNorthstarStagedFileDrift(ctx, clients, ids[0], ids[1], fileID, names)
+		}
 		return "", driftNorthstarFolderPath(ctx, clients, ids[0], ids[1], names)
 	case "verify-files-terminal":
 		if len(ids) != 4 {
@@ -585,6 +592,25 @@ func driftNorthstarFolderPath(ctx context.Context, clients *hubspot.ClientSet, p
 	}
 	if child.ID != childID || child.ParentFolderID == nil || *child.ParentFolderID != parentID || child.Path != expectedPath {
 		return errors.New("northstar child folder path drift was not observable with preserved identity")
+	}
+	return nil
+}
+
+func verifyNorthstarStagedFileDrift(ctx context.Context, clients *hubspot.ClientSet, parentID, childID, fileID string, names northstarFilesNames) error {
+	parent, err := clients.FileFolders.Get(ctx, parentID)
+	if err != nil {
+		return fmt.Errorf("read Northstar staged-file parent folder: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	child, err := clients.FileFolders.Get(ctx, childID)
+	if err != nil {
+		return fmt.Errorf("read Northstar staged-file child folder: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	file, err := clients.Files.Get(ctx, fileID)
+	if err != nil {
+		return fmt.Errorf("read Northstar staged file: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	if parent.ID != parentID || parent.Name != names.BrandFolder || parent.ParentFolderID != nil || child.ID != childID || child.Name != names.DownloadsFolder || child.ParentFolderID == nil || *child.ParentFolderID != parentID || file.ID != fileID || file.Name != names.PrivateFile || file.FolderID != childID {
+		return errors.New("northstar staged file refresh drift did not match the exact owned configuration")
 	}
 	return nil
 }
