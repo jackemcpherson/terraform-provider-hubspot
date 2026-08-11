@@ -465,7 +465,10 @@ func verifyNorthstarFiles(ctx context.Context, clients *hubspot.ClientSet, ids n
 	if err != nil {
 		return fmt.Errorf("read Northstar brand folder: %s", acceptance.SanitizedHubSpotError(err))
 	}
-	downloads, err := clients.FileFolders.Get(ctx, ids.DownloadsFolder)
+	expectedDownloadsPath := "/" + names.BrandFolder + "/" + names.DownloadsFolder
+	downloads, err := waitForNorthstarFolder(ctx, clients.FileFolders.Get, ids.DownloadsFolder, func(folder hubspot.FileFolder) bool {
+		return folder.ID == ids.DownloadsFolder && folder.Name == names.DownloadsFolder && folder.ParentFolderID != nil && *folder.ParentFolderID == ids.BrandFolder && folder.Path == expectedDownloadsPath
+	}, 500*time.Millisecond)
 	if err != nil {
 		return fmt.Errorf("read Northstar downloads folder: %s", acceptance.SanitizedHubSpotError(err))
 	}
@@ -480,7 +483,7 @@ func verifyNorthstarFiles(ctx context.Context, clients *hubspot.ClientSet, ids n
 	if brand.ID != ids.BrandFolder || brand.Name != names.BrandFolder || brand.ParentFolderID != nil || brand.Path != "/"+names.BrandFolder {
 		return errors.New("northstar brand folder did not match canonical exact-ID state")
 	}
-	if downloads.ID != ids.DownloadsFolder || downloads.Name != names.DownloadsFolder || downloads.ParentFolderID == nil || *downloads.ParentFolderID != ids.BrandFolder || downloads.Path != "/"+names.BrandFolder+"/"+names.DownloadsFolder {
+	if downloads.ID != ids.DownloadsFolder || downloads.Name != names.DownloadsFolder || downloads.ParentFolderID == nil || *downloads.ParentFolderID != ids.BrandFolder || downloads.Path != expectedDownloadsPath {
 		return errors.New("northstar downloads folder did not match canonical exact-ID state")
 	}
 	privateFolderID := ids.BrandFolder
@@ -494,6 +497,31 @@ func verifyNorthstarFiles(ctx context.Context, clients *hubspot.ClientSet, ids n
 		return errors.New("northstar public file did not match canonical exact-ID state")
 	}
 	return nil
+}
+
+func waitForNorthstarFolder(ctx context.Context, read func(context.Context, string) (hubspot.FileFolder, error), id string, matches func(hubspot.FileFolder) bool, delay time.Duration) (hubspot.FileFolder, error) {
+	var observed hubspot.FileFolder
+	for attempt := 0; attempt < 30; attempt++ {
+		folder, err := read(ctx, id)
+		if err != nil {
+			return folder, err
+		}
+		observed = folder
+		if matches(folder) {
+			return folder, nil
+		}
+		if attempt == 29 {
+			break
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return observed, errors.New("northstar folder read-back timed out")
+		case <-timer.C:
+		}
+	}
+	return observed, errors.New("northstar folder read-back did not converge")
 }
 
 func stageNorthstarFileForFolderRename(ctx context.Context, clients *hubspot.ClientSet, fileID, parentFolderID, stagingFolderID string, names northstarFilesNames) error {
