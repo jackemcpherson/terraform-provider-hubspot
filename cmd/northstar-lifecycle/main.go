@@ -572,55 +572,21 @@ func driftNorthstarFile(ctx context.Context, clients *hubspot.ClientSet, id stri
 }
 
 func driftNorthstarFolderPath(ctx context.Context, clients *hubspot.ClientSet, parentID, childID string, names northstarFilesNames) error {
-	parent, err := clients.FileFolders.Get(ctx, parentID)
-	if err != nil {
-		return fmt.Errorf("read Northstar folder path drift target: %s", acceptance.SanitizedHubSpotError(err))
-	}
-	task, err := clients.FileFolders.Update(ctx, parentID, hubspot.FileFolderWrite{Name: names.BrandFolderRefresh, ParentFolderID: parent.ParentFolderID})
+	_, err := clients.FileFolders.Rename(ctx, parentID, names.BrandFolderRefresh)
 	if err != nil {
 		return fmt.Errorf("author Northstar folder path drift: %s", acceptance.SanitizedHubSpotError(err))
 	}
-	if err := waitForFolderTask(ctx, clients, task.ID); err != nil {
-		return err
-	}
-	child, err := clients.FileFolders.Get(ctx, childID)
+	expectedPath := "/" + names.BrandFolderRefresh + "/" + names.DownloadsFolder
+	child, err := waitForNorthstarFolder(ctx, clients.FileFolders.Get, childID, func(folder hubspot.FileFolder) bool {
+		return folder.ID == childID && folder.ParentFolderID != nil && *folder.ParentFolderID == parentID && folder.Path == expectedPath
+	}, northstarFolderReadDelays)
 	if err != nil {
 		return fmt.Errorf("read Northstar refreshed child folder: %s", acceptance.SanitizedHubSpotError(err))
 	}
-	if child.ID != childID || child.ParentFolderID == nil || *child.ParentFolderID != parentID || child.Path != "/"+names.BrandFolderRefresh+"/"+names.DownloadsFolder {
+	if child.ID != childID || child.ParentFolderID == nil || *child.ParentFolderID != parentID || child.Path != expectedPath {
 		return errors.New("northstar child folder path drift was not observable with preserved identity")
 	}
 	return nil
-}
-
-func waitForFolderTask(ctx context.Context, clients *hubspot.ClientSet, id string) error {
-	for {
-		task, err := clients.FileFolders.GetUpdateTask(ctx, id)
-		if err != nil {
-			return fmt.Errorf("read Northstar folder update task: %s", acceptance.SanitizedHubSpotError(err))
-		}
-		if len(task.Errors) > 0 {
-			return errors.New("northstar folder path drift task reported errors")
-		}
-		switch task.Status {
-		case "COMPLETE":
-			return nil
-		case "PENDING", "RUNNING", "PROCESSING":
-		default:
-			return errors.New("northstar folder path drift task did not complete")
-		}
-		delay := task.RetryAfter
-		if delay <= 0 {
-			delay = 250 * time.Millisecond
-		}
-		timer := time.NewTimer(delay)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return errors.New("northstar folder path drift task timed out")
-		case <-timer.C:
-		}
-	}
 }
 
 func verifyNorthstarFilesTerminal(ctx context.Context, clients *hubspot.ClientSet, ids northstarFilesIDs, names northstarFilesNames) (string, error) {
