@@ -22,9 +22,10 @@ import (
 )
 
 const (
-	liveFileFolderRootAddress  = "hubspot_file_folder.root"
-	liveFileFolderChildAddress = "hubspot_file_folder.child"
-	liveManagedFileAddress     = "hubspot_file.managed"
+	liveFileFolderRootAddress   = "hubspot_file_folder.root"
+	liveFileFolderChildAddress  = "hubspot_file_folder.child"
+	liveFileFolderTargetAddress = "hubspot_file_folder.target"
+	liveManagedFileAddress      = "hubspot_file.managed"
 )
 
 var generatedFilesID = regexp.MustCompile(`^[1-9][0-9]*$`)
@@ -66,7 +67,7 @@ func runLiveFilesConfigurationLifecycle(t *testing.T, engine acceptance.Engine, 
 	initial := liveFilesConfiguration(providerSource, sourcePath, initialDigest, prefix, filesConfigInitial)
 	folderCollision := liveFilesConfiguration(providerSource, sourcePath, initialDigest, prefix, filesConfigFolderCollision)
 	fileCollision := liveFilesConfiguration(providerSource, sourcePath, initialDigest, prefix, filesConfigFileCollision)
-	var rootID, childID, initialFileID, finalFileID, reusedRootID, reusedChildID, reusedFileID string
+	var rootID, childID, targetID, initialFileID, finalFileID, reusedRootID, reusedChildID, reusedTargetID, reusedFileID string
 
 	acceptance.Run(t, acceptance.Options{
 		Engine: engine, Shard: acceptance.FilesConfiguration, Prefix: prefix, LedgerPath: ledger,
@@ -74,8 +75,9 @@ func runLiveFilesConfigurationLifecycle(t *testing.T, engine acceptance.Engine, 
 		session.Apply(initial)
 		rootID = session.OpaqueStateString(liveFileFolderRootAddress, "id")
 		childID = session.OpaqueStateString(liveFileFolderChildAddress, "id")
+		targetID = session.OpaqueStateString(liveFileFolderTargetAddress, "id")
 		initialFileID = session.OpaqueStateString(liveManagedFileAddress, "id")
-		for _, id := range []string{rootID, childID, initialFileID} {
+		for _, id := range []string{rootID, childID, targetID, initialFileID} {
 			if !generatedFilesID.MatchString(id) {
 				t.Fatal("Files acceptance received a non-canonical generated identity")
 			}
@@ -93,23 +95,28 @@ func runLiveFilesConfigurationLifecycle(t *testing.T, engine acceptance.Engine, 
 		if err := os.WriteFile(sourcePath, updatedBytes, 0o600); err != nil {
 			t.Fatalf("write updated Files acceptance source: %v", err)
 		}
+		fileUpdated := liveFilesConfiguration(providerSource, sourcePath, updatedDigest, prefix, filesConfigFileUpdated)
+		session.Apply(fileUpdated)
+		requireFilesIdentitiesUnchanged(t, session, rootID, childID, targetID, initialFileID)
+		session.RequireStateString(liveManagedFileAddress, "access", "PUBLIC_NOT_INDEXABLE")
+		session.RequireEmptyPlan(fileUpdated)
+
 		renamed := liveFilesConfiguration(providerSource, sourcePath, updatedDigest, prefix, filesConfigRenamed)
 		session.Apply(renamed)
-		requireFilesIdentitiesUnchanged(t, session, rootID, childID, initialFileID)
-		session.RequireStateString(liveManagedFileAddress, "access", "PUBLIC_NOT_INDEXABLE")
-		session.RequireStateString(liveFileFolderChildAddress, "path", "/"+prefix+"root_updated/"+prefix+"child_updated")
-		session.RequireStateString(liveManagedFileAddress, "path", "/"+prefix+"root_updated/"+prefix+"child_updated/"+prefix+"managed_updated.txt")
+		requireFilesIdentitiesUnchanged(t, session, rootID, childID, targetID, initialFileID)
+		session.RequireStateStringAfterRefresh(renamed, liveManagedFileAddress, "path", "/"+prefix+"root_updated/"+prefix+"child/"+prefix+"managed_updated.txt")
+		session.RequireStateString(liveFileFolderChildAddress, "path", "/"+prefix+"root_updated/"+prefix+"child")
 		session.RequireEmptyPlan(renamed)
 
 		moved := liveFilesConfiguration(providerSource, sourcePath, updatedDigest, prefix, filesConfigMoved)
 		session.Apply(moved)
-		requireFilesIdentitiesUnchanged(t, session, rootID, childID, initialFileID)
+		requireFilesIdentitiesUnchanged(t, session, rootID, childID, targetID, initialFileID)
 
 		private := liveFilesConfiguration(providerSource, sourcePath, updatedDigest, prefix, filesConfigPrivate)
 		session.Apply(private)
+		session.RequireStateStringAfterRefresh(private, liveManagedFileAddress, "path", "/"+prefix+"target/"+prefix+"child/"+prefix+"managed_updated.txt")
 		session.RequireStateString(liveManagedFileAddress, "access", "PRIVATE")
-		session.RequireStateString(liveFileFolderChildAddress, "path", "/"+prefix+"child_updated")
-		session.RequireStateString(liveManagedFileAddress, "path", "/"+prefix+"child_updated/"+prefix+"managed_updated.txt")
+		session.RequireStateString(liveFileFolderChildAddress, "path", "/"+prefix+"target/"+prefix+"child")
 		session.RequireEmptyPlan(private)
 
 		session.MutateManagedFileContent(liveManagedFileAddress, []byte("out-of-band content drift\n"))
@@ -139,30 +146,31 @@ func runLiveFilesConfigurationLifecycle(t *testing.T, engine acceptance.Engine, 
 		session.RequireEmptyPlan(private)
 
 		session.Destroy(private)
-		files, folders := session.RequireFilesTerminal(prefix, []string{initialFileID, finalFileID}, []string{rootID, childID})
+		files, folders := session.RequireFilesTerminal(prefix, []string{initialFileID, finalFileID}, []string{rootID, childID, targetID})
 		if files != 0 || folders != 0 {
 			t.Fatal("Files destroy retained active owned configuration")
 		}
 		session.Apply(private)
 		reusedRootID = session.OpaqueStateString(liveFileFolderRootAddress, "id")
 		reusedChildID = session.OpaqueStateString(liveFileFolderChildAddress, "id")
+		reusedTargetID = session.OpaqueStateString(liveFileFolderTargetAddress, "id")
 		reusedFileID = session.OpaqueStateString(liveManagedFileAddress, "id")
-		if reusedRootID == rootID || reusedChildID == childID || reusedFileID == initialFileID || reusedFileID == finalFileID {
+		if reusedRootID == rootID || reusedChildID == childID || reusedTargetID == targetID || reusedFileID == initialFileID || reusedFileID == finalFileID {
 			t.Fatal("immediate Files name reuse did not allocate new generated identities")
 		}
 		session.Destroy(private)
-		session.RequireFilesTerminal(prefix, []string{reusedFileID}, []string{reusedRootID, reusedChildID})
+		session.RequireFilesTerminal(prefix, []string{reusedFileID}, []string{reusedRootID, reusedChildID, reusedTargetID})
 	})
 
 	if t.Failed() {
 		return
 	}
-	writeFilesAcceptanceEvidence(t, engine, []string{rootID, childID, initialFileID, finalFileID, reusedRootID, reusedChildID, reusedFileID}, initialDigest, updatedDigest, startedAt, time.Now().UTC())
+	writeFilesAcceptanceEvidence(t, engine, []string{rootID, childID, targetID, initialFileID, finalFileID, reusedRootID, reusedChildID, reusedTargetID, reusedFileID}, initialDigest, updatedDigest, startedAt, time.Now().UTC())
 }
 
-func requireFilesIdentitiesUnchanged(t *testing.T, session *acceptance.Session, rootID, childID, fileID string) {
+func requireFilesIdentitiesUnchanged(t *testing.T, session *acceptance.Session, rootID, childID, targetID, fileID string) {
 	t.Helper()
-	if session.OpaqueStateString(liveFileFolderRootAddress, "id") != rootID || session.OpaqueStateString(liveFileFolderChildAddress, "id") != childID || session.OpaqueStateString(liveManagedFileAddress, "id") != fileID {
+	if session.OpaqueStateString(liveFileFolderRootAddress, "id") != rootID || session.OpaqueStateString(liveFileFolderChildAddress, "id") != childID || session.OpaqueStateString(liveFileFolderTargetAddress, "id") != targetID || session.OpaqueStateString(liveManagedFileAddress, "id") != fileID {
 		t.Fatal("an in-place Files update changed a generated identity")
 	}
 }
@@ -173,6 +181,7 @@ const (
 	filesConfigInitial filesConfigStage = iota
 	filesConfigFolderCollision
 	filesConfigFileCollision
+	filesConfigFileUpdated
 	filesConfigRenamed
 	filesConfigMoved
 	filesConfigPrivate
@@ -181,19 +190,21 @@ const (
 func liveFilesConfiguration(providerSource, sourcePath, digest, prefix string, stage filesConfigStage) string {
 	rootName := prefix + "root"
 	childName := prefix + "child"
+	targetName := prefix + "target"
 	fileName := prefix + "managed.txt"
 	access := "PRIVATE"
 	parent := "  parent_folder_id = hubspot_file_folder.root.id\n"
 	folderCollision := ""
 	fileCollision := ""
-	if stage >= filesConfigRenamed {
-		rootName = prefix + "root_updated"
-		childName = prefix + "child_updated"
+	if stage >= filesConfigFileUpdated {
 		fileName = prefix + "managed_updated.txt"
 		access = "PUBLIC_NOT_INDEXABLE"
 	}
+	if stage >= filesConfigRenamed {
+		rootName = prefix + "root_updated"
+	}
 	if stage >= filesConfigMoved {
-		parent = ""
+		parent = "  parent_folder_id = hubspot_file_folder.target.id\n"
 	}
 	if stage == filesConfigPrivate {
 		access = "PRIVATE"
@@ -231,6 +242,10 @@ resource "hubspot_file_folder" "root" {
   name = %q
 }
 
+resource "hubspot_file_folder" "target" {
+  name = %q
+}
+
 resource "hubspot_file_folder" "child" {
   name = %q
 %s}
@@ -242,7 +257,7 @@ resource "hubspot_file" "managed" {
   source_sha256 = %q
   access        = %q
 }
-%s%s`, providerSource, rootName, childName, parent, fileName, sourcePath, digest, access, folderCollision, fileCollision)
+%s%s`, providerSource, rootName, targetName, childName, parent, fileName, sourcePath, digest, access, folderCollision, fileCollision)
 }
 
 type filesContentChangeProof struct {
@@ -277,7 +292,7 @@ func TestFilesAcceptanceEvidenceIsSanitized(t *testing.T) {
 	t.Setenv("HUBSPOT_ACCEPTANCE_EVIDENCE_DIR", t.TempDir())
 	t.Setenv("HUBSPOT_ACCEPTANCE_CANDIDATE_COMMIT", strings.Repeat("a", 40))
 	t.Setenv("HUBSPOT_ACCEPTANCE_PORTAL_ID", "12345678")
-	ids := []string{"10001", "10002", "20001", "20002", "10003", "10004", "20003"}
+	ids := []string{"10001", "10002", "10003", "20001", "20002", "10004", "10005", "10006", "20003"}
 	writeFilesAcceptanceEvidence(t, acceptance.OpenTofu, ids, strings.Repeat("b", 64), strings.Repeat("c", 64), time.Date(2026, 8, 4, 5, 0, 0, 0, time.UTC), time.Date(2026, 8, 4, 5, 1, 0, 0, time.UTC))
 	contents, err := os.ReadFile(filepath.Join(os.Getenv("HUBSPOT_ACCEPTANCE_EVIDENCE_DIR"), "files_configuration-tofu.json"))
 	if err != nil {
@@ -292,7 +307,7 @@ func TestFilesAcceptanceEvidenceIsSanitized(t *testing.T) {
 	if err := json.Unmarshal(contents, &evidence); err != nil {
 		t.Fatal(err)
 	}
-	if evidence.Engine != "tofu" || evidence.APIFamily != "files/2026-03" || evidence.ScopeFamily != "files" || evidence.Cleanup != "passed" || evidence.Status != "passed" || evidence.ActiveCleanupCounts.Files != 0 || evidence.ActiveCleanupCounts.Folders != 0 || len(evidence.GeneratedIdentityHashes) != 7 {
+	if evidence.Engine != "tofu" || evidence.APIFamily != "files/2026-03" || evidence.ScopeFamily != "files" || evidence.Cleanup != "passed" || evidence.Status != "passed" || evidence.ActiveCleanupCounts.Files != 0 || evidence.ActiveCleanupCounts.Folders != 0 || len(evidence.GeneratedIdentityHashes) != 9 {
 		t.Fatalf("Files acceptance evidence did not preserve the sanitized contract: %#v", evidence)
 	}
 }

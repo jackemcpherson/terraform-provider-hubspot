@@ -21,7 +21,10 @@ import (
 	"github.com/jackemcpherson/terraform-provider-hubspot/internal/hubspot"
 )
 
-type FileResource struct{ client *hubspot.FileClient }
+type FileResource struct {
+	client  *hubspot.FileClient
+	folders *hubspot.FileFolderClient
+}
 
 var (
 	_ resource.ResourceWithImportState = (*FileResource)(nil)
@@ -91,11 +94,12 @@ func (r *FileResource) Configure(_ context.Context, request resource.ConfigureRe
 		return
 	}
 	clients, ok := request.ProviderData.(*hubspot.ClientSet)
-	if !ok || clients == nil || clients.Files == nil {
+	if !ok || clients == nil || clients.Files == nil || clients.FileFolders == nil {
 		response.Diagnostics.AddError("Provider is not configured", "The HubSpot Files client was not available to hubspot_file.")
 		return
 	}
 	r.client = clients.Files
+	r.folders = clients.FileFolders
 }
 
 func (r *FileResource) ModifyPlan(ctx context.Context, request resource.ModifyPlanRequest, response *resource.ModifyPlanResponse) {
@@ -227,6 +231,11 @@ func (r *FileResource) Read(ctx context.Context, request resource.ReadRequest, r
 		response.Diagnostics.AddError("Managed file refresh was not verified", "HubSpot did not return the same active generated file ID. Prior state was retained.")
 		return
 	}
+	file, err = r.withCurrentFolderPath(ctx, file)
+	if err != nil {
+		appendHubSpotDiagnostic(&response.Diagnostics, "Managed file path refresh failed", err)
+		return
+	}
 	model, diagnostics := fileModelFromRemote(file, state)
 	response.Diagnostics.Append(diagnostics...)
 	if !response.Diagnostics.HasError() {
@@ -282,8 +291,10 @@ func (r *FileResource) Update(ctx context.Context, request resource.UpdateReques
 			patch.Access = &value
 		}
 		_, patchErr := r.client.Update(ctx, state.ID.ValueString(), patch)
-		verified, verifyErr := r.client.Get(ctx, state.ID.ValueString())
-		if verifyErr != nil || !managedFileMetadataMatches(verified, state.ID.ValueString(), plan) || verified.CreatedAt != current.CreatedAt {
+		verified, verifyErr := r.waitForManagedFile(ctx, state.ID.ValueString(), func(file hubspot.ManagedFile) bool {
+			return managedFileMetadataMatches(file, state.ID.ValueString(), plan) && file.CreatedAt == current.CreatedAt
+		})
+		if verifyErr != nil {
 			response.Diagnostics.AddError("Managed file update was not verified", "PATCH outcome could not be proven by exact-ID read-back. Prior identity and state were retained for a safe retry.")
 			return
 		}
@@ -300,8 +311,10 @@ func (r *FileResource) Update(ctx context.Context, request resource.UpdateReques
 	contentChanged := current.FileMD5 != source.MD5 || current.Size != source.Size
 	if contentChanged {
 		_, replaceErr := r.client.Replace(ctx, state.ID.ValueString(), hubspot.FileReplacement{Name: plan.Name.ValueString(), Access: plan.Access.ValueString(), Bytes: source.Bytes})
-		verified, verifyErr := r.client.Get(ctx, state.ID.ValueString())
-		if verifyErr != nil || !managedFileMatchesPlan(verified, state.ID.ValueString(), plan, source) || verified.CreatedAt != current.CreatedAt {
+		verified, verifyErr := r.waitForManagedFile(ctx, state.ID.ValueString(), func(file hubspot.ManagedFile) bool {
+			return managedFileMatchesPlan(file, state.ID.ValueString(), plan, source) && file.CreatedAt == current.CreatedAt
+		})
+		if verifyErr != nil {
 			response.Diagnostics.AddError("Managed file update was not verified", "PUT outcome could not be proven with preserved identity, creation time, planned MD5, and size. Prior state was retained for a safe retry.")
 			return
 		}
@@ -313,6 +326,11 @@ func (r *FileResource) Update(ctx context.Context, request resource.UpdateReques
 			response.Diagnostics.AddWarning("PUT response was ambiguous", "Exact-ID read-back proved in-place byte convergence, so replacement succeeded without replaying PUT.")
 		}
 		current = verified
+	}
+	current, err = r.withCurrentFolderPath(ctx, current)
+	if err != nil {
+		appendHubSpotDiagnostic(&response.Diagnostics, "Managed file update was not verified", err)
+		return
 	}
 	model, diagnostics := fileModelFromRemote(current, plan)
 	response.Diagnostics.Append(diagnostics...)
@@ -362,6 +380,11 @@ func (r *FileResource) ImportState(ctx context.Context, request resource.ImportS
 		response.Diagnostics.AddAttributeError(path.Root("id"), "Managed file import identity mismatch", "HubSpot did not return the same active generated file ID; no state was written.")
 		return
 	}
+	file, err = r.withCurrentFolderPath(ctx, file)
+	if err != nil {
+		appendHubSpotDiagnostic(&response.Diagnostics, "Managed file import failed", err)
+		return
+	}
 	base := fileResourceModel{SourcePath: types.StringNull(), SourceSHA256: types.StringNull()}
 	model, diagnostics := fileModelFromRemote(file, base)
 	response.Diagnostics.Append(diagnostics...)
@@ -381,6 +404,42 @@ func (r *FileResource) fileCollision(ctx context.Context, folderID, name, exclud
 		}
 	}
 	return false, nil
+}
+
+func (r *FileResource) withCurrentFolderPath(ctx context.Context, file hubspot.ManagedFile) (hubspot.ManagedFile, error) {
+	if r.folders == nil {
+		return file, errors.New("HubSpot File folders client is unavailable")
+	}
+	folder, err := r.folders.Get(ctx, file.FolderID)
+	if err != nil {
+		return file, err
+	}
+	if folder.Archived || folder.ID != file.FolderID || folder.Path == "" {
+		return file, errors.New("exact active destination folder path was not verified")
+	}
+	file.Path = strings.TrimRight(folder.Path, "/") + "/" + file.Name
+	return file, nil
+}
+
+func (r *FileResource) waitForManagedFile(ctx context.Context, id string, matches func(hubspot.ManagedFile) bool) (hubspot.ManagedFile, error) {
+	const attempts = 7
+	var observed hubspot.ManagedFile
+	for attempt := 0; attempt < attempts; attempt++ {
+		file, err := r.client.Get(ctx, id)
+		if err != nil {
+			return file, err
+		}
+		observed = file
+		if matches(file) {
+			return file, nil
+		}
+		if attempt+1 < attempts {
+			if err := sleepResourcePoll(ctx, attempt); err != nil {
+				return observed, err
+			}
+		}
+	}
+	return observed, errors.New("managed file read-back did not converge")
 }
 
 func (r *FileResource) cleanupMismatchedCreate(ctx context.Context, id string, response *resource.CreateResponse) {

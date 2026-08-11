@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 type Engine string
@@ -428,9 +429,45 @@ func (s *Session) RequireImportFailure(config, address, id, title string) {
 
 func (s *Session) RequireStateString(address, attribute, expected string) {
 	s.t.Helper()
+	matches, err := s.stateStringMatches(address, attribute, expected)
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	if !matches {
+		s.t.Fatalf("state attribute %s did not match the acceptance contract", attribute)
+	}
+}
+
+// RequireStateStringAfterRefresh tolerates bounded propagation delay for
+// computed values derived from an asynchronous remote update.
+func (s *Session) RequireStateStringAfterRefresh(config, address, attribute, expected string) {
+	s.t.Helper()
+	delays := []time.Duration{0, time.Second, 2 * time.Second, 3 * time.Second, 5 * time.Second, 8 * time.Second, 13 * time.Second}
+	for _, delay := range delays {
+		if delay > 0 {
+			time.Sleep(delay)
+		}
+		s.Refresh(config)
+		matches, err := s.stateStringMatches(address, attribute, expected)
+		if err != nil {
+			s.t.Fatal(err)
+		}
+		if matches {
+			return
+		}
+	}
+	s.t.Fatalf("state attribute %s did not match the acceptance contract after bounded refresh", attribute)
+}
+
+func (s *Session) stateStringMatches(address, attribute, expected string) (bool, error) {
+	actual, found, err := s.stateStringValue(address, attribute)
+	return found && actual == expected, err
+}
+
+func (s *Session) stateStringValue(address, attribute string) (string, bool, error) {
 	output, err := s.commandOutput("show", "-json", "-no-color")
 	if err != nil {
-		s.t.Fatalf("%s state inspection failed: %v", s.engine, err)
+		return "", false, fmt.Errorf("%s state inspection failed: %w", s.engine, err)
 	}
 	var document struct {
 		Values struct {
@@ -443,19 +480,19 @@ func (s *Session) RequireStateString(address, attribute, expected string) {
 		} `json:"values"`
 	}
 	if err := json.Unmarshal([]byte(output), &document); err != nil {
-		s.t.Fatalf("decode %s state output", s.engine)
+		return "", false, fmt.Errorf("decode %s state output", s.engine)
 	}
 	for _, resource := range document.Values.RootModule.Resources {
 		if resource.Address != address {
 			continue
 		}
 		var actual string
-		if err := json.Unmarshal(resource.Values[attribute], &actual); err != nil || actual != expected {
-			s.t.Fatalf("state attribute %s did not match the acceptance contract", attribute)
+		if err := json.Unmarshal(resource.Values[attribute], &actual); err != nil {
+			return "", true, nil
 		}
-		return
+		return actual, true, nil
 	}
-	s.t.Fatal("acceptance resource was absent from state")
+	return "", false, errors.New("acceptance resource was absent from state")
 }
 
 func (s *Session) RequireStateStringPrefix(address, attribute, prefix string) {
