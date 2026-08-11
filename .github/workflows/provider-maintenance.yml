@@ -71,7 +71,7 @@ jobs:
       HUBSPOT_ACCEPTANCE_PORTAL_ID: ${{ vars.HUBSPOT_ACCEPTANCE_PORTAL_ID }}
       HUBSPOT_NORTHSTAR_FILES_SEED: ${{ github.run_id }}_${{ github.run_attempt }}
       HUBSPOT_PROVIDER_EXPECTED_COMMIT: ${{ github.sha }}
-      HUBSPOT_DEMO_EXPECTED_COMMIT: 6e02e79c9355194417ec44927a0924c1e4f3bba4
+      HUBSPOT_DEMO_EXPECTED_COMMIT: 367ab21d88495a605917d28ad5108c9876000a42
       HUBSPOT_REQUIRE_CLEAN_PROVENANCE: '1'
       HUBSPOT_PORTAL_LOCK_ID: free-configuration
     steps:
@@ -83,7 +83,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: jackemcpherson/terraform-hubspot-instance-demo
-          ref: 6e02e79c9355194417ec44927a0924c1e4f3bba4
+          ref: 367ab21d88495a605917d28ad5108c9876000a42
           path: .release-demo
           persist-credentials: false
       - name: Set up provider toolchain
@@ -166,7 +166,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: jackemcpherson/terraform-hubspot-instance-demo
-          ref: 6e02e79c9355194417ec44927a0924c1e4f3bba4
+          ref: 367ab21d88495a605917d28ad5108c9876000a42
           path: .candidate-demo
           persist-credentials: false
       - name: Set up provider toolchain

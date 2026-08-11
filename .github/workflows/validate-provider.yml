@@ -29,7 +29,7 @@ jobs:
       HUBSPOT_DEMO_REPO: ${{ github.workspace }}/.demo-source
       DOCS_PORTAL_REQUIRE_CLEAN: '1'
       DOCS_PORTAL_PROVIDER_COMMIT: ${{ github.sha }}
-      DOCS_PORTAL_DEMO_COMMIT: 6e02e79c9355194417ec44927a0924c1e4f3bba4
+      DOCS_PORTAL_DEMO_COMMIT: 367ab21d88495a605917d28ad5108c9876000a42
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -39,7 +39,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: jackemcpherson/terraform-hubspot-instance-demo
-          ref: 6e02e79c9355194417ec44927a0924c1e4f3bba4
+          ref: 367ab21d88495a605917d28ad5108c9876000a42
           path: .demo-source
           persist-credentials: false
       - name: Set up provider toolchain
@@ -124,7 +124,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: jackemcpherson/terraform-hubspot-instance-demo
-          ref: 6e02e79c9355194417ec44927a0924c1e4f3bba4
+          ref: 367ab21d88495a605917d28ad5108c9876000a42
           path: .demo-source
           persist-credentials: false
       - name: Set up provider toolchain
