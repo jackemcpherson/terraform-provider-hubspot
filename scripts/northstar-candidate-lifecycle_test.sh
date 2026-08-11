@@ -32,6 +32,11 @@ printf '%s\n' '#!/bin/sh' \
   'test "$HUBSPOT_NORTHSTAR_FILES_PREFIX" = "$EXPECTED_TOFU_PREFIX"' \
   'printf "%s\n" cleanup >>"$CALL_LOG"' >"$tmp/cleanup"
 chmod +x "$tmp/cleanup"
+printf '%s\n' '#!/bin/sh' \
+  'case "$1" in tofu) expected=$EXPECTED_TOFU_PREFIX ;; terraform) expected=$EXPECTED_TERRAFORM_PREFIX ;; esac' \
+  'test "$HUBSPOT_NORTHSTAR_FILES_PREFIX" = "$expected"' \
+  'printf "%s:stage:%s\n" "$1" "$HUBSPOT_NORTHSTAR_FILES_PREFIX" >>"$CALL_LOG"' >"$tmp/stage"
+chmod +x "$tmp/stage"
 cat >"$demo_root/versions.tf" <<'EOF'
 terraform {
   required_providers {
@@ -59,6 +64,7 @@ done
 run() {
   CALL_LOG="$log" HUBSPOT_DEMO_REPO="$demo_root" HUBSPOT_DEMO_SCRIPT="$demo_root/scripts/demo" \
     HUBSPOT_NORTHSTAR_CLEANUP_SCRIPT="$tmp/cleanup" \
+    HUBSPOT_NORTHSTAR_STAGE_SCRIPT="$tmp/stage" \
     HUBSPOT_NORTHSTAR_FILES_SEED="$seed" EXPECTED_TOFU_PREFIX="$tofu_prefix" EXPECTED_TERRAFORM_PREFIX="$terraform_prefix" \
     HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
     "$root/scripts/northstar-candidate-lifecycle.sh" v0.4.0
@@ -67,7 +73,11 @@ run() {
 run
 for engine in tofu terraform; do
   case "$engine" in tofu) prefix=$tofu_prefix ;; terraform) prefix=$terraform_prefix ;; esac
-  for phase in plan apply verify drift repair refresh adopt verify destroy-plan destroy-apply; do
+  for phase in plan apply verify drift repair; do
+    printf '%s:%s:%s:%s\n' "$engine" local "$phase" "$prefix"
+  done
+  printf '%s:stage:%s\n' "$engine" "$prefix"
+  for phase in refresh plan apply verify adopt verify destroy-plan destroy-apply; do
     printf '%s:%s:%s:%s\n' "$engine" local "$phase" "$prefix"
   done
 done >"$tmp/expected"
@@ -80,6 +90,7 @@ fi
 : >"$log"
 if CALL_LOG="$log" FAIL_PHASE=tofu:repair HUBSPOT_DEMO_REPO="$demo_root" \
   HUBSPOT_DEMO_SCRIPT="$demo_root/scripts/demo" HUBSPOT_NORTHSTAR_CLEANUP_SCRIPT="$tmp/cleanup" \
+  HUBSPOT_NORTHSTAR_STAGE_SCRIPT="$tmp/stage" \
   HUBSPOT_NORTHSTAR_FILES_SEED="$seed" EXPECTED_TOFU_PREFIX="$tofu_prefix" EXPECTED_TERRAFORM_PREFIX="$terraform_prefix" \
   HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
   "$root/scripts/northstar-candidate-lifecycle.sh" v0.4.0; then
