@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackemcpherson/terraform-provider-hubspot/internal/acceptance"
 	"github.com/jackemcpherson/terraform-provider-hubspot/internal/hubspot"
@@ -284,7 +285,7 @@ func TestWaitForNorthstarFolderConvergence(t *testing.T) {
 		return hubspot.FileFolder{ID: "11", Path: path}, nil
 	}, "11", func(folder hubspot.FileFolder) bool {
 		return folder.Path == "/current/child"
-	}, 0)
+	}, []time.Duration{0, 0, 0})
 	if err != nil || attempts != 3 || folder.Path != "/current/child" {
 		t.Fatalf("folder convergence = %#v after %d attempts, %v", folder, attempts, err)
 	}

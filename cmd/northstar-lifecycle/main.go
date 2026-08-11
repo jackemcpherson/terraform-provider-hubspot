@@ -21,6 +21,8 @@ import (
 
 const driftLabel = "Out-of-band Northstar buyer role"
 
+var northstarFolderReadDelays = []time.Duration{0, time.Second, 2 * time.Second, 3 * time.Second, 5 * time.Second, 8 * time.Second, 13 * time.Second}
+
 type northstarFilesIDs struct {
 	BrandFolder     string
 	DownloadsFolder string
@@ -468,7 +470,7 @@ func verifyNorthstarFiles(ctx context.Context, clients *hubspot.ClientSet, ids n
 	expectedDownloadsPath := "/" + names.BrandFolder + "/" + names.DownloadsFolder
 	downloads, err := waitForNorthstarFolder(ctx, clients.FileFolders.Get, ids.DownloadsFolder, func(folder hubspot.FileFolder) bool {
 		return folder.ID == ids.DownloadsFolder && folder.Name == names.DownloadsFolder && folder.ParentFolderID != nil && *folder.ParentFolderID == ids.BrandFolder && folder.Path == expectedDownloadsPath
-	}, 500*time.Millisecond)
+	}, northstarFolderReadDelays)
 	if err != nil {
 		return fmt.Errorf("read Northstar downloads folder: %s", acceptance.SanitizedHubSpotError(err))
 	}
@@ -499,9 +501,18 @@ func verifyNorthstarFiles(ctx context.Context, clients *hubspot.ClientSet, ids n
 	return nil
 }
 
-func waitForNorthstarFolder(ctx context.Context, read func(context.Context, string) (hubspot.FileFolder, error), id string, matches func(hubspot.FileFolder) bool, delay time.Duration) (hubspot.FileFolder, error) {
+func waitForNorthstarFolder(ctx context.Context, read func(context.Context, string) (hubspot.FileFolder, error), id string, matches func(hubspot.FileFolder) bool, delays []time.Duration) (hubspot.FileFolder, error) {
 	var observed hubspot.FileFolder
-	for attempt := 0; attempt < 30; attempt++ {
+	for _, delay := range delays {
+		if delay > 0 {
+			timer := time.NewTimer(delay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return observed, errors.New("northstar folder read-back timed out")
+			case <-timer.C:
+			}
+		}
 		folder, err := read(ctx, id)
 		if err != nil {
 			return folder, err
@@ -509,16 +520,6 @@ func waitForNorthstarFolder(ctx context.Context, read func(context.Context, stri
 		observed = folder
 		if matches(folder) {
 			return folder, nil
-		}
-		if attempt == 29 {
-			break
-		}
-		timer := time.NewTimer(delay)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return observed, errors.New("northstar folder read-back timed out")
-		case <-timer.C:
 		}
 	}
 	return observed, errors.New("northstar folder read-back did not converge")
