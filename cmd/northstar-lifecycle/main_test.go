@@ -212,6 +212,14 @@ func TestExecuteManagesNorthstarFilesLifecycle(t *testing.T) {
 	if _, err := execute(ctx, "verify-files", ids, clients); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := execute(ctx, "stage-file-for-folder-rename", []string{privateFile.ID, brand.ID, downloads.ID}, clients); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HUBSPOT_NORTHSTAR_FILES_STAGED", "1")
+	if _, err := execute(ctx, "verify-files", ids, clients); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HUBSPOT_NORTHSTAR_FILES_STAGED", "")
 	if _, err := execute(ctx, "drift-files", []string{publicFile.ID}, clients); err != nil {
 		t.Fatal(err)
 	}

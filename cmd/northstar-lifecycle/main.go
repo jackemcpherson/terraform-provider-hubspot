@@ -141,7 +141,16 @@ func execute(ctx context.Context, action string, ids []string, clients *hubspot.
 		if err != nil {
 			return "", err
 		}
-		return "", verifyNorthstarFiles(ctx, clients, newNorthstarFilesIDs(ids), names)
+		return "", verifyNorthstarFiles(ctx, clients, newNorthstarFilesIDs(ids), names, os.Getenv("HUBSPOT_NORTHSTAR_FILES_STAGED") == "1")
+	case "stage-file-for-folder-rename":
+		if len(ids) != 3 {
+			return "", errors.New("northstar private file, parent folder, and staging folder IDs are required")
+		}
+		names, err := northstarFilesNamesFromEnvironment()
+		if err != nil {
+			return "", err
+		}
+		return "", stageNorthstarFileForFolderRename(ctx, clients, ids[0], ids[1], ids[2], names)
 	case "drift-files":
 		if len(ids) != 1 {
 			return "", errors.New("one Northstar Managed file ID is required for drift")
@@ -378,6 +387,9 @@ func inspectNorthstarCleanup(ctx context.Context, clients *hubspot.ClientSet, na
 			if folderName == names.BrandFolderRefresh {
 				expectedFolderName = names.BrandFolderRefresh
 			}
+			if folderName == names.DownloadsFolder {
+				expectedFolderName = names.DownloadsFolder
+			}
 		}
 		if !inOwnedFolder || folderName != expectedFolderName || !strings.HasSuffix(file.Path, "/"+file.Name) {
 			return plan, errors.New("refusing Northstar Managed file with unexpected placement")
@@ -448,7 +460,7 @@ func northstarNotFound(err error) bool {
 	return errors.As(err, &apiError) && apiError.Status == 404
 }
 
-func verifyNorthstarFiles(ctx context.Context, clients *hubspot.ClientSet, ids northstarFilesIDs, names northstarFilesNames) error {
+func verifyNorthstarFiles(ctx context.Context, clients *hubspot.ClientSet, ids northstarFilesIDs, names northstarFilesNames, staged bool) error {
 	brand, err := clients.FileFolders.Get(ctx, ids.BrandFolder)
 	if err != nil {
 		return fmt.Errorf("read Northstar brand folder: %s", acceptance.SanitizedHubSpotError(err))
@@ -471,11 +483,41 @@ func verifyNorthstarFiles(ctx context.Context, clients *hubspot.ClientSet, ids n
 	if downloads.ID != ids.DownloadsFolder || downloads.Name != names.DownloadsFolder || downloads.ParentFolderID == nil || *downloads.ParentFolderID != ids.BrandFolder || downloads.Path != "/"+names.BrandFolder+"/"+names.DownloadsFolder {
 		return errors.New("northstar downloads folder did not match canonical exact-ID state")
 	}
-	if privateFile.ID != ids.PrivateFile || privateFile.Name != names.PrivateFile || privateFile.FolderID != ids.BrandFolder || privateFile.Access != "PRIVATE" || privateFile.FileMD5 != "6062568b21ab5f9deb2a2c2f25cfbc37" || privateFile.Size != 23 {
+	privateFolderID := ids.BrandFolder
+	if staged {
+		privateFolderID = ids.DownloadsFolder
+	}
+	if privateFile.ID != ids.PrivateFile || privateFile.Name != names.PrivateFile || privateFile.FolderID != privateFolderID || privateFile.Access != "PRIVATE" || privateFile.FileMD5 != "6062568b21ab5f9deb2a2c2f25cfbc37" || privateFile.Size != 23 {
 		return errors.New("northstar private file did not match canonical exact-ID state")
 	}
 	if publicFile.ID != ids.PublicFile || publicFile.Name != names.PublicFile || publicFile.FolderID != ids.DownloadsFolder || publicFile.Access != "PUBLIC_NOT_INDEXABLE" || publicFile.FileMD5 != "21ebff031bb7f11ce0a0ab78c4347832" || publicFile.Size != 88 {
 		return errors.New("northstar public file did not match canonical exact-ID state")
+	}
+	return nil
+}
+
+func stageNorthstarFileForFolderRename(ctx context.Context, clients *hubspot.ClientSet, fileID, parentFolderID, stagingFolderID string, names northstarFilesNames) error {
+	file, err := clients.Files.Get(ctx, fileID)
+	if err != nil {
+		return fmt.Errorf("read Northstar folder-rename staging file: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	parentFolder, err := clients.FileFolders.Get(ctx, parentFolderID)
+	if err != nil {
+		return fmt.Errorf("read Northstar folder-rename parent folder: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	stagingFolder, err := clients.FileFolders.Get(ctx, stagingFolderID)
+	if err != nil {
+		return fmt.Errorf("read Northstar folder-rename staging folder: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	if file.Name != names.PrivateFile || file.FolderID != parentFolderID || parentFolder.Name != names.BrandFolder || stagingFolder.Name != names.DownloadsFolder || stagingFolder.ParentFolderID == nil || *stagingFolder.ParentFolderID != parentFolderID {
+		return errors.New("northstar folder-rename staging identities did not match the owned configuration")
+	}
+	updated, err := clients.Files.Update(ctx, fileID, hubspot.FilePatch{FolderID: &stagingFolderID})
+	if err != nil {
+		return fmt.Errorf("stage Northstar file before folder rename: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	if updated.ID != fileID || updated.FolderID != stagingFolderID || updated.Name != names.PrivateFile {
+		return errors.New("northstar folder-rename staging move did not preserve the exact file identity")
 	}
 	return nil
 }
