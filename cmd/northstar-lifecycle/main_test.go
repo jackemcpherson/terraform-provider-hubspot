@@ -273,6 +273,23 @@ func TestNorthstarFilesRunNamesFitSearchLimit(t *testing.T) {
 	}
 }
 
+func TestWaitForNorthstarFolderConvergence(t *testing.T) {
+	attempts := 0
+	folder, err := waitForNorthstarFolder(context.Background(), func(context.Context, string) (hubspot.FileFolder, error) {
+		attempts++
+		path := "/old/child"
+		if attempts == 3 {
+			path = "/current/child"
+		}
+		return hubspot.FileFolder{ID: "11", Path: path}, nil
+	}, "11", func(folder hubspot.FileFolder) bool {
+		return folder.Path == "/current/child"
+	}, 0)
+	if err != nil || attempts != 3 || folder.Path != "/current/child" {
+		t.Fatalf("folder convergence = %#v after %d attempts, %v", folder, attempts, err)
+	}
+}
+
 func northstarFormFixture() hubspot.FormDefinitionWrite {
 	return hubspot.FormDefinitionWrite{
 		FormType: "hubspot", Name: "ns_contact_us",
