@@ -38,6 +38,14 @@ func TestFileFolderClientPinsGeneratedIDLifecycleAndPagination(t *testing.T) {
 			io.WriteString(writer, `{"id":"11","name":"child","parentFolderId":"7","path":"/root/child","createdAt":"2026-08-01T00:00:00Z","updatedAt":"2026-08-01T00:00:00Z"}`)
 		case request.Method == http.MethodGet && request.URL.Path == "/files/2026-03/folders/11":
 			io.WriteString(writer, `{"id":"11","name":"child","parentFolderId":"7","path":"/root/child","createdAt":"2026-08-01T00:00:00Z","updatedAt":"2026-08-01T00:00:00Z"}`)
+		case request.Method == http.MethodPatch && request.URL.Path == "/files/2026-03/folders/11":
+			var payload struct {
+				Name string `json:"name"`
+			}
+			if err := json.NewDecoder(request.Body).Decode(&payload); err != nil || payload.Name != "renamed" {
+				t.Fatalf("folder rename payload = %#v, %v", payload, err)
+			}
+			io.WriteString(writer, `{"id":"11","name":"renamed","parentFolderId":"7","path":"/root/renamed","createdAt":"2026-08-01T00:00:00Z","updatedAt":"2026-08-01T00:00:01Z"}`)
 		case request.Method == http.MethodPost && request.URL.Path == "/files/2026-03/folders/update/async":
 			var payload struct {
 				ID             string `json:"id"`
@@ -72,6 +80,10 @@ func TestFileFolderClientPinsGeneratedIDLifecycleAndPagination(t *testing.T) {
 	if _, err := client.Get(context.Background(), "11"); err != nil {
 		t.Fatal(err)
 	}
+	renamed, err := client.Rename(context.Background(), "11", "renamed")
+	if err != nil || renamed.Name != "renamed" {
+		t.Fatalf("folder rename = %#v, %v", renamed, err)
+	}
 	task, err := client.Update(context.Background(), "11", FileFolderWrite{Name: "renamed", ParentFolderID: &parent})
 	if err != nil || task.ID != "task-1" {
 		t.Fatalf("folder update task = %#v, %v", task, err)
@@ -83,7 +95,7 @@ func TestFileFolderClientPinsGeneratedIDLifecycleAndPagination(t *testing.T) {
 	if err := client.Delete(context.Background(), "11"); err != nil {
 		t.Fatal(err)
 	}
-	if len(requests) != 7 || !strings.Contains(requests[0], "parentFolderId=7") || !strings.Contains(requests[0], "name=child") || !strings.Contains(requests[1], "after=next") {
+	if len(requests) != 8 || !strings.Contains(requests[0], "parentFolderId=7") || !strings.Contains(requests[0], "name=child") || !strings.Contains(requests[1], "after=next") {
 		t.Fatalf("folder requests = %#v", requests)
 	}
 }
@@ -105,7 +117,7 @@ func TestManagedFileClientUsesExactFolderDuplicateRejectionAndBoundedUpdates(t *
 			io.WriteString(writer, canonicalManagedFileJSON("21", "fixture.txt", "7", "PRIVATE"))
 		case request.Method == http.MethodPatch && request.URL.Path == "/files/2026-03/files/21":
 			var patch FilePatch
-			if err := json.NewDecoder(request.Body).Decode(&patch); err != nil || patch.Name == nil || *patch.Name != "renamed.txt" || patch.FolderID != nil || patch.Access != nil {
+			if err := json.NewDecoder(request.Body).Decode(&patch); err != nil || patch.Name == nil || *patch.Name != "renamed" || patch.FolderID != nil || patch.Access != nil {
 				t.Fatalf("file patch = %#v, %v", patch, err)
 			}
 			io.WriteString(writer, canonicalManagedFileJSON("21", "renamed.txt", "7", "PRIVATE"))

@@ -143,7 +143,7 @@ if [ "$shard" = files_configuration ]; then
     grep -q '"api_family":"files/2026-03"' "$evidence"
     grep -q '"scope_family":"files"' "$evidence"
     grep -q '"portal_fingerprint":"[0-9a-f]\{64\}"' "$evidence"
-    grep -q '"generated_identity_hashes":\["[0-9a-f]\{64\}","[0-9a-f]\{64\}","[0-9a-f]\{64\}","[0-9a-f]\{64\}","[0-9a-f]\{64\}","[0-9a-f]\{64\}","[0-9a-f]\{64\}"\]' "$evidence"
+    grep -q '"generated_identity_hashes":\["[0-9a-f]\{64\}","[0-9a-f]\{64\}","[0-9a-f]\{64\}","[0-9a-f]\{64\}","[0-9a-f]\{64\}","[0-9a-f]\{64\}","[0-9a-f]\{64\}","[0-9a-f]\{64\}","[0-9a-f]\{64\}"\]' "$evidence"
     grep -q '"access_transitions":\["PRIVATE","PUBLIC_NOT_INDEXABLE","PRIVATE"\]' "$evidence"
     grep -q '"content_change_proof":{"before_sha256":"[0-9a-f]\{64\}","after_sha256":"[0-9a-f]\{64\}"}' "$evidence"
     grep -q '"started_at":"[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}T[0-9:]\{8\}Z"' "$evidence"

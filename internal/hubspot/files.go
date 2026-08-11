@@ -159,6 +159,27 @@ func (c *FileFolderClient) Get(ctx context.Context, id string) (FileFolder, erro
 	return out, nil
 }
 
+func (c *FileFolderClient) Rename(ctx context.Context, id, name string) (FileFolder, error) {
+	if err := validateGeneratedFilesID(id); err != nil {
+		return FileFolder{}, err
+	}
+	body, err := json.Marshal(struct {
+		Name string `json:"name"`
+	}{Name: name})
+	if err != nil {
+		return FileFolder{}, err
+	}
+	var out FileFolder
+	err = c.transport.Do(ctx, Operation{Name: "file-folder-rename", Method: http.MethodPatch, Path: fileFoldersPath() + "/" + url.PathEscape(id), Replay: ReplayNever, Timeout: filesRequestTimeout}, bytes.NewReader(body), &out)
+	if err != nil {
+		return out, err
+	}
+	if err := validateGeneratedFilesID(out.ID); err != nil {
+		return out, fmt.Errorf("HubSpot File folder response: %w", err)
+	}
+	return out, nil
+}
+
 func (c *FileFolderClient) Update(ctx context.Context, id string, input FileFolderWrite) (FolderUpdateTask, error) {
 	if err := validateGeneratedFilesID(id); err != nil {
 		return FolderUpdateTask{}, err
@@ -260,7 +281,12 @@ func (c *FileClient) Update(ctx context.Context, id string, input FilePatch) (Ma
 	if input.Name == nil && input.FolderID == nil && input.Access == nil {
 		return ManagedFile{}, errors.New("managed file patch must contain at least one managed field")
 	}
-	body, err := json.Marshal(input)
+	payload := input
+	if input.Name != nil {
+		name := managedFileSearchName(*input.Name)
+		payload.Name = &name
+	}
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return ManagedFile{}, err
 	}

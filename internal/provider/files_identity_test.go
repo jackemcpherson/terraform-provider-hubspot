@@ -63,11 +63,14 @@ func TestFileFolderUpdateReadBackRetriesUntilExactValuesConverge(t *testing.T) {
 	}
 	resource := FileFolderResource{folders: clients.FileFolders}
 	plan := fileFolderResourceModel{Name: types.StringValue("assets"), ParentFolderID: types.StringNull()}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	folder, err := resource.waitForFolderPlan(ctx, "10001", plan, "2026-08-01T00:00:00Z")
-	if err != nil || folder.Name != "assets" || reads != 2 {
+	if err != nil || folder.Name != "assets" || reads != 4 {
 		t.Fatalf("read-back = %#v after %d reads, %v", folder, reads, err)
+	}
+	if mismatches := folderPlanMismatches(folder, "10001", plan, "2026-08-01T00:00:00Z"); len(mismatches) != 0 {
+		t.Fatalf("converged folder retained mismatches: %v", mismatches)
 	}
 }
 
@@ -97,7 +100,7 @@ func TestManagedFileUpdateReadBackRetriesUntilExactValuesConverge(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	resource := FileResource{client: clients.Files}
+	resource := FileResource{client: clients.Files, folders: clients.FileFolders}
 	plan := fileResourceModel{Name: types.StringValue("guide.txt"), FolderID: types.StringValue("10001"), Access: types.StringValue("PUBLIC_NOT_INDEXABLE")}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -106,5 +109,33 @@ func TestManagedFileUpdateReadBackRetriesUntilExactValuesConverge(t *testing.T) 
 	})
 	if err != nil || file.Name != "guide.txt" || reads != 2 {
 		t.Fatalf("read-back = %#v after %d reads, %v", file, reads, err)
+	}
+}
+
+func TestManagedFilePathUsesCurrentExactFolderPath(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet || request.URL.Path != "/files/2026-03/folders/10001" {
+			t.Fatalf("unexpected request: %s %s", request.Method, request.URL.Path)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		io.WriteString(writer, `{"id":"10001","name":"child_updated","path":"/root_updated/child_updated","createdAt":"2026-08-01T00:00:00Z","updatedAt":"2026-08-01T00:00:01Z"}`)
+	}))
+	defer server.Close()
+
+	origin, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clients, err := hubspot.NewClientSet(hubspot.TransportConfig{BaseURL: origin, AccessToken: "test", HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource := FileResource{client: clients.Files, folders: clients.FileFolders}
+	file, err := resource.withCurrentFolderPath(context.Background(), hubspot.ManagedFile{ID: "20001", Name: "guide.txt", FolderID: "10001", Path: "/root/child/guide.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if file.Path != "/root_updated/child_updated/guide.txt" {
+		t.Fatalf("current file path = %q", file.Path)
 	}
 }

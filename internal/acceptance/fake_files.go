@@ -169,6 +169,38 @@ func (f *FakeHubSpot) handleFileFolderItem(response http.ResponseWriter, request
 			return
 		}
 		writeFakeJSON(response, http.StatusOK, *folder)
+	case http.MethodPatch:
+		if folder == nil {
+			writeFakeError(response, http.StatusNotFound, "OBJECT_NOT_FOUND", "", "No active File folder matched this identity.")
+			return
+		}
+		var payload struct {
+			Name string `json:"name"`
+		}
+		if !decodeFakeBody(response, request, &payload) {
+			return
+		}
+		if f.nextFilesFault == FilesFaultFolderTaskCanceled {
+			f.nextFilesFault = ""
+			writeFakeError(response, http.StatusConflict, "VALIDATION_ERROR", "", "Folder rename was rejected.")
+			return
+		}
+		for candidateID, candidate := range f.fileFolders {
+			if candidateID != id && candidate.Name == payload.Name && fakeNullableStringEqual(candidate.ParentFolderID, folder.ParentFolderID) {
+				writeFakeError(response, http.StatusConflict, "VALIDATION_ERROR", "", "Target File folder already exists.")
+				return
+			}
+		}
+		folder.Name = payload.Name
+		folder.UpdatedAt = f.advanceFilesTimestamp()
+		f.refreshDerivedFilePaths()
+		if f.nextFilesFault == FilesFaultFolderTaskMalformed {
+			f.nextFilesFault = ""
+			response.WriteHeader(http.StatusOK)
+			fmt.Fprintf(response, `{"id":%q,"archived":"invalid"}`, id)
+			return
+		}
+		writeFakeJSON(response, http.StatusOK, *folder)
 	case http.MethodDelete:
 		if folder == nil {
 			writeFakeError(response, http.StatusNotFound, "OBJECT_NOT_FOUND", "", "No active File folder matched this identity.")
@@ -403,7 +435,7 @@ func (f *FakeHubSpot) handleManagedFileItem(response http.ResponseWriter, reques
 			return
 		}
 		if patch.Name != nil {
-			file.file.Name = *patch.Name
+			file.file.Name = *patch.Name + filepath.Ext(file.file.Name)
 		}
 		if patch.FolderID != nil {
 			if _, exists := f.fileFolders[*patch.FolderID]; !exists {

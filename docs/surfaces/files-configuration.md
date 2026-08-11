@@ -28,6 +28,18 @@ and never stores bytes in state or diagnostics. Remote MD5 and size observations
 drive content drift repair. `PRIVATE` is the default; `PUBLIC_INDEXABLE` and
 `PUBLIC_NOT_INDEXABLE` are the other supported access states.
 
+HubSpot file PATCH and PUT operations can restore an older ancestor-folder
+snapshot. When one change updates both a file and its ancestor folder names,
+apply the file metadata or content change first, then rename folders
+root-to-leaf in separate applies. The provider verifies each stage by exact
+generated ID and does not mutate a separate folder resource from the file
+resource to hide this service behavior.
+
+HubSpot also reports success and then reverts a folder rename when that folder
+contains direct Managed files. The provider rejects that rename before mutation.
+Move the direct files elsewhere, rename the folder, then move the files back in
+a later apply. Renaming an ancestor with only child folders remains supported.
+
 The `files-configuration` consumer module manages one hierarchy level with
 stable map keys. Compose deeper hierarchy by passing a generated `folder_ids`
 value to the child module's `parent_folder_id`. This makes dependencies explicit

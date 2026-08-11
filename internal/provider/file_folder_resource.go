@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -24,6 +25,8 @@ type FileFolderResource struct {
 	folders *hubspot.FileFolderClient
 	files   *hubspot.FileClient
 }
+
+var fileFolderUpdateMutex sync.Mutex
 
 var (
 	_ resource.ResourceWithImportState = (*FileFolderResource)(nil)
@@ -179,6 +182,8 @@ func (r *FileFolderResource) Read(ctx context.Context, request resource.ReadRequ
 }
 
 func (r *FileFolderResource) Update(ctx context.Context, request resource.UpdateRequest, response *resource.UpdateResponse) {
+	fileFolderUpdateMutex.Lock()
+	defer fileFolderUpdateMutex.Unlock()
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	var state, plan fileFolderResourceModel
@@ -186,6 +191,18 @@ func (r *FileFolderResource) Update(ctx context.Context, request resource.Update
 	response.Diagnostics.Append(request.Plan.Get(ctx, &plan)...)
 	if response.Diagnostics.HasError() {
 		return
+	}
+	if state.Name.ValueString() != plan.Name.ValueString() {
+		id := state.ID.ValueString()
+		childFiles, err := r.files.Search(ctx, &id, "")
+		if err != nil {
+			appendHubSpotDiagnostic(&response.Diagnostics, "File folder rename preflight failed", err)
+			return
+		}
+		if hasActiveFileChildren(childFiles, state.ID.ValueString()) {
+			response.Diagnostics.AddError("File folder rename requires no direct files", "HubSpot reports success but reverts a rename when the folder contains direct Managed files. Move or remove those files first, then rename the folder and move the files back in a later apply.")
+			return
+		}
 	}
 	parent := nullableStringPointer(plan.ParentFolderID)
 	collision, err := r.folderCollision(ctx, parent, plan.Name.ValueString(), state.ID.ValueString())
@@ -197,19 +214,40 @@ func (r *FileFolderResource) Update(ctx context.Context, request resource.Update
 		response.Diagnostics.AddError("File folder collision", "Another active File folder already uses the requested target name under the exact parent. No update was sent and prior state was retained.")
 		return
 	}
-	task, err := r.folders.Update(ctx, state.ID.ValueString(), hubspot.FileFolderWrite{Name: plan.Name.ValueString(), ParentFolderID: parent})
-	if err != nil {
-		appendHubSpotDiagnostic(&response.Diagnostics, "File folder update did not complete", err)
-		return
-	}
-	if err := r.waitForFolderTask(ctx, task.ID); err != nil {
-		response.Diagnostics.AddError("File folder update did not complete", "HubSpot did not report a valid terminal COMPLETE task. Prior identity and state were retained for a safe retry.")
-		return
+	parentChanged := !nullableStringsEqual(nullableStringPointer(state.ParentFolderID), parent)
+	var updateErr error
+	if parentChanged {
+		task, err := r.folders.Update(ctx, state.ID.ValueString(), hubspot.FileFolderWrite{Name: plan.Name.ValueString(), ParentFolderID: parent})
+		if err != nil {
+			appendHubSpotDiagnostic(&response.Diagnostics, "File folder update did not complete", err)
+			return
+		}
+		if err := r.waitForFolderTask(ctx, task.ID); err != nil {
+			response.Diagnostics.AddError("File folder update did not complete", "HubSpot did not report a valid terminal COMPLETE task. Prior identity and state were retained for a safe retry.")
+			return
+		}
+	} else {
+		if err := r.waitForCurrentParentPath(ctx, state.ID.ValueString(), parent); err != nil {
+			response.Diagnostics.AddError("File folder update was not verified", "The current child folder path did not converge with its exact parent before rename. Prior identity and state were retained for a safe retry.")
+			return
+		}
+		_, updateErr = r.folders.Rename(ctx, state.ID.ValueString(), plan.Name.ValueString())
 	}
 	verified, err := r.waitForFolderPlan(ctx, state.ID.ValueString(), plan, state.CreatedAt.ValueString())
 	if err != nil {
-		response.Diagnostics.AddError("File folder update was not verified", "Exact-ID read-back did not match every planned managed value. Prior identity and state were retained for a safe retry.")
+		detail := "Exact-ID read-back did not match every planned managed value. Prior identity and state were retained for a safe retry."
+		if mismatches := folderPlanMismatches(verified, state.ID.ValueString(), plan, state.CreatedAt.ValueString()); len(mismatches) > 0 {
+			detail += " Mismatched fields: " + strings.Join(mismatches, ", ") + "."
+		}
+		response.Diagnostics.AddError("File folder update was not verified", detail)
 		return
+	}
+	if updateErr != nil {
+		if !isAmbiguous(updateErr) {
+			appendHubSpotDiagnostic(&response.Diagnostics, "File folder update was not verified", updateErr)
+			return
+		}
+		response.Diagnostics.AddWarning("Folder PATCH response was ambiguous", "Exact generated-ID read-back proved the planned name, parent, path, and creation time, so the rename converged without replaying PATCH.")
 	}
 	model, diagnostics := folderModelFromRemote(verified)
 	response.Diagnostics.Append(diagnostics...)
@@ -227,17 +265,12 @@ func (r *FileFolderResource) Delete(ctx context.Context, request resource.Delete
 		return
 	}
 	id := state.ID.ValueString()
-	childFolders, err := r.folders.Search(ctx, &id, "")
+	empty, err := r.waitForFolderEmpty(ctx, id)
 	if err != nil {
 		appendHubSpotDiagnostic(&response.Diagnostics, "File folder child preflight failed", err)
 		return
 	}
-	childFiles, err := r.files.Search(ctx, &id, "")
-	if err != nil {
-		appendHubSpotDiagnostic(&response.Diagnostics, "File folder child preflight failed", err)
-		return
-	}
-	if hasActiveFolderChildren(childFolders, id) || hasActiveFileChildren(childFiles, id) {
+	if !empty {
 		response.Diagnostics.AddError("File folder is not empty", "The folder has at least one active direct child File folder or Managed file. Remove every child file first and child folder leaf-first; cascade deletion was not invoked.")
 		return
 	}
@@ -293,6 +326,56 @@ func (r *FileFolderResource) folderCollision(ctx context.Context, parent *string
 	return false, nil
 }
 
+func (r *FileFolderResource) waitForFolderEmpty(ctx context.Context, id string) (bool, error) {
+	const attempts = 7
+	for attempt := 0; attempt < attempts; attempt++ {
+		childFolders, err := r.folders.Search(ctx, &id, "")
+		if err != nil {
+			return false, err
+		}
+		childFiles, err := r.files.Search(ctx, &id, "")
+		if err != nil {
+			return false, err
+		}
+		if !hasActiveFolderChildren(childFolders, id) && !hasActiveFileChildren(childFiles, id) {
+			return true, nil
+		}
+		if attempt+1 < attempts {
+			if err := sleepResourcePoll(ctx, attempt); err != nil {
+				return false, err
+			}
+		}
+	}
+	return false, nil
+}
+
+func (r *FileFolderResource) waitForCurrentParentPath(ctx context.Context, id string, parentID *string) error {
+	if parentID == nil {
+		return nil
+	}
+	const attempts = 7
+	for attempt := 0; attempt < attempts; attempt++ {
+		parent, parentErr := r.folders.Get(ctx, *parentID)
+		folder, folderErr := r.folders.Get(ctx, id)
+		if parentErr != nil {
+			return parentErr
+		}
+		if folderErr != nil {
+			return folderErr
+		}
+		expectedPath := strings.TrimRight(parent.Path, "/") + "/" + folder.Name
+		if !parent.Archived && !folder.Archived && parent.ID == *parentID && folder.ID == id && nullableStringsEqual(folder.ParentFolderID, parentID) && folder.Path == expectedPath {
+			return nil
+		}
+		if attempt+1 < attempts {
+			if err := sleepResourcePoll(ctx, attempt); err != nil {
+				return err
+			}
+		}
+	}
+	return errors.New("child folder path did not converge with current parent")
+}
+
 func (r *FileFolderResource) waitForFolderTask(ctx context.Context, id string) error {
 	for attempt := 0; ; attempt++ {
 		task, err := r.folders.GetUpdateTask(ctx, id)
@@ -319,15 +402,22 @@ func (r *FileFolderResource) waitForFolderTask(ctx context.Context, id string) e
 
 func (r *FileFolderResource) waitForFolderPlan(ctx context.Context, id string, plan fileFolderResourceModel, createdAt string) (hubspot.FileFolder, error) {
 	const attempts = 7
+	const requiredConsecutiveMatches = 3
 	var observed hubspot.FileFolder
+	consecutiveMatches := 0
 	for attempt := 0; attempt < attempts; attempt++ {
 		folder, err := r.folders.Get(ctx, id)
 		if err != nil {
 			return folder, err
 		}
 		observed = folder
-		if folderMatchesPlan(folder, id, plan) && folder.CreatedAt == createdAt {
-			return folder, nil
+		if len(folderPlanMismatches(folder, id, plan, createdAt)) == 0 {
+			consecutiveMatches++
+			if consecutiveMatches == requiredConsecutiveMatches {
+				return folder, nil
+			}
+		} else {
+			consecutiveMatches = 0
 		}
 		if attempt+1 < attempts {
 			if err := sleepResourcePoll(ctx, attempt); err != nil {
@@ -381,6 +471,29 @@ func folderModelFromRemote(folder hubspot.FileFolder) (fileFolderResourceModel, 
 
 func folderMatchesPlan(folder hubspot.FileFolder, expectedID string, plan fileFolderResourceModel) bool {
 	return !folder.Archived && folder.ID == expectedID && folder.Name == plan.Name.ValueString() && nullableStringsEqual(folder.ParentFolderID, nullableStringPointer(plan.ParentFolderID)) && folder.Path != "" && pathEndsWithName(folder.Path, folder.Name)
+}
+
+func folderPlanMismatches(folder hubspot.FileFolder, expectedID string, plan fileFolderResourceModel, createdAt string) []string {
+	mismatches := make([]string, 0, 6)
+	if folder.Archived {
+		mismatches = append(mismatches, "active status")
+	}
+	if folder.ID != expectedID {
+		mismatches = append(mismatches, "generated identity")
+	}
+	if folder.Name != plan.Name.ValueString() {
+		mismatches = append(mismatches, "name")
+	}
+	if !nullableStringsEqual(folder.ParentFolderID, nullableStringPointer(plan.ParentFolderID)) {
+		mismatches = append(mismatches, "parent folder")
+	}
+	if folder.Path == "" || !pathEndsWithName(folder.Path, folder.Name) {
+		mismatches = append(mismatches, "path")
+	}
+	if folder.CreatedAt != createdAt {
+		mismatches = append(mismatches, "creation timestamp")
+	}
+	return mismatches
 }
 
 func nullableStringPointer(value types.String) *string {

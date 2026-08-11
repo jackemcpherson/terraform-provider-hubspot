@@ -50,6 +50,7 @@ func runHermeticFilesConfigurationRecovery(t *testing.T, engine acceptance.Engin
 	}
 	initial := hermeticFilesConfig(server.URL, providerSource, sourcePath, sourceDigest(contents), false)
 	updated := hermeticFilesConfig(server.URL, providerSource, sourcePath, sourceDigest(contents), true)
+	fileUpdated := strings.Replace(updated, "Hermetic Files root updated", "Hermetic Files root", 1)
 	t.Setenv("HUBSPOT_ACCESS_TOKEN", hermeticToken)
 	acceptance.Run(t, acceptance.Options{
 		Engine: engine, Shard: acceptance.FilesConfiguration,
@@ -67,6 +68,8 @@ func runHermeticFilesConfigurationRecovery(t *testing.T, engine acceptance.Engin
 		session.RequireEmptyPlan(initial)
 
 		fake.FailNextFilesOperation(acceptance.FilesFaultPatchApplied)
+		session.Apply(fileUpdated)
+		session.RequireEmptyPlan(fileUpdated)
 		session.Apply(updated)
 		session.RequireEmptyPlan(updated)
 
@@ -138,22 +141,29 @@ func runHermeticFilesConfigurationLifecycle(t *testing.T, engine acceptance.Engi
 		fileID := session.OpaqueStateString("hubspot_file.managed", "id")
 		session.RequireEmptyPlan(initial)
 		session.RequireManagedFileDuplicateRejected("hubspot_file.managed", initialBytes)
+		unsupportedChildRename := strings.Replace(initial, "Hermetic Files child", "Hermetic Files child renamed", 1)
+		session.RequireApplyFailure(unsupportedChildRename)
+		session.RequireEmptyPlan(initial)
 
 		if err := os.WriteFile(sourcePath, updatedBytes, 0o600); err != nil {
 			t.Fatal(err)
 		}
 		updated := hermeticFilesConfig(server.URL, providerSource, sourcePath, sourceDigest(updatedBytes), true)
+		fileUpdated := strings.Replace(updated, "Hermetic Files root updated", "Hermetic Files root", 1)
+		session.Apply(fileUpdated)
+		session.RequireEmptyPlan(fileUpdated)
 		session.Apply(updated)
 		if session.OpaqueStateString("hubspot_file_folder.root", "id") != rootID || session.OpaqueStateString("hubspot_file_folder.child", "id") != childID || session.OpaqueStateString("hubspot_file.managed", "id") != fileID {
 			t.Fatal("in-place Files updates changed a generated identity")
 		}
 		session.RequireStateString("hubspot_file.managed", "access", "PUBLIC_NOT_INDEXABLE")
 		session.RequireEmptyPlan(updated)
+		session.Refresh(updated)
 		session.RequireStateString("hubspot_file_folder.root", "path", "/Hermetic Files root updated")
-		session.RequireStateString("hubspot_file_folder.child", "path", "/Hermetic Files root updated/Hermetic Files child updated")
-		session.RequireStateString("hubspot_file.managed", "path", "/Hermetic Files root updated/Hermetic Files child updated/managed-updated.txt")
+		session.RequireStateString("hubspot_file_folder.child", "path", "/Hermetic Files root updated/Hermetic Files child")
+		session.RequireStateString("hubspot_file.managed", "path", "/Hermetic Files root updated/Hermetic Files child/managed-updated.txt")
 
-		if !fake.DriftFileFolderName(childID, "out-of-band-folder-drift") {
+		if !fake.DriftFileFolderName(rootID, "out-of-band-folder-drift") {
 			t.Fatal("could not inject File folder name drift")
 		}
 		session.RequirePlanDiff(updated)
@@ -225,7 +235,6 @@ func hermeticFilesConfig(apiBaseURL, providerSource, sourcePath, sourceSHA256 st
 	access := "PRIVATE"
 	if updated {
 		rootName = "Hermetic Files root updated"
-		childName = "Hermetic Files child updated"
 		fileName = "managed-updated.txt"
 		access = "PUBLIC_NOT_INDEXABLE"
 	}

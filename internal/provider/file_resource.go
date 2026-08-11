@@ -21,7 +21,10 @@ import (
 	"github.com/jackemcpherson/terraform-provider-hubspot/internal/hubspot"
 )
 
-type FileResource struct{ client *hubspot.FileClient }
+type FileResource struct {
+	client  *hubspot.FileClient
+	folders *hubspot.FileFolderClient
+}
 
 var (
 	_ resource.ResourceWithImportState = (*FileResource)(nil)
@@ -91,11 +94,12 @@ func (r *FileResource) Configure(_ context.Context, request resource.ConfigureRe
 		return
 	}
 	clients, ok := request.ProviderData.(*hubspot.ClientSet)
-	if !ok || clients == nil || clients.Files == nil {
+	if !ok || clients == nil || clients.Files == nil || clients.FileFolders == nil {
 		response.Diagnostics.AddError("Provider is not configured", "The HubSpot Files client was not available to hubspot_file.")
 		return
 	}
 	r.client = clients.Files
+	r.folders = clients.FileFolders
 }
 
 func (r *FileResource) ModifyPlan(ctx context.Context, request resource.ModifyPlanRequest, response *resource.ModifyPlanResponse) {
@@ -227,6 +231,11 @@ func (r *FileResource) Read(ctx context.Context, request resource.ReadRequest, r
 		response.Diagnostics.AddError("Managed file refresh was not verified", "HubSpot did not return the same active generated file ID. Prior state was retained.")
 		return
 	}
+	file, err = r.withCurrentFolderPath(ctx, file)
+	if err != nil {
+		appendHubSpotDiagnostic(&response.Diagnostics, "Managed file path refresh failed", err)
+		return
+	}
 	model, diagnostics := fileModelFromRemote(file, state)
 	response.Diagnostics.Append(diagnostics...)
 	if !response.Diagnostics.HasError() {
@@ -318,6 +327,11 @@ func (r *FileResource) Update(ctx context.Context, request resource.UpdateReques
 		}
 		current = verified
 	}
+	current, err = r.withCurrentFolderPath(ctx, current)
+	if err != nil {
+		appendHubSpotDiagnostic(&response.Diagnostics, "Managed file update was not verified", err)
+		return
+	}
 	model, diagnostics := fileModelFromRemote(current, plan)
 	response.Diagnostics.Append(diagnostics...)
 	if !response.Diagnostics.HasError() {
@@ -366,6 +380,11 @@ func (r *FileResource) ImportState(ctx context.Context, request resource.ImportS
 		response.Diagnostics.AddAttributeError(path.Root("id"), "Managed file import identity mismatch", "HubSpot did not return the same active generated file ID; no state was written.")
 		return
 	}
+	file, err = r.withCurrentFolderPath(ctx, file)
+	if err != nil {
+		appendHubSpotDiagnostic(&response.Diagnostics, "Managed file import failed", err)
+		return
+	}
 	base := fileResourceModel{SourcePath: types.StringNull(), SourceSHA256: types.StringNull()}
 	model, diagnostics := fileModelFromRemote(file, base)
 	response.Diagnostics.Append(diagnostics...)
@@ -385,6 +404,21 @@ func (r *FileResource) fileCollision(ctx context.Context, folderID, name, exclud
 		}
 	}
 	return false, nil
+}
+
+func (r *FileResource) withCurrentFolderPath(ctx context.Context, file hubspot.ManagedFile) (hubspot.ManagedFile, error) {
+	if r.folders == nil {
+		return file, errors.New("HubSpot File folders client is unavailable")
+	}
+	folder, err := r.folders.Get(ctx, file.FolderID)
+	if err != nil {
+		return file, err
+	}
+	if folder.Archived || folder.ID != file.FolderID || folder.Path == "" {
+		return file, errors.New("exact active destination folder path was not verified")
+	}
+	file.Path = strings.TrimRight(folder.Path, "/") + "/" + file.Name
+	return file, nil
 }
 
 func (r *FileResource) waitForManagedFile(ctx context.Context, id string, matches func(hubspot.ManagedFile) bool) (hubspot.ManagedFile, error) {
