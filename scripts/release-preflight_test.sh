@@ -16,7 +16,7 @@ new_fixture() {
 
 commit_fixture() {
   git -C "$fixture" add -A
-  git -C "$fixture" commit --quiet -m fixture
+  git -C "$fixture" commit --quiet --allow-empty -m fixture
   git -C "$fixture" rev-parse HEAD
 }
 
