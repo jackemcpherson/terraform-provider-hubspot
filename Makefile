@@ -51,6 +51,7 @@ check-docs:
 check-workflows:
 	@go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
 	@./scripts/check-workflows.sh
+	@./scripts/release-preflight_test.sh
 	@./scripts/northstar-maintenance_test.sh
 	@./scripts/acceptance-cleanup_test.sh
 
