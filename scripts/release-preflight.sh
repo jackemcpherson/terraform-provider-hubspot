@@ -15,7 +15,11 @@ test -s "$release_notes" || {
   echo "release notes are missing for $version" >&2
   exit 1
 }
-grep -Fq "# $version:" "$release_notes" || {
-  echo "release notes do not describe $version" >&2
-  exit 1
-}
+release_title=$(sed -n '/^# /{p;q;}' "$release_notes")
+case $release_title in
+  "# $version" | "# $version"[!0-9A-Za-z.+-]*) ;;
+  *)
+    echo "release notes do not describe $version" >&2
+    exit 1
+    ;;
+esac

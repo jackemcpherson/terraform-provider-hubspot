@@ -41,6 +41,16 @@ commit=$(commit_fixture)
 GOCACHE="${GOCACHE:-$tmp/go-cache}" \
   "$fixture/scripts/release-preflight.sh" v0.4.0 "$commit"
 
+new_fixture alternate-title-separator
+sed '1s/^# v0\.4\.0:/# v0.4.0 -/' \
+  "$fixture/docs/releases/v0.4.0.md" \
+  >"$fixture/docs/releases/v0.4.0.md.tmp"
+mv "$fixture/docs/releases/v0.4.0.md.tmp" \
+  "$fixture/docs/releases/v0.4.0.md"
+commit=$(commit_fixture)
+GOCACHE="${GOCACHE:-$tmp/go-cache}" \
+  "$fixture/scripts/release-preflight.sh" v0.4.0 "$commit"
+
 new_fixture missing-notes
 description='missing release notes'
 rm "$fixture/docs/releases/v0.4.0.md"
@@ -59,6 +69,17 @@ sed '1s/^# v0\.4\.0:/# v0.4.1:/' "$fixture/docs/releases/v0.4.0.md" \
   >"$fixture/docs/releases/v0.4.0.md.tmp"
 mv "$fixture/docs/releases/v0.4.0.md.tmp" \
   "$fixture/docs/releases/v0.4.0.md"
+commit=$(commit_fixture)
+expect_failure 'release notes do not describe v0.4.0' "$commit"
+
+new_fixture decoy-version-marker
+description='release notes with a decoy version marker'
+sed '1s/^# v0\.4\.0:/# v0.4.1:/' "$fixture/docs/releases/v0.4.0.md" \
+  >"$fixture/docs/releases/v0.4.0.md.tmp"
+mv "$fixture/docs/releases/v0.4.0.md.tmp" \
+  "$fixture/docs/releases/v0.4.0.md"
+printf '\nThis body mentions # v0.4.0: but describes another release.\n' \
+  >>"$fixture/docs/releases/v0.4.0.md"
 commit=$(commit_fixture)
 expect_failure 'release notes do not describe v0.4.0' "$commit"
 

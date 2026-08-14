@@ -13,8 +13,8 @@ the small v0.x publication transaction defined by ADR 0003.
   public resources, data sources, and state upgrades.
 - [x] The changelog, release notes, generated references, examples, permissions,
   and lifecycle guides describe the v0.4.0 contract and exclusions.
-- [x] The local and pull-request `Required` gate passes with current OpenTofu and
-  Terraform versions.
+- [x] The local and pull-request `Required` gate passes with current
+  OpenTofu and Terraform versions.
 - [x] Vulnerability, workflow security, release configuration, artifact naming,
   checksum, signature, and Registry manifest checks pass.
 - [x] Exact clean-checkout preflight validates the dated changelog and matching
