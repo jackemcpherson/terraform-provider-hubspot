@@ -67,19 +67,20 @@ registration and the sibling demo's HCL:
 
 ```sh
 make docs-portal
-make docs-portal-update # after reviewed provider schema, module HCL, or portal changes
+# Run after reviewed provider schema, module HCL, or portal changes.
+make docs-portal-update
 make docs-portal-serve # localhost only
 ```
 
 Set `HUBSPOT_DEMO_REPO` when the demo is not at
-`../terraform-hubspot-demo`. Candidate gates also set exact expected commits and
-require clean inputs through the `DOCS_PORTAL_*` environment variables.
+`../terraform-hubspot-demo`.
+
 `make docs-portal` rejects a stale committed source digest and smoke-renders the
 localhost build; `make docs-portal-update` intentionally refreshes that digest.
 
 ## Exclusions
 
-The v0.4.0 candidate does not manage CRM records, record values, form
+The v0.4.0 release does not manage CRM records, record values, form
 submissions, pipelines, custom schemas, association labels, sensitive
 definitions, OAuth, consent, notification or automation behavior, non-email
 form fields, HubSpot-defined properties, CMS Developer File System content, URL
@@ -95,6 +96,7 @@ make tools
 make check
 ```
 
-`make check` formats and tests the Go code, checks generated references, and
-validates each reviewed example with both CLIs. Live HubSpot acceptance runs in
-protected workflows against disposable accounts.
+`make check` runs the same fast required gate used by pull requests. It formats
+and analyses Go code, runs unit tests, checks generated references and workflow
+syntax, and validates reviewed examples with both current CLIs. Slower security
+checks and live HubSpot acceptance run in weekly maintenance.

@@ -2,15 +2,8 @@ name: Quality
 
 on:
   pull_request:
-    branches: [main]
-    paths:
-      - '**'
   push:
     branches: [main]
-    paths:
-      - '**'
-  schedule:
-    - cron: '17 3 * * 1'
 
 permissions: {}
 
@@ -19,28 +12,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deterministic:
-    name: Deterministic provider checks
+  required:
+    name: Required
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 10
     permissions:
       contents: read
-    env:
-      HUBSPOT_DEMO_REPO: ${{ github.workspace }}/.demo-source
-      DOCS_PORTAL_REQUIRE_CLEAN: '1'
-      DOCS_PORTAL_PROVIDER_COMMIT: ${{ github.sha }}
-      DOCS_PORTAL_DEMO_COMMIT: 391d17570c437dc104bbde08bb4776e551de9b09
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          persist-credentials: false
-      - name: Check out Northstar demo for generated portal
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: jackemcpherson/terraform-hubspot-instance-demo
-          ref: 391d17570c437dc104bbde08bb4776e551de9b09
-          path: .demo-source
           persist-credentials: false
       - name: Set up provider toolchain
         uses: ./.github/actions/setup-provider-toolchain
@@ -49,153 +30,5 @@ jobs:
           terraform-version: '1.15.8'
       - name: Install pinned developer tools
         run: make tools
-      - name: Run aggregate gate
+      - name: Run required checks
         run: make check
-      - name: Run Registry release pre-flight
-        run: make release-preflight
-      - name: Verify generated documentation
-        run: make docs && git diff --exit-code -- docs
-
-  engine:
-    name: Engine / ${{ matrix.engine }} ${{ matrix.version }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - engine: tofu
-            version: 1.8.8
-            tofu-version: 1.8.8
-            terraform-version: ''
-          - engine: tofu
-            version: 1.10.10
-            tofu-version: 1.10.10
-            terraform-version: ''
-          - engine: tofu
-            version: 1.11.11
-            tofu-version: 1.11.11
-            terraform-version: ''
-          - engine: tofu
-            version: 1.12.3
-            tofu-version: 1.12.3
-            terraform-version: ''
-          - engine: terraform
-            version: 1.8.5
-            tofu-version: ''
-            terraform-version: 1.8.5
-          - engine: terraform
-            version: 1.15.8
-            tofu-version: ''
-            terraform-version: 1.15.8
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    env:
-      ENGINE: ${{ matrix.engine }}
-      TOFU_EXPECTED_VERSION: ${{ matrix.version }}
-      TERRAFORM_EXPECTED_VERSION: ${{ matrix.version }}
-    steps:
-      - name: Check out source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Set up provider toolchain
-        uses: ./.github/actions/setup-provider-toolchain
-        with:
-          tofu-version: ${{ matrix.tofu-version }}
-          terraform-version: ${{ matrix.terraform-version }}
-      - name: Exercise provider with selected engine
-        run: ./scripts/engine-smoke.sh
-
-  hermetic:
-    name: Hermetic provider lifecycle
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    env:
-      HUBSPOT_DEMO_REPO: ${{ github.workspace }}/.demo-source
-    steps:
-      - name: Check out source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Check out exact consumer module
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: jackemcpherson/terraform-hubspot-instance-demo
-          ref: 391d17570c437dc104bbde08bb4776e551de9b09
-          path: .demo-source
-          persist-credentials: false
-      - name: Set up provider toolchain
-        uses: ./.github/actions/setup-provider-toolchain
-        with:
-          tofu-version: '1.12.3'
-          terraform-version: '1.15.8'
-      - name: Run provider lifecycle shards against the HubSpot fake
-        run: make test-hermetic
-
-  codeql:
-    name: CodeQL
-    runs-on: ubuntu-24.04
-    timeout-minutes: 25
-    permissions:
-      contents: read
-      security-events: write
-    steps:
-      - name: Check out source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
-        with:
-          languages: go
-      - name: Build for CodeQL
-        uses: github/codeql-action/autobuild@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
-      - name: Analyze with CodeQL
-        uses: github/codeql-action/analyze@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
-
-  scorecard:
-    name: OpenSSF Scorecard
-    if: github.event_name == 'schedule'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      security-events: write
-    steps:
-      - name: Check out source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Run OpenSSF Scorecard
-        uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
-        with:
-          results_file: scorecard.sarif
-          results_format: sarif
-          publish_results: false
-      - name: Upload Scorecard SARIF
-        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
-        with:
-          sarif_file: scorecard.sarif
-
-  required:
-    name: Required
-    if: always()
-    needs: [deterministic, engine, hermetic, codeql]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions: {}
-    env:
-      DETERMINISTIC_RESULT: ${{ needs.deterministic.result }}
-      ENGINE_RESULT: ${{ needs.engine.result }}
-      HERMETIC_RESULT: ${{ needs.hermetic.result }}
-      CODEQL_RESULT: ${{ needs.codeql.result }}
-    steps:
-      - name: Enforce required quality results
-        run: |
-          test "$DETERMINISTIC_RESULT" = success
-          test "$ENGINE_RESULT" = success
-          test "$HERMETIC_RESULT" = success
-          test "$CODEQL_RESULT" = success

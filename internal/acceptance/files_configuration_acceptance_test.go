@@ -6,17 +6,13 @@
 package acceptance_test
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/jackemcpherson/terraform-provider-hubspot/internal/acceptance"
 )
@@ -52,13 +48,12 @@ func TestAcc_files_configuration_TerraformLifecycle(t *testing.T) {
 func runLiveFilesConfigurationLifecycle(t *testing.T, engine acceptance.Engine, providerSource string) {
 	t.Helper()
 	requireAcceptanceEnabled(t)
-	startedAt := time.Now().UTC()
 	prefix := requiredEnvironment(t, "HUBSPOT_ACCEPTANCE_PREFIX") + string(engine) + "_"
 	ledger := requiredEnvironment(t, "HUBSPOT_ACCEPTANCE_CLEANUP_LEDGER")
 	directory := t.TempDir()
 	sourcePath := filepath.Join(directory, "managed.txt")
-	initialBytes := []byte("Files candidate content v1\n")
-	updatedBytes := []byte("Files candidate content v2\n")
+	initialBytes := []byte("Files maintenance content v1\n")
+	updatedBytes := []byte("Files maintenance content v2\n")
 	if err := os.WriteFile(sourcePath, initialBytes, 0o600); err != nil {
 		t.Fatalf("write initial Files acceptance source: %v", err)
 	}
@@ -162,10 +157,6 @@ func runLiveFilesConfigurationLifecycle(t *testing.T, engine acceptance.Engine, 
 		session.RequireFilesTerminal(prefix, []string{reusedFileID}, []string{reusedRootID, reusedChildID, reusedTargetID})
 	})
 
-	if t.Failed() {
-		return
-	}
-	writeFilesAcceptanceEvidence(t, engine, []string{rootID, childID, targetID, initialFileID, finalFileID, reusedRootID, reusedChildID, reusedTargetID, reusedFileID}, initialDigest, updatedDigest, startedAt, time.Now().UTC())
 }
 
 func requireFilesIdentitiesUnchanged(t *testing.T, session *acceptance.Session, rootID, childID, targetID, fileID string) {
@@ -258,101 +249,4 @@ resource "hubspot_file" "managed" {
   access        = %q
 }
 %s%s`, providerSource, rootName, targetName, childName, parent, fileName, sourcePath, digest, access, folderCollision, fileCollision)
-}
-
-type filesContentChangeProof struct {
-	BeforeSHA256 string `json:"before_sha256"`
-	AfterSHA256  string `json:"after_sha256"`
-}
-
-type filesActiveCleanupCounts struct {
-	Files   int `json:"files"`
-	Folders int `json:"folders"`
-}
-
-type filesAcceptanceEvidence struct {
-	CandidateCommit         string                   `json:"candidate_commit"`
-	Engine                  string                   `json:"engine"`
-	APIFamily               string                   `json:"api_family"`
-	ScopeFamily             string                   `json:"scope_family"`
-	PortalFingerprint       string                   `json:"portal_fingerprint"`
-	GeneratedIdentityHashes []string                 `json:"generated_identity_hashes"`
-	AccessTransitions       []string                 `json:"access_transitions"`
-	ContentChangeProof      filesContentChangeProof  `json:"content_change_proof"`
-	StartedAt               string                   `json:"started_at"`
-	CompletedAt             string                   `json:"completed_at"`
-	ActiveCleanupCounts     filesActiveCleanupCounts `json:"active_cleanup_counts"`
-	TrashRetention          string                   `json:"trash_retention"`
-	FinalState              string                   `json:"final_state"`
-	Cleanup                 string                   `json:"cleanup"`
-	Status                  string                   `json:"status"`
-}
-
-func TestFilesAcceptanceEvidenceIsSanitized(t *testing.T) {
-	t.Setenv("HUBSPOT_ACCEPTANCE_EVIDENCE_DIR", t.TempDir())
-	t.Setenv("HUBSPOT_ACCEPTANCE_CANDIDATE_COMMIT", strings.Repeat("a", 40))
-	t.Setenv("HUBSPOT_ACCEPTANCE_PORTAL_ID", "12345678")
-	ids := []string{"10001", "10002", "10003", "20001", "20002", "10004", "10005", "10006", "20003"}
-	writeFilesAcceptanceEvidence(t, acceptance.OpenTofu, ids, strings.Repeat("b", 64), strings.Repeat("c", 64), time.Date(2026, 8, 4, 5, 0, 0, 0, time.UTC), time.Date(2026, 8, 4, 5, 1, 0, 0, time.UTC))
-	contents, err := os.ReadFile(filepath.Join(os.Getenv("HUBSPOT_ACCEPTANCE_EVIDENCE_DIR"), "files_configuration-tofu.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, forbidden := range append([]string{"12345678", "tf_acc_", "Files candidate content"}, ids...) {
-		if bytes.Contains(contents, []byte(forbidden)) {
-			t.Fatal("Files acceptance evidence exposed raw portal configuration")
-		}
-	}
-	var evidence filesAcceptanceEvidence
-	if err := json.Unmarshal(contents, &evidence); err != nil {
-		t.Fatal(err)
-	}
-	if evidence.Engine != "tofu" || evidence.APIFamily != "files/2026-03" || evidence.ScopeFamily != "files" || evidence.Cleanup != "passed" || evidence.Status != "passed" || evidence.ActiveCleanupCounts.Files != 0 || evidence.ActiveCleanupCounts.Folders != 0 || len(evidence.GeneratedIdentityHashes) != 9 {
-		t.Fatalf("Files acceptance evidence did not preserve the sanitized contract: %#v", evidence)
-	}
-}
-
-func writeFilesAcceptanceEvidence(t *testing.T, engine acceptance.Engine, ids []string, beforeDigest, afterDigest string, startedAt, completedAt time.Time) {
-	t.Helper()
-	directory := requiredEnvironment(t, "HUBSPOT_ACCEPTANCE_EVIDENCE_DIR")
-	commit := requiredEnvironment(t, "HUBSPOT_ACCEPTANCE_CANDIDATE_COMMIT")
-	if !exactCandidateCommit.MatchString(commit) {
-		t.Fatal("Files acceptance evidence requires an exact candidate commit")
-	}
-	portalID := requiredEnvironment(t, "HUBSPOT_ACCEPTANCE_PORTAL_ID")
-	identityHashes := make([]string, 0, len(ids))
-	for _, id := range ids {
-		identityHashes = append(identityHashes, evidenceHash("hubspot-files-identity", id))
-	}
-	sort.Strings(identityHashes)
-	evidence := filesAcceptanceEvidence{
-		CandidateCommit:         commit,
-		Engine:                  string(engine),
-		APIFamily:               "files/2026-03",
-		ScopeFamily:             "files",
-		PortalFingerprint:       evidenceHash("hubspot-portal", portalID),
-		GeneratedIdentityHashes: identityHashes,
-		AccessTransitions:       []string{"PRIVATE", "PUBLIC_NOT_INDEXABLE", "PRIVATE"},
-		ContentChangeProof:      filesContentChangeProof{BeforeSHA256: beforeDigest, AfterSHA256: afterDigest},
-		StartedAt:               startedAt.Format(time.RFC3339),
-		CompletedAt:             completedAt.Format(time.RFC3339),
-		ActiveCleanupCounts:     filesActiveCleanupCounts{},
-		TrashRetention:          "expected",
-		FinalState:              "zero_active_configuration",
-		Cleanup:                 "passed",
-		Status:                  "passed",
-	}
-	contents, err := json.Marshal(evidence)
-	if err != nil {
-		t.Fatalf("encode sanitized Files acceptance evidence: %v", err)
-	}
-	for _, forbidden := range append([]string{portalID}, ids...) {
-		if bytes.Contains(contents, []byte(forbidden)) {
-			t.Fatal("Files acceptance evidence contained a raw portal or generated identity")
-		}
-	}
-	path := filepath.Join(directory, "files_configuration-"+string(engine)+".json")
-	if err := os.WriteFile(path, append(contents, '\n'), 0o600); err != nil {
-		t.Fatalf("write sanitized Files acceptance evidence: %v", err)
-	}
 }

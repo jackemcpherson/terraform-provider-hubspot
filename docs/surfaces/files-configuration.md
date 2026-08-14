@@ -51,4 +51,4 @@ active absence but do not claim physical erasure: HubSpot controls subsequent
 Trash retention. The executable Northstar composition example demonstrates two
 folder levels and private and public non-indexable files. The protected
 cumulative journey adds byte replacement, drift repair, exact-ID import, path
-refresh, and ordered cleanup before candidate qualification.
+refresh, and ordered cleanup during weekly maintenance.
