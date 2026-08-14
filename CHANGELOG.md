@@ -4,7 +4,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-## [0.4.0] - 2026-08-09
+## [0.4.0] - 2026-08-14
 
 ### Added
 
@@ -12,21 +12,21 @@ All notable changes to this project are documented here.
   ID through the GA Files API, requiring only the minimum `files` scope.
 - Publish the stable-keyed `files-configuration` consumer module, generated
   references, composable hierarchy example, and Files lifecycle guidance.
-- Validate a requested candidate against the cumulative root, every referenced
-  local consumer module, and both committed engine locks before candidate bundle
-  construction or protected Northstar mutation.
-- Integrate exact-ID Files configuration into cumulative Northstar and prove one
-  released identity across Terraform and OpenTofu Registry source migration,
-  metadata and byte replacement, drift repair, and terminal cleanup.
+
+### Changed
+
+- Reduce v0.x delivery to one required check, one manual release job, one weekly
+  maintenance job, and one manual archival job.
+- Run cumulative CRM schema, Forms, and Files maintenance with the current
+  OpenTofu and Terraform versions outside the merge and publication paths.
 
 ### Fixed
 
 - Accept standalone clones and linked worktrees as protected provider and demo
   provenance while still requiring the exact clean 40-character commit and
   checkout root.
-- Require both public Registries' ordinary versions responses to advertise a
-  published release, with bounded cache revalidation and safe stale-response
-  diagnostics that cannot confuse source discovery with Registry ingestion.
+- Stabilise Files updates around HubSpot hierarchy snapshots, asynchronous moves,
+  exact-ID adoption, and refreshed paths after folder changes.
 
 ## [0.3.0] - 2026-08-03
 
