@@ -2,7 +2,7 @@ module github.com/jackemcpherson/terraform-provider-hubspot
 
 go 1.25.0
 
-toolchain go1.26.5
+toolchain go1.26.6
 
 require (
 	github.com/hashicorp/terraform-plugin-framework v1.19.0

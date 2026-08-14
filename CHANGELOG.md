@@ -27,6 +27,8 @@ All notable changes to this project are documented here.
   checkout root.
 - Stabilise Files updates around HubSpot hierarchy snapshots, asynchronous moves,
   exact-ID adoption, and refreshed paths after folder changes.
+- Build and test with Go 1.26.6 to resolve six reachable standard-library
+  vulnerabilities in the v0.4.0 toolchain.
 
 ## [0.3.0] - 2026-08-03
 
