@@ -29,6 +29,8 @@ All notable changes to this project are documented here.
   exact-ID adoption, and refreshed paths after folder changes.
 - Build and test with Go 1.26.6 to resolve six reachable standard-library
   vulnerabilities in the v0.4.0 toolchain.
+- Reject missing or mismatched release notes before the publication job creates
+  the signed release tag.
 
 ## [0.3.0] - 2026-08-03
 

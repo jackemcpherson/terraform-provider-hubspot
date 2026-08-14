@@ -1,23 +1,40 @@
-# 08 — Qualify the exact v0.4.0 candidate
+# 08 - Prepare v0.4.0 for Publication
 
-**What to build:** Produce one clean, reviewable v0.4.0 provider/demo candidate whose additive public contract, complete cumulative behavior, and immutable publication shape are proven before any release is created.
+**What to build:** Prepare the additive v0.4.0 Files configuration release for
+the small v0.x publication transaction defined by ADR 0003.
 
 **Type:** task
 
-**Blocked by:** 01 — Validate candidate compatibility before mutation; 02 — Accept clones and worktrees as exact provenance; 03 — Revalidate stale registry version responses; 04 — Deliver Files provider resources end to end; 05 — Deliver the Files module and executable documentation; 06 — Prove and maintain the protected Files shard; 07 — Integrate cumulative and released Files journeys.
+**Blocked by:** 01, 02, 03, 04, 05, 06, 07.
 
-**Status:** claimed
+**Status:** resolved
 
-- [ ] Exact clean provider and demo commits are selected and recorded using clone/worktree-compatible provenance; unrelated work is preserved and excluded.
-- [ ] Candidate compatibility preflight proves the cumulative root and every module admit v0.4.0 and both committed locks select exactly 0.4.0 before live mutation.
-- [ ] Compatibility review proves the release is additive and preserves all v0.1.x state upgrades, v0.2.0 CRM property schema, and v0.3.0 Form definition public contracts.
-- [ ] Changelog, release notes, version checks, permissions guidance, examples, generated references, module documentation, surface overview, and portal all describe the exact accepted v0.4.0 contract and exclusions.
-- [ ] Formatting, linting, vet, race/unit, real-CLI hermetic, module, supported-engine matrix, workflow-policy, security, license, generated-documentation, and portal-build checks pass against the exact candidate commits.
-- [ ] Both-engine guarded Files acceptance and cumulative Northstar pass with sanitized evidence bound to the exact candidate and verified cleanup.
-- [ ] Every prior provider, live capability, module, documentation, and Northstar regression remains green; Files-only success cannot mask an earlier failure.
-- [ ] Provider schema inspection exposes exactly the cumulative released resource/data-source set plus the two Files resources and no deferred type.
-- [ ] Release preflight produces the exact v0.4.0 manifest, checksum, signature, and supported-platform archive closure and installs it through both local mirror identities.
-- [ ] Release observer and registry revalidation contract tests pass while registry and live work remain outside the protected publication transaction.
-- [ ] The separately operated released migration and cumulative journey is fully prepared, hermetically contract-tested, and points to the exact demo candidate required after ingestion.
-- [ ] The specification evidence ledger records accepted design and exact qualification evidence without raw logs, credentials, bytes, URLs, or remote IDs.
-- [ ] Any dirty checkout, stale generated content, unavailable protected credential, failed gate, mismatched evidence, or cleanup residue leaves qualification blocked with no waiver.
+- [x] The provider registers the two Files resources and preserves all earlier
+  public resources, data sources, and state upgrades.
+- [x] The changelog, release notes, generated references, examples, permissions,
+  and lifecycle guides describe the v0.4.0 contract and exclusions.
+- [x] The local and pull-request `Required` gate passes with current
+  OpenTofu and Terraform versions.
+- [x] Vulnerability, workflow security, release configuration, artifact naming,
+  checksum, signature, and Registry manifest checks pass.
+- [x] Exact clean-checkout preflight validates the dated changelog and matching
+  release notes before publication can create a signed tag.
+- [x] An unpublished GoReleaser build produces all 13 supported platform
+  archives and the checksum inventory.
+- [x] v0.4.0 has no existing tag or GitHub release.
+- [x] Live acceptance, historical engine matrices, candidate bundles, registry
+  polling, and released-provider journeys remain outside merge and publication
+  under ADR 0003.
+
+## Answer
+
+ADR 0003 replaced the original exhaustive candidate transaction with one fast
+required gate and separate weekly maintenance. The completed Files resources,
+typed clients, behavioral fake, current-engine lifecycle checks, module,
+documentation, and release metadata remain in the release.
+
+The required gate, security checks, release checks, exact-commit preflight, and
+full unpublished platform build pass. Release preflight now rejects missing,
+empty, or mismatched version notes before the publication job creates a signed
+tag. v0.4.0 remains unpublished and ready for the manual immutable release after
+this final pull request merges with a successful `Required` check.
