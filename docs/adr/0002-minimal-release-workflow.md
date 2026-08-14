@@ -1,6 +1,6 @@
 # ADR 0002: Keep provider release publication minimal
 
-- Status: Accepted
+- Status: Superseded by ADR 0003
 - Date: 2026-07-30
 
 ## Context

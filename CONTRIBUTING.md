@@ -10,8 +10,8 @@ make check
 Provider development must preserve protocol 6, typed validated schemas,
 observation-only refresh, authored drift repair, and secret-safe diagnostics.
 Do not use real HubSpot credentials in pull requests or local fixtures. Live
-acceptance belongs only to protected workflows with isolated account capability
-manifests.
+acceptance belongs only to the protected maintenance workflow with isolated
+account credentials.
 
 Every user-visible change updates `CHANGELOG.md`. Keep generated documentation
 in sync with provider schema changes by running `make docs`.

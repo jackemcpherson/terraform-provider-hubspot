@@ -49,6 +49,6 @@ editor kinds, restoration, and permanent deletion are outside this surface.
 ## Northstar
 
 The sibling Northstar demo instantiates the generated `crm-schema` module for all
-four supported object types. Local candidate and registry journeys use reviewed
-plans, empty-plan verification, drift repair, canonical adoption, refresh, and
-reviewed archival teardown under both engines.
+four supported object types. Weekly maintenance uses reviewed plans, empty-plan
+verification, drift repair, canonical adoption, refresh, and reviewed archival
+teardown under both current engines.

@@ -67,7 +67,8 @@ registration and the sibling demo's HCL:
 
 ```sh
 make docs-portal
-make docs-portal-update # after reviewed provider schema, module HCL, or portal changes
+# Run after reviewed provider schema, module HCL, or portal changes.
+make docs-portal-update
 make docs-portal-serve # localhost only
 ```
 
@@ -95,6 +96,7 @@ make tools
 make check
 ```
 
-`make check` formats and tests the Go code, checks generated references, and
-validates each reviewed example with both CLIs. Live HubSpot acceptance runs in
-protected workflows against disposable accounts.
+`make check` runs the same fast required gate used by pull requests. It formats
+and analyses Go code, runs unit tests, checks generated references and workflow
+syntax, and validates reviewed examples with both current CLIs. Slower security
+checks and live HubSpot acceptance run in weekly maintenance.
