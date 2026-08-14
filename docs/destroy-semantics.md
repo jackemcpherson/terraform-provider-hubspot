@@ -77,3 +77,19 @@ completes idempotently; an ambiguous response retains state for a safe retry.
 **Non-destructive alternative:** `tofu state rm hubspot_file.<name>` or `tofu
 state rm hubspot_file_folder.<name>` (or the equivalent `terraform` command)
 leaves the active asset unmanaged.
+
+## hubspot_account_membership
+
+Destroy is blocked unless `allow_removal = true` has already been reviewed and
+applied. The provider rereads the canonical Settings ID, requires the exact
+state email, and refuses a membership HubSpot currently reports as Super Admin.
+After DELETE it verifies absence by ID, explicit email lookup, and the paginated
+membership collection before removing state.
+
+DELETE removes membership from this HubSpot account. It does not delete the
+global user identity, deactivate the user elsewhere, or alter a CRM user
+profile.
+
+**Non-destructive alternative:** `tofu state rm
+hubspot_account_membership.<name>` (or the equivalent `terraform` command)
+leaves the account membership active and unmanaged.

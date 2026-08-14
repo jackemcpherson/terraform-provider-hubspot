@@ -9,8 +9,8 @@ lock_dir=${HUBSPOT_ONE_PORTAL_LOCK_DIR:-"${TMPDIR:-/tmp}/hubspot-free-portal-${H
 lock_acquired=false
 
 case "$shard" in
-  free_properties|form_definitions|files_configuration) ;;
-  *) echo "cleanup shard must be free_properties, form_definitions, or files_configuration" >&2; exit 1 ;;
+  free_properties|form_definitions|files_configuration|account_memberships) ;;
+  *) echo "cleanup shard must be free_properties, form_definitions, files_configuration, or account_memberships" >&2; exit 1 ;;
 esac
 
 : "${HUBSPOT_ACCESS_TOKEN:?HUBSPOT_ACCESS_TOKEN is required}"
@@ -32,7 +32,7 @@ case "$mode" in
     ;;
   archive)
     case "$shard:$confirm" in
-      free_properties:archive-prefixed-crm-configuration|form_definitions:archive-prefixed-form-definitions|files_configuration:delete-prefixed-files-configuration) ;;
+      free_properties:archive-prefixed-crm-configuration|form_definitions:archive-prefixed-form-definitions|files_configuration:delete-prefixed-files-configuration|account_memberships:delete-prefixed-account-memberships) ;;
       *) echo "archive confirmation did not match the selected shard" >&2; exit 1 ;;
     esac
     printf '%s\n' "$prefix" | grep -Eq '^tf_acc_[A-Za-z0-9_]+_$' || { echo "refusing to archive outside exact tf_acc_ prefix" >&2; exit 1; }

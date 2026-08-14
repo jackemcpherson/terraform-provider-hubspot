@@ -36,6 +36,7 @@ const (
 	FreeProperties      Shard = "free_properties"
 	FormDefinitions     Shard = "form_definitions"
 	FilesConfiguration  Shard = "files_configuration"
+	AccountMemberships  Shard = "account_memberships"
 	DealPipelines       Shard = "deal_pipelines"
 	TicketPipelines     Shard = "ticket_pipelines"
 	CustomSchemas       Shard = "custom_schemas"
@@ -174,7 +175,7 @@ func Run(t testing.TB, options Options, scenario func(*Session)) {
 
 func validShard(shard Shard) bool {
 	switch shard {
-	case FreeProperties, FormDefinitions, FilesConfiguration, DealPipelines, TicketPipelines, CustomSchemas, SensitiveProperties, CustomPipelines:
+	case FreeProperties, FormDefinitions, FilesConfiguration, AccountMemberships, DealPipelines, TicketPipelines, CustomSchemas, SensitiveProperties, CustomPipelines:
 		return true
 	default:
 		return false
@@ -510,6 +511,18 @@ func (s *Session) OpaqueStateString(address, attribute string) string {
 		s.t.Fatalf("decode nonempty state attribute %s", attribute)
 	}
 	return value
+}
+
+func (s *Session) RequireStateBool(address, attribute string, expected bool) {
+	s.t.Helper()
+	values := s.stateValues(address)
+	var actual bool
+	if err := json.Unmarshal(values[attribute], &actual); err != nil {
+		s.t.Fatalf("decode Boolean state attribute %s", attribute)
+	}
+	if actual != expected {
+		s.t.Fatalf("state attribute %s = %t, want %t", attribute, actual, expected)
+	}
 }
 
 func (s *Session) OpaqueStateMapNestedStrings(address, mapAttribute, nestedAttribute string) map[string]string {

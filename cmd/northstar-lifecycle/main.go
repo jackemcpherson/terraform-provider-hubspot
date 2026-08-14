@@ -135,6 +135,16 @@ func execute(ctx context.Context, action string, ids []string, clients *hubspot.
 			return "", errors.New("northstar form ID is required for terminal verification")
 		}
 		return verifyNorthstarFormTerminal(ctx, clients, ids[0])
+	case "verify-membership":
+		if len(ids) != 2 {
+			return "", errors.New("northstar membership Settings ID and email are required for verification")
+		}
+		return "", verifyNorthstarMembership(ctx, clients, ids[0], ids[1])
+	case "verify-membership-terminal":
+		if len(ids) != 2 {
+			return "", errors.New("northstar membership Settings ID and email are required for terminal verification")
+		}
+		return verifyNorthstarMembershipTerminal(ctx, clients, ids[0], ids[1])
 	case "verify-files":
 		if len(ids) != 4 {
 			return "", errors.New("four Northstar Files generated IDs are required for verification")
@@ -624,6 +634,40 @@ func verifyNorthstarFilesTerminal(ctx context.Context, clients *hubspot.ClientSe
 		names.Prefix,
 		"northstar-files-identities",
 	)
+}
+
+func verifyNorthstarMembership(ctx context.Context, clients *hubspot.ClientSet, id, email string) error {
+	byID, err := clients.AccountMemberships.GetByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("read Northstar membership by Settings ID: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	byEmail, err := clients.AccountMemberships.GetByEmail(ctx, email)
+	if err != nil {
+		return fmt.Errorf("read Northstar membership by email: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	if byID.ID != id || byEmail.ID != id || byID.Email != email || byEmail.Email != email {
+		return errors.New("northstar membership did not match its exact Settings ID and email")
+	}
+	if byID.SuperAdmin || byEmail.SuperAdmin {
+		return errors.New("northstar membership unexpectedly has Super Admin privileges")
+	}
+	return nil
+}
+
+func verifyNorthstarMembershipTerminal(ctx context.Context, clients *hubspot.ClientSet, id, email string) (string, error) {
+	if err := clients.AccountMemberships.WaitForAbsence(ctx, id, email); err != nil {
+		return "", fmt.Errorf("verify Northstar membership absence: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	digest := sha256.Sum256([]byte("northstar-membership-identity\x00" + id + "\x00" + email))
+	record, err := json.Marshal(struct {
+		GeneratedIdentityHash  string `json:"generated_identity_hash"`
+		ActiveOwnedMemberships int    `json:"active_owned_memberships"`
+		Cleanup                string `json:"cleanup"`
+	}{hex.EncodeToString(digest[:]), 0, "passed"})
+	if err != nil {
+		return "", errors.New("encode Northstar membership terminal record")
+	}
+	return string(record), nil
 }
 
 func driftNorthstarProperty(ctx context.Context, clients *hubspot.ClientSet) error {

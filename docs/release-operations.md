@@ -60,10 +60,15 @@ executes the cumulative Northstar journey against the disposable HubSpot portal
 with both current engines.
 
 The job uses the `northstar` environment. Its `HUBSPOT_ACCESS_TOKEN` must contain
-the cumulative CRM schema, Forms, and Files scopes. Set
-`HUBSPOT_ACCEPTANCE_PORTAL_ID` to the expected disposable portal. A normal
-workflow failure identifies a maintenance problem. The workflow does not create
-custom evidence bundles or affect publication eligibility.
+the cumulative CRM schema, Forms, Files, and account-membership scopes. Use
+Settings users read/write or HubSpot's documented CRM users read/write
+alternative. Set
+`HUBSPOT_ACCEPTANCE_PORTAL_ID` to the expected disposable portal. Set the
+`HUBSPOT_NORTHSTAR_MEMBERSHIP_EMAIL` environment variable to a dedicated,
+disposable member in that portal. Do not use an ordinary account member or a
+Super Admin. A normal workflow failure identifies a maintenance problem. The
+workflow does not create custom evidence bundles or affect publication
+eligibility.
 
 Run the non-live maintenance checks locally with:
 
@@ -84,6 +89,7 @@ live tests. Select one configuration surface and enter its required confirmation
 - `free_properties`: `archive-prefixed-crm-configuration`
 - `form_definitions`: `archive-prefixed-form-definitions`
 - `files_configuration`: `delete-prefixed-files-configuration`
+- `account_memberships`: `delete-prefixed-account-memberships`
 
 The single archival job selects the corresponding GitHub environment from the
 validated choice. The cleanup script rejects an unknown surface, an unsafe
@@ -91,5 +97,7 @@ prefix, or a confirmation for a different surface. All cleanup operations share
 one non-cancelling portal concurrency group.
 
 HubSpot retains archived property and Form configuration. Files enter
-HubSpot-managed Trash retention. Do not describe these outcomes as permanent
-deletion.
+HubSpot-managed Trash retention. Account membership cleanup accepts only exact
+`tf_acc_...@example.com` ownership, rereads both identities, refuses Super
+Admins, and verifies absence. It does not delete global identity. Do not
+describe any of these outcomes as permanent global deletion.

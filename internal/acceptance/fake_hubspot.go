@@ -72,6 +72,13 @@ type FakeHubSpot struct {
 	nextFilesFault               FilesFault
 	malformedNextManagedFileRead bool
 	staleFilesSearchCursor       bool
+
+	accountMemberships          map[string]*fakeAccountMembership
+	accountMembershipIDsByEmail map[string]string
+	nextAccountMembershipID     int
+	nextAccountMembershipFault  AccountMembershipFault
+	nextAccountMembershipRead   *fakeAccountMembershipReadOverride
+	nextMembershipCollectionLag int
 }
 
 type fakeFormDefinition struct {
@@ -100,16 +107,18 @@ const (
 // endpoint.
 func NewFakeHubSpot(token string, portalID int64) *FakeHubSpot {
 	return &FakeHubSpot{
-		token:              token,
-		portalID:           portalID,
-		groups:             make(map[string]map[string]*hubspot.PropertyGroup),
-		properties:         make(map[string]map[string]*fakePropertyVersions),
-		pipelines:          make(map[string]map[string]*hubspot.Pipeline),
-		forms:              make(map[string]*fakeFormDefinition),
-		fileFolders:        make(map[string]*hubspot.FileFolder),
-		managedFiles:       make(map[string]*fakeManagedFile),
-		folderTasks:        make(map[string]hubspot.FolderUpdateTask),
-		pendingFolderTasks: make(map[string]bool),
+		token:                       token,
+		portalID:                    portalID,
+		groups:                      make(map[string]map[string]*hubspot.PropertyGroup),
+		properties:                  make(map[string]map[string]*fakePropertyVersions),
+		pipelines:                   make(map[string]map[string]*hubspot.Pipeline),
+		forms:                       make(map[string]*fakeFormDefinition),
+		fileFolders:                 make(map[string]*hubspot.FileFolder),
+		managedFiles:                make(map[string]*fakeManagedFile),
+		folderTasks:                 make(map[string]hubspot.FolderUpdateTask),
+		pendingFolderTasks:          make(map[string]bool),
+		accountMemberships:          make(map[string]*fakeAccountMembership),
+		accountMembershipIDsByEmail: make(map[string]string),
 	}
 }
 
@@ -132,6 +141,8 @@ func (f *FakeHubSpot) ServeHTTP(response http.ResponseWriter, request *http.Requ
 		f.handleForms(response, request, segments[3:])
 	case len(segments) >= 3 && segments[0] == "files" && segments[1] == "2026-03":
 		f.handleFiles(response, request, segments[2:])
+	case len(segments) >= 3 && segments[0] == "settings" && segments[1] == "users" && segments[2] == "2026-03":
+		f.handleAccountMemberships(response, request, segments[3:])
 	default:
 		writeFakeError(response, http.StatusNotFound, "OBJECT_NOT_FOUND", "", "No route matched this request.")
 	}

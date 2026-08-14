@@ -26,7 +26,7 @@ func resetOutput(output string) error {
 
 func renderPortal(config Config, metadata manifest, resources, dataSources []providerType, modules []moduleDoc) error {
 	header := provenanceHeader(metadata)
-	if err := writeFile(filepath.Join(config.OutputDir, "index.html"), page("HubSpot configuration portal", "", header, `<h1>HubSpot configuration surfaces</h1><ul><li><a href="crm-property-schema.html">CRM property schema</a></li><li><a href="form-definition.html">Form definition</a></li><li><a href="files-configuration.html">Files configuration</a></li></ul><nav><a href="resources/index.html">Resources</a> · <a href="data-sources/index.html">Data sources</a> · <a href="modules/index.html">Consumer modules</a> · <a href="provenance.json">Provenance</a></nav>`)); err != nil {
+	if err := writeFile(filepath.Join(config.OutputDir, "index.html"), page("HubSpot configuration portal", "", header, `<h1>HubSpot configuration surfaces</h1><ul><li><a href="crm-property-schema.html">CRM property schema</a></li><li><a href="form-definition.html">Form definition</a></li><li><a href="files-configuration.html">Files configuration</a></li><li><a href="account-membership.html">Account membership</a></li></ul><nav><a href="resources/index.html">Resources</a> · <a href="data-sources/index.html">Data sources</a> · <a href="modules/index.html">Consumer modules</a> · <a href="provenance.json">Provenance</a></nav>`)); err != nil {
 		return err
 	}
 	if err := writeSurfaceOverview(config, "crm-property-schema", "CRM property schema", `<a href="resources/index.html">Provider resources</a> · <a href="data-sources/index.html">Property discovery</a> · <a href="modules/crm-schema.html">crm-schema module</a>`, header); err != nil {
@@ -36,6 +36,9 @@ func renderPortal(config Config, metadata manifest, resources, dataSources []pro
 		return err
 	}
 	if err := writeSurfaceOverview(config, "files-configuration", "Files configuration", `<a href="resources/hubspot_file_folder.html">hubspot_file_folder resource</a> · <a href="resources/hubspot_file.html">hubspot_file resource</a> · <a href="modules/files-configuration.html">files-configuration module</a>`, header); err != nil {
+		return err
+	}
+	if err := writeSurfaceOverview(config, "account-membership", "Account membership", `<a href="resources/hubspot_account_membership.html">hubspot_account_membership resource</a> · <a href="modules/account-membership.html">account-membership module</a>`, header); err != nil {
 		return err
 	}
 	if err := writeProviderIndex(config.OutputDir, "resources", "Resources", resources, header); err != nil {
@@ -152,6 +155,9 @@ func writeStringList(body *strings.Builder, title string, values []string) {
 }
 
 func resourceLifecycle(name string) string {
+	if name == "hubspot_account_membership" {
+		return "<h2>Lifecycle</h2><p>Refresh uses the canonical Settings user ID. Name PUT fails closed around activation and current assignments. Destroy requires the local removal opt-in, exact ID and email, non-Super-Admin status, and verified account-membership absence without deleting global identity.</p>"
+	}
 	if name == "hubspot_file_folder" {
 		return "<h2>Lifecycle</h2><p>This Files configuration resource refreshes and asynchronously renames or moves by exact generated ID. Destroy refuses active direct children, verifies active absence, and never invokes cascade deletion. HubSpot may retain the folder in Trash after active name reuse.</p>"
 	}
@@ -168,6 +174,9 @@ func resourceLifecycle(name string) string {
 }
 
 func resourceImport(name string) string {
+	if name == "hubspot_account_membership" {
+		return `<h2>Import</h2><p>Import one membership by canonical numeric Settings user ID or explicit <code>email:address</code> lookup. State always stores the canonical ID and records welcome delivery and removal opt-in as false.</p>`
+	}
 	if name == "hubspot_file_folder" {
 		return `<h2>Import</h2><p>Import one active File folder by its exact non-zero decimal generated ID. Names and paths are observations and are never import identity.</p>`
 	}
@@ -181,6 +190,9 @@ func resourceImport(name string) string {
 }
 
 func providerSurface(name string) string {
+	if name == "hubspot_account_membership" {
+		return "account-membership"
+	}
 	if name == "hubspot_file_folder" || name == "hubspot_file" {
 		return "files-configuration"
 	}
@@ -191,6 +203,9 @@ func providerSurface(name string) string {
 }
 
 func moduleSurface(name string) string {
+	if name == "account-membership" {
+		return "account-membership"
+	}
 	if name == "files-configuration" {
 		return "files-configuration"
 	}
@@ -201,6 +216,9 @@ func moduleSurface(name string) string {
 }
 
 func moduleContract(name string) string {
+	if name == "account-membership" {
+		return "<h2>Validation and dependency contract</h2><p>Stable map keys own canonical Settings identities. Each entry requires an explicit welcome-email choice; removal defaults off. Email or welcome changes replace membership, while configured names remain guarded global-identity updates.</p>"
+	}
 	if name == "files-configuration" {
 		return "<h2>Validation and dependency contract</h2><p>Stable map keys own generated identities. One module instance manages one hierarchy level; generated folder ID references compose deeper levels and produce file-first, leaf-first teardown edges. Rename a key only with an explicit moved block.</p>"
 	}

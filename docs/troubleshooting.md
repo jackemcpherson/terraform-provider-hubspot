@@ -24,6 +24,17 @@ result.
 
 Read the diagnostic before changing state manually. Property groups may be
 nonempty. Remove dependent property configuration, apply, and retry.
+Account membership removal requires `allow_removal = true`, an exact current
+ID/email match, and a non-Super-Admin member. State removal leaves membership
+active when deletion is not intended.
+
+## Account Membership Name Update Is Blocked
+
+HubSpot rejects name updates until the user activates and can return
+`USER_NOT_ON_ANY_HUBS`. The provider does not retry that response indefinitely.
+It also refuses PUT while role or team assignments are present because omission
+semantics are undocumented. Activate the user or manage the global name outside
+this resource; roles and teams remain outside the v0.5 contract.
 
 ## Drift returns after apply
 

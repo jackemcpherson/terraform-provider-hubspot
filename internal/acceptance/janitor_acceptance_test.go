@@ -47,6 +47,12 @@ func TestAcc_JanitorReport(t *testing.T) {
 			t.Fatalf("report stale active Files configuration: %s", acceptance.SanitizedHubSpotError(err))
 		}
 		t.Logf("stale owned HubSpot configuration: active_managed_files=%d active_file_folders=%d", files, folders)
+	case "account_memberships":
+		memberships, err := countOwnedAccountMemberships(ctx, clients, prefix)
+		if err != nil {
+			t.Fatalf("report stale owned account memberships: %s", acceptance.SanitizedHubSpotError(err))
+		}
+		t.Logf("stale owned HubSpot configuration: active_account_memberships=%d", memberships)
 	}
 }
 
@@ -55,6 +61,13 @@ func TestAcc_ManualPrefixCleanup(t *testing.T) {
 	prefix := requiredEnvironment(t, "HUBSPOT_ACCEPTANCE_PREFIX")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
+	if shard == "account_memberships" {
+		if err := deleteOwnedAccountMemberships(ctx, clients, prefix); err != nil {
+			t.Fatalf("delete owned account memberships: %s", acceptance.SanitizedHubSpotError(err))
+		}
+		t.Log("account membership cleanup verified exact Settings ID and email absence")
+		return
+	}
 	if shard == "files_configuration" {
 		if err := deleteOwnedFilesConfiguration(ctx, clients, prefix); err != nil {
 			t.Fatalf("delete owned Files configuration: %s", acceptance.SanitizedHubSpotError(err))
@@ -206,10 +219,109 @@ func TestFilesJanitorFailsClosedOnUnownedFolderContents(t *testing.T) {
 	}
 }
 
+func TestAccountMembershipJanitorReportsAndDeletesOnlyExactOwnedIdentities(t *testing.T) {
+	fake := acceptance.NewFakeHubSpot("token", 123)
+	server := httptest.NewServer(fake)
+	defer server.Close()
+	origin, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clients, err := hubspot.NewClientSet(hubspot.TransportConfig{BaseURL: origin, AccessToken: "token", UserAgent: "membership-janitor-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	owned, err := clients.AccountMemberships.Create(ctx, hubspot.AccountMembershipCreate{Email: "tf_acc_owned_operator@example.com", SendWelcomeEmail: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unowned, err := clients.AccountMemberships.Create(ctx, hubspot.AccountMembershipCreate{Email: "keep@example.com", SendWelcomeEmail: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	count, err := countOwnedAccountMemberships(ctx, clients, "tf_acc_owned_")
+	if err != nil || count != 1 {
+		t.Fatalf("owned account membership report = %d, %v", count, err)
+	}
+	if err := deleteOwnedAccountMemberships(ctx, clients, "tf_acc_owned_"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := clients.AccountMemberships.GetByID(ctx, owned.ID); !formJanitorNotFound(err) {
+		t.Fatal("account membership cleanup retained the owned identity")
+	}
+	if _, err := clients.AccountMemberships.GetByID(ctx, unowned.ID); err != nil {
+		t.Fatal("account membership cleanup mutated an unowned identity")
+	}
+}
+
+func TestAccountMembershipJanitorRefusesSuperAdminBeforeMutation(t *testing.T) {
+	fake := acceptance.NewFakeHubSpot("token", 123)
+	server := httptest.NewServer(fake)
+	defer server.Close()
+	origin, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clients, err := hubspot.NewClientSet(hubspot.TransportConfig{BaseURL: origin, AccessToken: "token", UserAgent: "membership-janitor-guard-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	ordinary, err := clients.AccountMemberships.Create(ctx, hubspot.AccountMembershipCreate{Email: "tf_acc_owned_ordinary@example.com", SendWelcomeEmail: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin, err := clients.AccountMemberships.Create(ctx, hubspot.AccountMembershipCreate{Email: "tf_acc_owned_admin@example.com", SendWelcomeEmail: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake.SetAccountMembershipSuperAdmin(admin.ID, true)
+	if err := deleteOwnedAccountMemberships(ctx, clients, "tf_acc_owned_"); err == nil {
+		t.Fatal("account membership cleanup accepted a Super Admin")
+	}
+	for _, id := range []string{ordinary.ID, admin.ID} {
+		if _, err := clients.AccountMemberships.GetByID(ctx, id); err != nil {
+			t.Fatal("failed account membership cleanup partially mutated an owned identity")
+		}
+	}
+}
+
+func TestAccountMembershipJanitorRefusesInvalidDomainBeforeMutation(t *testing.T) {
+	fake := acceptance.NewFakeHubSpot("token", 123)
+	server := httptest.NewServer(fake)
+	defer server.Close()
+	origin, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clients, err := hubspot.NewClientSet(hubspot.TransportConfig{BaseURL: origin, AccessToken: "token", UserAgent: "membership-janitor-domain-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	ordinary, err := clients.AccountMemberships.Create(ctx, hubspot.AccountMembershipCreate{Email: "tf_acc_owned_ordinary@example.com", SendWelcomeEmail: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalid, err := clients.AccountMemberships.Create(ctx, hubspot.AccountMembershipCreate{Email: "tf_acc_owned_invalid@example.org", SendWelcomeEmail: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := deleteOwnedAccountMemberships(ctx, clients, "tf_acc_owned_"); err == nil {
+		t.Fatal("account membership cleanup accepted an invalid owned email domain")
+	}
+	for _, id := range []string{ordinary.ID, invalid.ID} {
+		if _, err := clients.AccountMemberships.GetByID(ctx, id); err != nil {
+			t.Fatal("failed account membership cleanup partially mutated an owned identity")
+		}
+	}
+}
+
 func janitorClients(t *testing.T) (*hubspot.ClientSet, string) {
 	t.Helper()
 	shard := requiredEnvironment(t, "CAPABILITY_SHARD")
-	if shard != "free_properties" && shard != "form_definitions" && shard != "files_configuration" && shard != "deal_pipelines" && shard != "ticket_pipelines" {
+	if shard != "free_properties" && shard != "form_definitions" && shard != "files_configuration" && shard != "account_memberships" && shard != "deal_pipelines" && shard != "ticket_pipelines" {
 		t.Fatal("janitor implementation is unavailable for the selected capability shard")
 	}
 	token := requiredEnvironment(t, "HUBSPOT_ACCESS_TOKEN")
@@ -222,7 +334,67 @@ func janitorClients(t *testing.T) (*hubspot.ClientSet, string) {
 	return clients, shard
 }
 
-var generatedFilesJanitorID = regexp.MustCompile(`^[1-9][0-9]*$`)
+var generatedDecimalJanitorID = regexp.MustCompile(`^[1-9][0-9]*$`)
+
+func countOwnedAccountMemberships(ctx context.Context, clients *hubspot.ClientSet, prefix string) (int, error) {
+	memberships, err := clients.AccountMemberships.List(ctx)
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for _, membership := range memberships {
+		if strings.HasPrefix(membership.Email, prefix) {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func deleteOwnedAccountMemberships(ctx context.Context, clients *hubspot.ClientSet, prefix string) error {
+	memberships, err := clients.AccountMemberships.List(ctx)
+	if err != nil {
+		return err
+	}
+	owned := make([]hubspot.AccountMembership, 0)
+	for _, membership := range memberships {
+		if !strings.HasPrefix(membership.Email, prefix) {
+			continue
+		}
+		if !generatedDecimalJanitorID.MatchString(membership.ID) || !strings.HasSuffix(membership.Email, "@example.com") {
+			return errors.New("prefix-owned account membership has an unsupported Settings identity or email domain")
+		}
+		byID, idErr := clients.AccountMemberships.GetByID(ctx, membership.ID)
+		byEmail, emailErr := clients.AccountMemberships.GetByEmail(ctx, membership.Email)
+		if idErr != nil || emailErr != nil || byID.ID != membership.ID || byEmail.ID != membership.ID || byID.Email != membership.Email || byEmail.Email != membership.Email {
+			return errors.New("prefix-owned account membership failed exact Settings ID and email verification")
+		}
+		if byID.SuperAdmin || byEmail.SuperAdmin {
+			return errors.New("refusing to delete a prefix-owned Super Admin account membership")
+		}
+		owned = append(owned, membership)
+	}
+	sort.Slice(owned, func(left, right int) bool { return owned[left].ID < owned[right].ID })
+	for _, membership := range owned {
+		deleteErr := clients.AccountMemberships.Delete(ctx, membership.ID)
+		if deleteErr != nil && !formJanitorNotFound(deleteErr) {
+			var apiError *hubspot.Error
+			if !errors.As(deleteErr, &apiError) || !apiError.Ambiguous {
+				return fmt.Errorf("delete prefix-owned account membership: %w", deleteErr)
+			}
+		}
+		if err := clients.AccountMemberships.WaitForAbsence(ctx, membership.ID, membership.Email); err != nil {
+			return fmt.Errorf("verify prefix-owned account membership absence: %w", err)
+		}
+	}
+	remaining, err := countOwnedAccountMemberships(ctx, clients, prefix)
+	if err != nil {
+		return err
+	}
+	if remaining != 0 {
+		return errors.New("manual cleanup could not verify zero active prefix-owned account memberships")
+	}
+	return nil
+}
 
 func deleteOwnedFilesConfiguration(ctx context.Context, clients *hubspot.ClientSet, prefix string) error {
 	files, err := clients.Files.Search(ctx, nil, "")
@@ -239,7 +411,7 @@ func deleteOwnedFilesConfiguration(ctx context.Context, clients *hubspot.ClientS
 		if file.Archived || !strings.HasPrefix(file.Name, prefix) {
 			continue
 		}
-		if !generatedFilesJanitorID.MatchString(file.ID) || !generatedFilesJanitorID.MatchString(file.FolderID) || !strings.HasSuffix(file.Path, "/"+file.Name) {
+		if !generatedDecimalJanitorID.MatchString(file.ID) || !generatedDecimalJanitorID.MatchString(file.FolderID) || !strings.HasSuffix(file.Path, "/"+file.Name) {
 			return errors.New("prefix-owned Managed file has an unsupported identity or placement")
 		}
 		ownedFiles = append(ownedFiles, file)
@@ -251,7 +423,7 @@ func deleteOwnedFilesConfiguration(ctx context.Context, clients *hubspot.ClientS
 		if folder.Archived || !strings.HasPrefix(folder.Name, prefix) {
 			continue
 		}
-		if !generatedFilesJanitorID.MatchString(folder.ID) || !strings.HasSuffix(folder.Path, "/"+folder.Name) {
+		if !generatedDecimalJanitorID.MatchString(folder.ID) || !strings.HasSuffix(folder.Path, "/"+folder.Name) {
 			return errors.New("prefix-owned File folder has an unsupported identity or path")
 		}
 		ownedFolders = append(ownedFolders, folder)

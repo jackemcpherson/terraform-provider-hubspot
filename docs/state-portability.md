@@ -1,8 +1,10 @@
 # State portability
 
-Managed resources use schema version 1. The version-0 boundary is an offline,
-byte-preserving migration: IDs, nested map keys, ownership sets, and teardown
-safeguards are copied without contacting HubSpot or normalizing the state.
+The CRM schema, Form, and Files resources use schema version 1. Their version-0
+boundary is an offline, byte-preserving migration: IDs, nested map keys,
+ownership sets, and teardown safeguards are copied without contacting HubSpot
+or normalizing state. The account-membership resource begins at schema version
+0 and needs no legacy migration.
 
 The provider supports forward upgrades only. Downgrades are not promised.
 Legacy flatmap state is rejected before writing a replacement state file; first

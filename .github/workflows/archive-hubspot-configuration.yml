@@ -11,6 +11,7 @@ on:
           - free_properties
           - form_definitions
           - files_configuration
+          - account_memberships
       prefix:
         description: Exact tf_acc_ prefix ending in underscore
         required: true
