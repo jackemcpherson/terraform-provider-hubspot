@@ -55,7 +55,7 @@ func TestProviderServesProtocol6(t *testing.T) {
 	}
 }
 
-func TestProviderRegistersExactCRMPropertySchemaTypes(t *testing.T) {
+func TestProviderRegistersExactPublicTypes(t *testing.T) {
 	p := New("test")().(*Provider)
 	ctx := context.Background()
 	resources := make([]string, 0)
@@ -72,7 +72,7 @@ func TestProviderRegistersExactCRMPropertySchemaTypes(t *testing.T) {
 	}
 	slices.Sort(resources)
 	slices.Sort(dataSources)
-	if !slices.Equal(resources, []string{"hubspot_file", "hubspot_file_folder", "hubspot_form_definition", "hubspot_property", "hubspot_property_group"}) {
+	if !slices.Equal(resources, []string{"hubspot_account_membership", "hubspot_file", "hubspot_file_folder", "hubspot_form_definition", "hubspot_property", "hubspot_property_group"}) {
 		t.Fatalf("registered resources = %#v", resources)
 	}
 	if !slices.Equal(dataSources, []string{"hubspot_property_definition", "hubspot_property_definitions"}) {

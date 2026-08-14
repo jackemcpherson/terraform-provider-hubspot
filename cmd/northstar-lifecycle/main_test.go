@@ -74,6 +74,58 @@ func TestExecuteRejectsUnknownAction(t *testing.T) {
 	}
 }
 
+func TestExecuteVerifiesAccountMembershipLifecycle(t *testing.T) {
+	fake := acceptance.NewFakeHubSpot("token", 123)
+	server := httptest.NewServer(fake)
+	defer server.Close()
+	origin, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clients, err := hubspot.NewClientSet(hubspot.TransportConfig{BaseURL: origin, AccessToken: "token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	const email = "northstar-operator@example.com"
+	membership, err := clients.AccountMemberships.Create(ctx, hubspot.AccountMembershipCreate{
+		Email: email, SendWelcomeEmail: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := clients.AccountMemberships.Create(ctx, hubspot.AccountMembershipCreate{
+		Email: "northstar-other@example.com", SendWelcomeEmail: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(ctx, "verify-membership", []string{membership.ID, email}, clients); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(ctx, "verify-membership", []string{membership.ID, other.Email}, clients); err == nil {
+		t.Fatal("membership verification accepted a mismatched Settings ID and email")
+	}
+	fake.SetAccountMembershipSuperAdmin(membership.ID, true)
+	if _, err := execute(ctx, "verify-membership", []string{membership.ID, email}, clients); err == nil {
+		t.Fatal("membership verification accepted a Super Admin")
+	}
+	fake.SetAccountMembershipSuperAdmin(membership.ID, false)
+	if _, err := execute(ctx, "verify-membership-terminal", []string{membership.ID, email}, clients); err == nil {
+		t.Fatal("membership terminal verification accepted an active identity")
+	}
+	if err := clients.AccountMemberships.Delete(ctx, membership.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := clients.AccountMemberships.Delete(ctx, other.ID); err != nil {
+		t.Fatal(err)
+	}
+	record, err := execute(ctx, "verify-membership-terminal", []string{membership.ID, email}, clients)
+	if err != nil || record == "" || strings.Contains(record, membership.ID) || strings.Contains(record, email) || !strings.Contains(record, `"active_owned_memberships":0`) {
+		t.Fatalf("membership terminal record = %q, %v", record, err)
+	}
+}
+
 func TestExecuteCleansInterruptedNorthstarLifecycle(t *testing.T) {
 	t.Setenv("HUBSPOT_NORTHSTAR_FILES_PREFIX", "ns_1a2b3c4d_o_")
 	names, err := northstarFilesNamesFromEnvironment()

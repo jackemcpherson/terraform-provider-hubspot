@@ -4,6 +4,28 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-15
+
+### Added
+
+- Manage HubSpot account membership through the Settings users API with
+  canonical-ID and explicit-email import, observed optional names, an explicit
+  welcome-email choice, and no CRM user-profile surface.
+- Publish the stable-keyed `account-membership` consumer module, generated
+  references, cumulative Northstar lifecycle, and guarded janitor support.
+
+### Changed
+
+- Require an explicit local deletion opt-in, exact ID/email reread, non-Super
+  Admin status, and verified absence before account membership leaves state.
+- Fail closed on name updates with current role or team assignments and surface
+  pre-activation `USER_NOT_ON_ANY_HUBS` failures without indefinite retry.
+
+### Fixed
+
+- Keep Settings user IDs distinct from CRM user and owner IDs, and never adopt
+  an existing membership after a duplicate create response.
+
 ## [0.4.0] - 2026-08-14
 
 ### Added

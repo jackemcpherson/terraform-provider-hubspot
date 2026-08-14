@@ -1,19 +1,21 @@
 # HubSpot provider
 
 This provider manages HubSpot configuration with OpenTofu or Terraform. The
-v0.4.0 release is a public beta and does not promise compatibility with v1.
+v0.5.0 release is a public beta and does not promise compatibility with v1.
 
 Managed resources:
 
 - property groups and property definitions
 - narrowly typed contact email Form definitions
 - explicit File folders and locally sourced Managed files
+- guarded account membership by canonical Settings user ID
 
 The two property-definition data sources inspect non-sensitive schema metadata.
 The provider does not read CRM records, record values, form submissions, or
-responses. v0.4.0 supports ordinary non-sensitive CRM property schema, one
-contact email Form definition aggregate, and Files configuration on HubSpot
-Free. Pipelines, custom schemas, and sensitive definitions are deferred.
+responses. v0.5.0 supports ordinary non-sensitive CRM property schema, one
+contact email Form definition aggregate, Files configuration, and account
+membership on HubSpot Free. Pipelines, custom schemas, and sensitive
+definitions are deferred.
 
 Observed custom-property limit telemetry is advisory, not local admission
 control. Review [permissions, account tiers, and exclusions](docs/permissions-and-limits.md)
@@ -53,6 +55,7 @@ Terraform users can change the source to
 - [Property lifecycle](docs/property-lifecycle.md)
 - [Form definition surface](docs/surfaces/form-definition.md)
 - [Files configuration surface](docs/surfaces/files-configuration.md)
+- [Account membership surface](docs/surfaces/account-membership.md)
 - [Destroy semantics](docs/destroy-semantics.md)
 - [State portability](docs/state-portability.md)
 - [Troubleshooting](docs/troubleshooting.md)
@@ -80,12 +83,13 @@ localhost build; `make docs-portal-update` intentionally refreshes that digest.
 
 ## Exclusions
 
-The v0.4.0 release does not manage CRM records, record values, form
+The v0.5.0 release does not manage CRM records, record values, form
 submissions, pipelines, custom schemas, association labels, sensitive
 definitions, OAuth, consent, notification or automation behavior, non-email
 form fields, HubSpot-defined properties, CMS Developer File System content, URL
-imports, signed URLs, or arbitrary HTTP/JSON payloads. It does not migrate state
-from third-party HubSpot providers.
+imports, signed URLs, roles, teams, seats, permissions, user activation,
+deactivation, CRM user profiles, global-user deletion, or arbitrary HTTP/JSON
+payloads. It does not migrate state from third-party HubSpot providers.
 
 ## Development
 

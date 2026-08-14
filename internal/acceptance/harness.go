@@ -36,6 +36,7 @@ const (
 	FreeProperties      Shard = "free_properties"
 	FormDefinitions     Shard = "form_definitions"
 	FilesConfiguration  Shard = "files_configuration"
+	AccountMemberships  Shard = "account_memberships"
 	DealPipelines       Shard = "deal_pipelines"
 	TicketPipelines     Shard = "ticket_pipelines"
 	CustomSchemas       Shard = "custom_schemas"
@@ -48,6 +49,7 @@ type Warning string
 const (
 	PropertyTypeTransition      Warning = "Property type transition"
 	PropertyOptionValuesChanged Warning = "Property option values changed"
+	AccountMembershipGlobalName Warning = "Account membership names affect global identity"
 )
 
 type Failure string
@@ -174,7 +176,7 @@ func Run(t testing.TB, options Options, scenario func(*Session)) {
 
 func validShard(shard Shard) bool {
 	switch shard {
-	case FreeProperties, FormDefinitions, FilesConfiguration, DealPipelines, TicketPipelines, CustomSchemas, SensitiveProperties, CustomPipelines:
+	case FreeProperties, FormDefinitions, FilesConfiguration, AccountMemberships, DealPipelines, TicketPipelines, CustomSchemas, SensitiveProperties, CustomPipelines:
 		return true
 	default:
 		return false
@@ -187,6 +189,19 @@ func (s *Session) Apply(config string) {
 	s.registerCleanup()
 	if err := s.command("apply", "-auto-approve", "-input=false", "-no-color"); err != nil {
 		s.t.Fatalf("%s apply failed: %v", s.engine, err)
+	}
+}
+
+func (s *Session) ApplyWithWarning(config string, warning Warning) {
+	s.t.Helper()
+	s.writeConfig(config)
+	s.registerCleanup()
+	output, err := s.commandOutput("apply", "-auto-approve", "-input=false", "-no-color")
+	if err != nil {
+		s.t.Fatalf("%s apply failed: %v", s.engine, err)
+	}
+	if !strings.Contains(output, "Warning: "+string(warning)) {
+		s.t.Fatalf("apply did not emit required warning %q", warning)
 	}
 }
 
@@ -510,6 +525,18 @@ func (s *Session) OpaqueStateString(address, attribute string) string {
 		s.t.Fatalf("decode nonempty state attribute %s", attribute)
 	}
 	return value
+}
+
+func (s *Session) RequireStateBool(address, attribute string, expected bool) {
+	s.t.Helper()
+	values := s.stateValues(address)
+	var actual bool
+	if err := json.Unmarshal(values[attribute], &actual); err != nil {
+		s.t.Fatalf("decode Boolean state attribute %s", attribute)
+	}
+	if actual != expected {
+		s.t.Fatalf("state attribute %s = %t, want %t", attribute, actual, expected)
+	}
 }
 
 func (s *Session) OpaqueStateMapNestedStrings(address, mapAttribute, nestedAttribute string) map[string]string {

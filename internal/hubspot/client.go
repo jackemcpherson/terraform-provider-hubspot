@@ -20,14 +20,15 @@ import (
 // ClientSet is the provider's configured, alias-local typed client boundary.
 // Credentials remain encapsulated by Transport and are never exposed as data.
 type ClientSet struct {
-	PropertyGroups *PropertyGroupClient
-	Properties     *PropertyDefinitionClient
-	Pipelines      *PipelineClient
-	Schemas        *SchemaClient
-	AccountInfo    *AccountInfoClient
-	Forms          *FormClient
-	FileFolders    *FileFolderClient
-	Files          *FileClient
+	PropertyGroups     *PropertyGroupClient
+	Properties         *PropertyDefinitionClient
+	Pipelines          *PipelineClient
+	Schemas            *SchemaClient
+	AccountInfo        *AccountInfoClient
+	Forms              *FormClient
+	FileFolders        *FileFolderClient
+	Files              *FileClient
+	AccountMemberships *AccountMembershipClient
 }
 
 func NewClientSet(config TransportConfig) (*ClientSet, error) {
@@ -36,14 +37,15 @@ func NewClientSet(config TransportConfig) (*ClientSet, error) {
 		return nil, err
 	}
 	return &ClientSet{
-		PropertyGroups: &PropertyGroupClient{transport: transport},
-		Properties:     &PropertyDefinitionClient{transport: transport},
-		Pipelines:      &PipelineClient{transport: transport},
-		Schemas:        &SchemaClient{transport: transport},
-		AccountInfo:    &AccountInfoClient{transport: transport},
-		Forms:          &FormClient{transport: transport},
-		FileFolders:    &FileFolderClient{transport: transport},
-		Files:          &FileClient{transport: transport},
+		PropertyGroups:     &PropertyGroupClient{transport: transport},
+		Properties:         &PropertyDefinitionClient{transport: transport},
+		Pipelines:          &PipelineClient{transport: transport},
+		Schemas:            &SchemaClient{transport: transport},
+		AccountInfo:        &AccountInfoClient{transport: transport},
+		Forms:              &FormClient{transport: transport},
+		FileFolders:        &FileFolderClient{transport: transport},
+		Files:              &FileClient{transport: transport},
+		AccountMemberships: &AccountMembershipClient{transport: transport},
 	}, nil
 }
 

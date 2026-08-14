@@ -11,6 +11,7 @@ after a create conflict.
 | `hubspot_form_definition` | exact lowercase generated UUID |
 | `hubspot_file_folder` | exact non-zero decimal generated folder ID |
 | `hubspot_file` | exact non-zero decimal generated file ID |
+| `hubspot_account_membership` | canonical Settings user ID or explicit `email:<address>` |
 
 Examples:
 
@@ -21,6 +22,8 @@ tofu import hubspot_form_definition.contact \
   '01234567-89ab-cdef-0123-456789abcdef'
 tofu import hubspot_file_folder.assets '123456789'
 tofu import hubspot_file.logo '987654321'
+tofu import hubspot_account_membership.operator \
+  'email:operator@example.com'
 ```
 
 Replace `tofu` with `terraform` when using Terraform.
@@ -39,3 +42,10 @@ Names, paths, URLs, hashes, sizes, and timestamps never identify Files
 configuration. Imported files still need a configured `source_path` and
 `source_sha256`; the first plan replaces remote bytes in place when their MD5 or
 size does not match the reviewed source.
+
+Account membership import always stores HubSpot's canonical numeric Settings
+user ID. Import records `send_welcome_email = false` and
+`allow_removal = false`; historic welcome delivery is unknowable and deletion
+requires a separate reviewed opt-in. Configured name drift is repaired only
+after exact ID/email reread and only when current role and team assignments are
+empty. Unconfigured optional-name drift remains observed state.
