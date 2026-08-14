@@ -49,6 +49,7 @@ type Warning string
 const (
 	PropertyTypeTransition      Warning = "Property type transition"
 	PropertyOptionValuesChanged Warning = "Property option values changed"
+	AccountMembershipGlobalName Warning = "Account membership names affect global identity"
 )
 
 type Failure string
@@ -188,6 +189,19 @@ func (s *Session) Apply(config string) {
 	s.registerCleanup()
 	if err := s.command("apply", "-auto-approve", "-input=false", "-no-color"); err != nil {
 		s.t.Fatalf("%s apply failed: %v", s.engine, err)
+	}
+}
+
+func (s *Session) ApplyWithWarning(config string, warning Warning) {
+	s.t.Helper()
+	s.writeConfig(config)
+	s.registerCleanup()
+	output, err := s.commandOutput("apply", "-auto-approve", "-input=false", "-no-color")
+	if err != nil {
+		s.t.Fatalf("%s apply failed: %v", s.engine, err)
+	}
+	if !strings.Contains(output, "Warning: "+string(warning)) {
+		s.t.Fatalf("apply did not emit required warning %q", warning)
 	}
 }
 

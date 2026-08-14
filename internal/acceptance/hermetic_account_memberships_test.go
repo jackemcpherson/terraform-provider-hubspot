@@ -41,7 +41,7 @@ func runHermeticAccountMembershipLifecycle(t *testing.T, engine acceptance.Engin
 		Engine: engine, Shard: acceptance.AccountMemberships,
 		Prefix: "tf_acc_hermetic_memberships_", LedgerPath: t.TempDir() + "/cleanup.jsonl", ProbeBaseURL: server.URL,
 	}, func(session *acceptance.Session) {
-		session.Apply(initial)
+		session.ApplyWithWarning(initial, acceptance.AccountMembershipGlobalName)
 		id := session.OpaqueStateString("hubspot_account_membership.managed", "id")
 		session.RequireStateString("hubspot_account_membership.managed", "email", email)
 		session.RequireStateString("hubspot_account_membership.managed", "first_name", "First")
@@ -74,7 +74,7 @@ func runHermeticAccountMembershipLifecycle(t *testing.T, engine acceptance.Engin
 			t.Fatal("activation failure was retried or not sent exactly once")
 		}
 		fake.SetAccountMembershipActivated(id, true)
-		session.Apply(updated)
+		session.ApplyWithWarning(updated, acceptance.AccountMembershipGlobalName)
 		session.RequireEmptyPlan(updated)
 
 		current, ok := fake.AccountMembershipSnapshot(id)
@@ -96,6 +96,19 @@ func runHermeticAccountMembershipLifecycle(t *testing.T, engine acceptance.Engin
 		_, _, deletesAfter := fake.AccountMembershipWriteCounts(id)
 		if deletesAfter != deletesBefore {
 			t.Fatal("identity-conflicting destroy sent a DELETE")
+		}
+		conflictingID := current
+		conflictingID.ID = "999"
+		fake.OverrideNextAccountMembershipEmailRead(email, conflictingID)
+		session.RequireApplyFailure(conflictingUpdate)
+		if fake.AccountMembershipUpdateAttempts(id) != updatesBefore {
+			t.Fatal("different-ID email lookup sent a name PUT")
+		}
+		fake.OverrideNextAccountMembershipEmailRead(email, conflictingID)
+		session.RequireDestroyFailure(updated)
+		_, _, deletesAfter = fake.AccountMembershipWriteCounts(id)
+		if deletesAfter != deletesBefore {
+			t.Fatal("different-ID email lookup sent a DELETE")
 		}
 		emailSuperAdmin := current
 		emailSuperAdmin.SuperAdmin = true
@@ -230,6 +243,7 @@ func runHermeticAccountMembershipLifecycle(t *testing.T, engine acceptance.Engin
 		}{
 			{email: "known-id-email-mismatch@example.com", fault: acceptance.AccountMembershipFaultCreateKnownEmailMismatch},
 			{email: "known-id-name-mismatch@example.com", fault: acceptance.AccountMembershipFaultCreateKnownNameMismatch},
+			{email: "known-id-last-mismatch@example.com", fault: acceptance.AccountMembershipFaultCreateKnownLastMismatch},
 		} {
 			config := hermeticAccountMembershipConfig(server.URL, providerSource, mismatch.email, "Known", "Mismatch", false, true)
 			fake.FailNextAccountMembershipOperation(mismatch.fault)

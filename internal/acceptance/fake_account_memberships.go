@@ -38,6 +38,7 @@ const (
 	AccountMembershipFaultCreateKnown              AccountMembershipFault = "create_known"
 	AccountMembershipFaultCreateKnownEmailMismatch AccountMembershipFault = "create_known_email_mismatch"
 	AccountMembershipFaultCreateKnownNameMismatch  AccountMembershipFault = "create_known_name_mismatch"
+	AccountMembershipFaultCreateKnownLastMismatch  AccountMembershipFault = "create_known_last_mismatch"
 )
 
 func (f *FakeHubSpot) handleAccountMemberships(response http.ResponseWriter, request *http.Request, rest []string) {
@@ -118,12 +119,16 @@ func (f *FakeHubSpot) handleAccountMembershipCollection(response http.ResponseWr
 			return
 		case AccountMembershipFaultCreateKnown,
 			AccountMembershipFaultCreateKnownEmailMismatch,
-			AccountMembershipFaultCreateKnownNameMismatch:
+			AccountMembershipFaultCreateKnownNameMismatch,
+			AccountMembershipFaultCreateKnownLastMismatch:
 			if f.nextAccountMembershipFault == AccountMembershipFaultCreateKnownEmailMismatch {
 				membership.membership.Email = "mismatched@example.invalid"
 			}
 			if f.nextAccountMembershipFault == AccountMembershipFaultCreateKnownNameMismatch {
 				membership.membership.FirstName = "Mismatched"
+			}
+			if f.nextAccountMembershipFault == AccountMembershipFaultCreateKnownLastMismatch {
+				membership.membership.LastName = "Mismatched"
 			}
 			f.nextAccountMembershipFault = ""
 			writeFakeJSON(response, http.StatusCreated, map[string]any{"id": id, "superAdmin": "invalid"})

@@ -318,6 +318,40 @@ func TestAccountMembershipJanitorRefusesInvalidDomainBeforeMutation(t *testing.T
 	}
 }
 
+func TestAccountMembershipJanitorRefusesIdentityMismatchBeforeMutation(t *testing.T) {
+	fake := acceptance.NewFakeHubSpot("token", 123)
+	server := httptest.NewServer(fake)
+	defer server.Close()
+	origin, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clients, err := hubspot.NewClientSet(hubspot.TransportConfig{BaseURL: origin, AccessToken: "token", UserAgent: "membership-janitor-identity-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	first, err := clients.AccountMemberships.Create(ctx, hubspot.AccountMembershipCreate{Email: "tf_acc_owned_first@example.com", SendWelcomeEmail: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := clients.AccountMemberships.Create(ctx, hubspot.AccountMembershipCreate{Email: "tf_acc_owned_second@example.com", SendWelcomeEmail: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mismatch := first
+	mismatch.ID = second.ID
+	fake.OverrideNextAccountMembershipEmailRead(first.Email, mismatch)
+	if err := deleteOwnedAccountMemberships(ctx, clients, "tf_acc_owned_"); err == nil {
+		t.Fatal("account membership cleanup accepted an identity mismatch")
+	}
+	for _, id := range []string{first.ID, second.ID} {
+		if _, err := clients.AccountMemberships.GetByID(ctx, id); err != nil {
+			t.Fatal("failed account membership cleanup partially mutated an owned identity")
+		}
+	}
+}
+
 func janitorClients(t *testing.T) (*hubspot.ClientSet, string) {
 	t.Helper()
 	shard := requiredEnvironment(t, "CAPABILITY_SHARD")
