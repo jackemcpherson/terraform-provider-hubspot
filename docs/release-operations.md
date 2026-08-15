@@ -38,6 +38,12 @@ runs pinned GoReleaser once. GoReleaser builds the provider archives, signs the
 checksum inventory, publishes the versioned Registry manifest, and creates the
 GitHub release used by Terraform Registry and OpenTofu Registry.
 
+Before dispatching publication, manually run `Provider maintenance` on the
+exact release commit after the demo pin reaches `main`. Confirm its success in
+the operator checklist. This proves the guarded Product runtime schema,
+root-folder omission, disposable lifecycle, and cumulative Northstar journey.
+ADR 0003 keeps this live evidence outside the automated publication gate.
+
 The `release` environment stores `GPG_PRIVATE_KEY` and `GPG_FINGERPRINT`. During
 v0.x it does not require a reviewer. The environment still restricts the signing
 credentials to the publication job. Reconsider required approval during v1.0
@@ -60,16 +66,24 @@ executes the cumulative Northstar journey against the disposable HubSpot portal
 with both current engines.
 
 The job uses the `northstar` environment. Its `HUBSPOT_ACCESS_TOKEN` must contain
-the cumulative CRM schema, Forms, Files, account-membership, and CRM-profile
-scopes. Use Settings users read/write access for membership and the exact
+the cumulative CRM schema, Forms, Files, account-membership, CRM-profile, and
+Product scopes. Products require `crm.objects.products.read` and
+`crm.objects.products.write`. Use Settings users read/write access for
+membership and the exact
 `crm.objects.users.read` and `crm.objects.users.write` pair for the separate
 CRM profile. Set
 `HUBSPOT_ACCEPTANCE_PORTAL_ID` to the expected disposable portal. Set the
 `HUBSPOT_NORTHSTAR_MEMBERSHIP_EMAIL` environment variable to a dedicated,
 disposable member in that portal. Do not use an ordinary account member or a
-Super Admin. A normal workflow failure identifies a maintenance problem. The
-workflow does not create custom evidence bundles or affect publication
-eligibility.
+Super Admin. A normal workflow failure identifies a maintenance problem and
+blocks publication for that exact commit. The workflow does not create custom
+evidence bundles.
+
+Maintenance first runs the guarded disposable Product contract probe. It then
+runs the cumulative demo under both engines. The probe verifies the runtime
+property schema, empty root folder after omission, decimal normalization,
+recurrence, active SKU uniqueness, clearing, archival reads, repeated archival,
+and exact cleanup.
 
 Run the non-live maintenance checks locally with:
 
@@ -91,6 +105,7 @@ live tests. Select one configuration surface and enter its required confirmation
 - `form_definitions`: `archive-prefixed-form-definitions`
 - `files_configuration`: `delete-prefixed-files-configuration`
 - `account_memberships`: `delete-prefixed-account-memberships`
+- `product_definitions`: `archive-prefixed-product-definitions`
 
 The single archival job selects the corresponding GitHub environment from the
 validated choice. The cleanup script rejects an unknown surface, an unsafe
@@ -98,7 +113,9 @@ prefix, or a confirmation for a different surface. All cleanup operations share
 one non-cancelling portal concurrency group.
 
 HubSpot retains archived property and Form configuration. Files enter
-HubSpot-managed Trash retention. Account membership cleanup accepts only exact
+HubSpot-managed Trash retention. Product cleanup archives only exact generated
+IDs whose SKU has the guarded `tf_acc_` ownership prefix and verifies the same
+archived identity. Account membership cleanup accepts only exact
 `tf_acc_...@example.com` ownership, rereads both identities, refuses Super
 Admins, and verifies absence. It does not delete global identity. Do not
 describe any of these outcomes as permanent global deletion.

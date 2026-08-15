@@ -18,6 +18,8 @@ the exact `files` scope. Account membership needs `settings.users.read` and
 CRM user profile configuration needs the exact pair
 `crm.objects.users.read` and `crm.objects.users.write`. The same pair covers the
 linked Settings identity reads.
+Product definition management needs exactly `crm.objects.products.read` and
+`crm.objects.products.write`. It never needs the legacy `e-commerce` scope.
 The provider needs no CRM record, form-submission, or
 CMS content scope and never reads CRM record values or submissions.
 
@@ -31,12 +33,15 @@ Some resources also depend on account features:
 | File folder and Managed file | HubSpot Free plus `files` scope | Only explicit folders and locally supplied reviewed bytes are supported. Normal deletion leaves HubSpot-managed Trash retention. |
 | Account membership | HubSpot account plus Settings users read/write or CRM users read/write scopes | Names affect global user identity. Removal is locally guarded and refuses Super Admin membership. |
 | CRM user profile | HubSpot account plus CRM users read/write scopes | Profile materialization can require human activation. Destroy retains profile values without a remote write. |
+| Standard Product definition | HubSpot Free plus Products read/write scopes | SKU conflicts are authoritative. Archive is terminal to this provider and HubSpot may retain the tombstone for 90 days. |
 
-v0.6 accepts only `data_sensitivity = "non_sensitive"`. Sensitive and
+v0.7 accepts only `data_sensitivity = "non_sensitive"`. Sensitive and
 highly-sensitive definitions, pipelines, custom schemas, form consent,
 notifications, automation, non-email form structures, roles, teams, seats,
 granular permissions, activation, deactivation, additional CRM user profile
 properties, and global identity deletion are deferred from this release.
+Product tiered pricing, folders, status, tax, terms, URLs, custom properties,
+line items, associations, and search-based adoption are also deferred.
 
 HubSpot editions, feature flags, quotas, and scope names can change separately
 from this provider. A 403 usually means the token lacks a scope or the account
@@ -50,3 +55,4 @@ create error requires cleanup or a capacity change before another apply.
 - [HubSpot app scope catalogue](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/scopes)
 - [HubSpot Settings API user provisioning guide](https://developers.hubspot.com/docs/api-reference/latest/account/settings/user-provisioning/guide)
 - [HubSpot CRM Users API guide](https://developers.hubspot.com/docs/api-reference/latest/crm/objects/users/guide)
+- [HubSpot Products API guide](https://developers.hubspot.com/docs/api-reference/latest/crm/objects/products/guide)

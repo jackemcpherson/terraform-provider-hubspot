@@ -35,15 +35,16 @@ func TestGenerateBuildsRegisteredProviderAndConsumerModulePages(t *testing.T) {
 	}
 
 	for _, relative := range []string{
-		"index.html", "crm-property-schema.html", "form-definition.html", "files-configuration.html", "account-membership.html", "crm-user-profile.html", "resources/index.html",
+		"index.html", "crm-property-schema.html", "form-definition.html", "files-configuration.html", "account-membership.html", "crm-user-profile.html", "product-definition.html", "resources/index.html",
 		"resources/hubspot_property.html", "resources/hubspot_property_group.html",
 		"resources/hubspot_form_definition.html",
 		"resources/hubspot_file_folder.html", "resources/hubspot_file.html",
 		"resources/hubspot_account_membership.html",
 		"resources/hubspot_crm_user_profile.html",
+		"resources/hubspot_product.html",
 		"data-sources/index.html", "data-sources/hubspot_property_definition.html",
 		"data-sources/hubspot_property_definitions.html", "modules/index.html",
-		"modules/crm-schema.html", "modules/form-definition.html", "modules/files-configuration.html", "modules/account-membership.html", "modules/crm-user-profile.html", "provenance.json",
+		"modules/crm-schema.html", "modules/form-definition.html", "modules/files-configuration.html", "modules/account-membership.html", "modules/crm-user-profile.html", "modules/product-definition.html", "provenance.json",
 	} {
 		if _, err := os.Stat(filepath.Join(output, relative)); err != nil {
 			t.Errorf("missing generated %s: %v", relative, err)
@@ -130,6 +131,24 @@ func TestGenerateBuildsRegisteredProviderAndConsumerModulePages(t *testing.T) {
 			t.Errorf("CRM user profile overview missing %q", expected)
 		}
 	}
+	productModulePage := readFile(t, filepath.Join(output, "modules", "product-definition.html"))
+	for _, expected := range []string{"products", "hubspot_product", "ids", "Stable map keys", "Null optionals", "Complete usage", `module &#34;products&#34;`, "0.7.0"} {
+		if !strings.Contains(productModulePage, expected) {
+			t.Errorf("Product module page missing %q", expected)
+		}
+	}
+	productResourcePage := readFile(t, filepath.Join(output, "resources", "hubspot_product.html"))
+	for _, expected := range []string{"sku", "price", "recurring_billing_period", "exact numeric generated Product ID", "semantic decimal", "sole state and import identity"} {
+		if !strings.Contains(productResourcePage, expected) {
+			t.Errorf("Product resource page missing %q", expected)
+		}
+	}
+	productOverview := readFile(t, filepath.Join(output, "product-definition.html"))
+	for _, expected := range []string{"2026-03", "crm.objects.products.read", "e-commerce", "hs_folder", "P#M", "90 days", "Northstar"} {
+		if !strings.Contains(productOverview, expected) {
+			t.Errorf("Product overview missing %q", expected)
+		}
+	}
 	propertyPage := readFile(t, filepath.Join(output, "resources", "hubspot_property.html"))
 	for _, expected := range []string{"object_type", "field_type", "options", "Import", "Lifecycle"} {
 		if !strings.Contains(propertyPage, expected) {
@@ -137,7 +156,7 @@ func TestGenerateBuildsRegisteredProviderAndConsumerModulePages(t *testing.T) {
 		}
 	}
 	provenance := readFile(t, filepath.Join(output, "provenance.json"))
-	for _, expected := range []string{"provider-commit", "demo-commit", `"version": "0.6.0"`, "2026-08-02T00:00:00Z", `"state": "unreleased"`, `"dirty": false`, "hubspot_form_definition", "hubspot_file_folder", "hubspot_file", "hubspot_account_membership", "hubspot_crm_user_profile", "form-definition", "files-configuration", "account-membership", "crm-user-profile"} {
+	for _, expected := range []string{"provider-commit", "demo-commit", `"version": "0.6.0"`, "2026-08-02T00:00:00Z", `"state": "unreleased"`, `"dirty": false`, "hubspot_form_definition", "hubspot_file_folder", "hubspot_file", "hubspot_account_membership", "hubspot_crm_user_profile", "hubspot_product", "form-definition", "files-configuration", "account-membership", "crm-user-profile", "product-definition"} {
 		if !strings.Contains(provenance, expected) {
 			t.Errorf("provenance missing %q", expected)
 		}
@@ -287,6 +306,7 @@ func createDemoFixture(t *testing.T) string {
 	filesModule := filepath.Join(root, "modules", "files-configuration")
 	membershipModule := filepath.Join(root, "modules", "account-membership")
 	profileModule := filepath.Join(root, "modules", "crm-user-profile")
+	productModule := filepath.Join(root, "modules", "product-definition")
 	if err := os.MkdirAll(crmModule, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -300,6 +320,9 @@ func createDemoFixture(t *testing.T) string {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(profileModule, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(productModule, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	files := map[string]string{
@@ -399,6 +422,24 @@ output "super_admin" { value = { for key, membership in hubspot_account_membersh
 	if err := os.WriteFile(filepath.Join(profileModule, "README.md"), []byte("Stable map keys preserve identity. Null properties are unmanaged. Requires provider 0.6.0.\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	productFiles := map[string]string{
+		"main.tf": `resource "hubspot_product" "this" { for_each = var.products }
+`,
+		"variables.tf": `variable "products" { type = map(object({ name = string, sku = string, price = string })) }
+`,
+		"outputs.tf": `output "ids" { value = { for key, product in hubspot_product.this : key => product.id } }
+`,
+		"versions.tf": `terraform { required_version = ">= 1.8, < 2.0" }
+`,
+	}
+	for name, contents := range productFiles {
+		if err := os.WriteFile(filepath.Join(productModule, name), []byte(contents), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(productModule, "README.md"), []byte("Stable map keys preserve generated identity. Null optionals remain unmanaged. Requires provider 0.7.0.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(root, "main.tf"), []byte(`module "crm_schema" { source = "./modules/crm-schema" }
 `), 0o644); err != nil {
 		t.Fatal(err)
@@ -443,6 +484,17 @@ output "super_admin" { value = { for key, membership in hubspot_account_membersh
 	if err := os.WriteFile(filepath.Join(profileExample, "main.tf"), []byte(`module "crm_profiles" {
   source   = "../../modules/crm-user-profile"
   profiles = { operator = { account_membership_id = "101" } }
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	productExample := filepath.Join(root, "examples", "product-definition")
+	if err := os.MkdirAll(productExample, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(productExample, "main.tf"), []byte(`module "products" {
+  source   = "../../modules/product-definition"
+  products = { support = { name = "Support", sku = "support", price = "10.00" } }
 }
 `), 0o644); err != nil {
 		t.Fatal(err)

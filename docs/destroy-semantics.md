@@ -103,3 +103,18 @@ availability, timezone, and working-hours values.
 This behavior is the resource lifecycle, so a separate state-removal
 alternative has the same remote result. Remove the linked account membership
 through `hubspot_account_membership` only when account removal is intended.
+
+## hubspot_product
+
+Destroy archives the exact generated Product ID. The provider verifies active
+absence and then requires the same ID in HubSpot's archived view before it
+removes state. An already archived or completely absent ID completes
+idempotently. Permission, transient, or identity-conflict responses retain
+state for a safe retry.
+
+HubSpot can retain archived Products for up to 90 days. This provider neither
+restores nor permanently purges them. Reapplying declared configuration creates
+a new generated ID and does not adopt or restore by SKU or name.
+
+**Non-destructive alternative:** `tofu state rm hubspot_product.<name>` (or the
+equivalent `terraform` command) leaves the active Product unmanaged.

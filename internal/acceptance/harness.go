@@ -37,6 +37,7 @@ const (
 	FormDefinitions     Shard = "form_definitions"
 	FilesConfiguration  Shard = "files_configuration"
 	AccountMemberships  Shard = "account_memberships"
+	ProductDefinitions  Shard = "product_definitions"
 	DealPipelines       Shard = "deal_pipelines"
 	TicketPipelines     Shard = "ticket_pipelines"
 	CustomSchemas       Shard = "custom_schemas"
@@ -176,7 +177,7 @@ func Run(t testing.TB, options Options, scenario func(*Session)) {
 
 func validShard(shard Shard) bool {
 	switch shard {
-	case FreeProperties, FormDefinitions, FilesConfiguration, AccountMemberships, DealPipelines, TicketPipelines, CustomSchemas, SensitiveProperties, CustomPipelines:
+	case FreeProperties, FormDefinitions, FilesConfiguration, AccountMemberships, ProductDefinitions, DealPipelines, TicketPipelines, CustomSchemas, SensitiveProperties, CustomPipelines:
 		return true
 	default:
 		return false

@@ -182,6 +182,48 @@ func TestExecuteManagesNorthstarCRMUserProfileLifecycle(t *testing.T) {
 	}
 }
 
+func TestExecuteManagesNorthstarProductLifecycle(t *testing.T) {
+	fake := acceptance.NewFakeHubSpot("token", 123)
+	server := httptest.NewServer(fake)
+	defer server.Close()
+	origin, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clients, err := hubspot.NewClientSet(hubspot.TransportConfig{BaseURL: origin, AccessToken: "token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cost := "300.00"
+	recurrence := "P12M"
+	product, err := clients.Products.Create(context.Background(), hubspot.ProductWrite{
+		Name: "Northstar annual support", SKU: "ns_support_annual",
+		Description: "Priority support for Northstar customers", Price: "1200.00",
+		Cost: &cost, RecurringBillingPeriod: &recurrence,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := execute(ctx, "verify-product", []string{product.ID}, clients); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(ctx, "drift-product", []string{product.ID}, clients); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(ctx, "verify-product", []string{product.ID}, clients); err == nil {
+		t.Fatal("Product verification accepted drift")
+	}
+	if _, err := execute(ctx, "archive-product-for-refresh", []string{product.ID}, clients); err != nil {
+		t.Fatal(err)
+	}
+	record, err := execute(ctx, "verify-product-terminal", []string{product.ID}, clients)
+	if err != nil || record == "" || strings.Contains(record, `"id"`) ||
+		!strings.Contains(record, `"terminal":"archived"`) || !strings.Contains(record, `"active_owned_products":0`) {
+		t.Fatalf("Product terminal record = %q, %v", record, err)
+	}
+}
+
 func TestExecuteCleansInterruptedNorthstarLifecycle(t *testing.T) {
 	t.Setenv("HUBSPOT_NORTHSTAR_FILES_PREFIX", "ns_1a2b3c4d_o_")
 	names, err := northstarFilesNamesFromEnvironment()
@@ -224,6 +266,15 @@ func TestExecuteCleansInterruptedNorthstarLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	cost := northstarProductCost
+	recurrence := northstarProductRecurrence
+	product, err := clients.Products.Create(ctx, hubspot.ProductWrite{
+		Name: northstarProductName, SKU: northstarProductSKU, Description: northstarProductDescription,
+		Price: northstarProductPrice, Cost: &cost, RecurringBillingPeriod: &recurrence,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	brand, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: names.BrandFolder})
 	if err != nil {
 		t.Fatal(err)
@@ -247,6 +298,9 @@ func TestExecuteCleansInterruptedNorthstarLifecycle(t *testing.T) {
 	}
 	if _, err := clients.Forms.GetArchived(ctx, form.ID); err != nil {
 		t.Fatal("cleanup did not retain the Northstar Form tombstone")
+	}
+	if archived, err := clients.Products.GetArchived(ctx, product.ID); err != nil || archived.ID != product.ID || !archived.Archived {
+		t.Fatalf("cleanup Product tombstone = %#v, %v", archived, err)
 	}
 	if err := verifyNorthstarCleanup(ctx, clients, names); err != nil {
 		t.Fatal(err)
@@ -281,6 +335,32 @@ func TestExecuteCleanupRejectsUnexpectedPrefixBeforeMutation(t *testing.T) {
 	}
 	if _, err := clients.PropertyGroups.Get(ctx, "contacts", "ns_unexpected"); err != nil {
 		t.Fatal("failed preflight partially mutated the unexpected property group")
+	}
+}
+
+func TestExecuteCleanupRejectsUnexpectedProductBeforeMutation(t *testing.T) {
+	server := httptest.NewServer(acceptance.NewFakeHubSpot("token", 123))
+	defer server.Close()
+	origin, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clients, err := hubspot.NewClientSet(hubspot.TransportConfig{BaseURL: origin, AccessToken: "token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	product, err := clients.Products.Create(ctx, hubspot.ProductWrite{
+		Name: "Unexpected", SKU: "ns_unexpected", Description: "Must remain active", Price: "1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(ctx, "cleanup", nil, clients); err == nil || !strings.Contains(err.Error(), "refusing unexpected") {
+		t.Fatalf("cleanup error = %v", err)
+	}
+	if active, err := clients.Products.Get(ctx, product.ID); err != nil || active.ID != product.ID || active.Archived {
+		t.Fatalf("failed preflight mutated Product = %#v, %v", active, err)
 	}
 }
 

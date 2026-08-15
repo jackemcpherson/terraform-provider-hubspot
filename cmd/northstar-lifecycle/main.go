@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"sort"
 	"strings"
@@ -25,6 +26,12 @@ const (
 	northstarProfileJobTitle     = "Cloud Operations Engineer"
 	northstarProfileAvailability = "available"
 	northstarProfileTimeZone     = "Australia/Melbourne"
+	northstarProductSKU          = "ns_support_annual"
+	northstarProductName         = "Northstar annual support"
+	northstarProductDescription  = "Priority support for Northstar customers"
+	northstarProductPrice        = "1200.00"
+	northstarProductCost         = "300.00"
+	northstarProductRecurrence   = "P12M"
 )
 
 var northstarFolderReadDelays = []time.Duration{0, time.Second, 2 * time.Second, 3 * time.Second, 5 * time.Second, 8 * time.Second, 13 * time.Second}
@@ -166,6 +173,26 @@ func execute(ctx context.Context, action string, ids []string, clients *hubspot.
 			return "", errors.New("northstar CRM profile ID and membership Settings ID are required for terminal verification")
 		}
 		return verifyNorthstarCRMProfileTerminal(ctx, clients, ids[0], ids[1])
+	case "verify-product":
+		if len(ids) != 1 {
+			return "", errors.New("northstar Product ID is required for verification")
+		}
+		return "", verifyNorthstarProduct(ctx, clients, ids[0])
+	case "drift-product":
+		if len(ids) != 1 {
+			return "", errors.New("northstar Product ID is required for drift")
+		}
+		return "", driftNorthstarProduct(ctx, clients, ids[0])
+	case "archive-product-for-refresh":
+		if len(ids) != 1 {
+			return "", errors.New("northstar Product ID is required for refresh archival")
+		}
+		return "", archiveNorthstarProductForRefresh(ctx, clients, ids[0])
+	case "verify-product-terminal":
+		if len(ids) != 1 {
+			return "", errors.New("northstar Product ID is required for terminal verification")
+		}
+		return verifyNorthstarProductTerminal(ctx, clients, ids[0])
 	case "verify-files":
 		if len(ids) != 4 {
 			return "", errors.New("four Northstar Files generated IDs are required for verification")
@@ -265,6 +292,7 @@ type northstarCleanupPlan struct {
 	forms      []string
 	files      []string
 	folders    []hubspot.FileFolder
+	products   []string
 }
 
 func stringSet(values ...string) map[string]struct{} {
@@ -307,6 +335,15 @@ func cleanupNorthstar(ctx context.Context, clients *hubspot.ClientSet, names nor
 	for _, id := range plan.forms {
 		if err := clients.Forms.Archive(ctx, id); err != nil && !northstarNotFound(err) {
 			return fmt.Errorf("archive Northstar Form definition: %s", acceptance.SanitizedHubSpotError(err))
+		}
+	}
+	for _, id := range plan.products {
+		if err := clients.Products.Archive(ctx, id); err != nil && !northstarNotFound(err) {
+			return fmt.Errorf("archive Northstar Product definition: %s", acceptance.SanitizedHubSpotError(err))
+		}
+		archived, err := clients.Products.GetArchived(ctx, id)
+		if err != nil || archived.ID != id || !archived.Archived {
+			return errors.New("northstar Product cleanup did not verify the exact archived identity")
 		}
 	}
 	for objectType, names := range plan.properties {
@@ -368,6 +405,23 @@ func inspectNorthstarCleanup(ctx context.Context, clients *hubspot.ClientSet, na
 			return plan, fmt.Errorf("refusing unexpected Northstar Form definition %q", form.Name)
 		}
 		plan.forms = append(plan.forms, form.ID)
+	}
+	products, err := clients.Products.List(ctx)
+	if err != nil {
+		return plan, fmt.Errorf("list Northstar Product definitions: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	for _, product := range products {
+		if !strings.HasPrefix(product.SKU, "ns_") {
+			continue
+		}
+		if product.SKU != northstarProductSKU || product.ID == "" || product.Archived {
+			return plan, fmt.Errorf("refusing unexpected Northstar Product definition %q", product.SKU)
+		}
+		exact, err := clients.Products.Get(ctx, product.ID)
+		if err != nil || exact.ID != product.ID || exact.SKU != product.SKU || exact.Archived {
+			return plan, errors.New("refusing Northstar Product whose exact identity was not verified")
+		}
+		plan.products = append(plan.products, product.ID)
 	}
 	files, err := clients.Files.Search(ctx, nil, "")
 	if err != nil {
@@ -464,8 +518,8 @@ func verifyNorthstarCleanup(ctx context.Context, clients *hubspot.ClientSet, nam
 			return errors.New("northstar cleanup left active CRM property groups")
 		}
 	}
-	if len(plan.forms) != 0 || len(plan.files) != 0 || len(plan.folders) != 0 {
-		return errors.New("northstar cleanup left active Forms or Files configuration")
+	if len(plan.forms) != 0 || len(plan.files) != 0 || len(plan.folders) != 0 || len(plan.products) != 0 {
+		return errors.New("northstar cleanup left active Forms, Files, or Product configuration")
 	}
 	return nil
 }
@@ -788,6 +842,92 @@ func northstarCRMProfileMatches(profile hubspot.CRMUserProfile) bool {
 	return err == nil && profile.JobTitle == northstarProfileJobTitle &&
 		profile.AvailabilityStatus == northstarProfileAvailability && profile.TimeZone == northstarProfileTimeZone &&
 		actualHours == desiredHours
+}
+
+func verifyNorthstarProduct(ctx context.Context, clients *hubspot.ClientSet, id string) error {
+	product, err := clients.Products.Get(ctx, id)
+	if err != nil {
+		return fmt.Errorf("read Northstar Product: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	if product.ID != id || product.Archived || product.Name != northstarProductName ||
+		product.SKU != northstarProductSKU || product.Description != northstarProductDescription ||
+		!northstarProductDecimalsEqual(product.Price, northstarProductPrice) ||
+		!northstarProductDecimalsEqual(product.Cost, northstarProductCost) ||
+		product.RecurringBillingPeriod != northstarProductRecurrence {
+		return errors.New("northstar Product did not match every managed value and exact identity")
+	}
+	return nil
+}
+
+func driftNorthstarProduct(ctx context.Context, clients *hubspot.ClientSet, id string) error {
+	if err := verifyNorthstarProduct(ctx, clients, id); err != nil {
+		return err
+	}
+	if _, err := clients.Products.Patch(ctx, id, map[string]string{
+		"description": "Out-of-band Northstar Product", "price": "1300",
+		"hs_cost_of_goods_sold": "350", "hs_recurring_billing_period": "P6M",
+	}); err != nil {
+		return fmt.Errorf("author Northstar Product drift: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	drifted, err := clients.Products.Get(ctx, id)
+	if err != nil || drifted.ID != id || drifted.Description != "Out-of-band Northstar Product" ||
+		!northstarProductDecimalsEqual(drifted.Price, "1300") || drifted.RecurringBillingPeriod != "P6M" {
+		return errors.New("northstar Product drift mutation was not observable with preserved identity")
+	}
+	return nil
+}
+
+func archiveNorthstarProductForRefresh(ctx context.Context, clients *hubspot.ClientSet, id string) error {
+	product, err := clients.Products.Get(ctx, id)
+	if err != nil || product.ID != id || product.SKU != northstarProductSKU || product.Archived {
+		return errors.New("northstar Product refresh target did not match the exact owned identity")
+	}
+	if err := clients.Products.Archive(ctx, id); err != nil {
+		return fmt.Errorf("archive Northstar Product refresh target: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	archived, err := clients.Products.GetArchived(ctx, id)
+	if err != nil || archived.ID != id || !archived.Archived {
+		return errors.New("northstar Product refresh target did not reach the exact archived identity")
+	}
+	return nil
+}
+
+func verifyNorthstarProductTerminal(ctx context.Context, clients *hubspot.ClientSet, id string) (string, error) {
+	if _, err := clients.Products.Get(ctx, id); err == nil {
+		return "", errors.New("northstar Product remained active after teardown")
+	} else if !northstarNotFound(err) {
+		return "", fmt.Errorf("verify Northstar Product active absence: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	archived, err := clients.Products.GetArchived(ctx, id)
+	if err != nil || archived.ID != id || !archived.Archived {
+		return "", errors.New("northstar Product terminal identity was not exact")
+	}
+	active, err := clients.Products.List(ctx)
+	if err != nil {
+		return "", fmt.Errorf("list active Northstar Products: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	for _, product := range active {
+		if strings.HasPrefix(product.SKU, "ns_") {
+			return "", errors.New("northstar teardown retained an active owned Product")
+		}
+	}
+	digest := sha256.Sum256([]byte("northstar-product-identity\x00" + id))
+	record, err := json.Marshal(struct {
+		GeneratedIdentityHash string `json:"generated_identity_hash"`
+		Terminal              string `json:"terminal"`
+		ActiveOwnedProducts   int    `json:"active_owned_products"`
+		Cleanup               string `json:"cleanup"`
+	}{hex.EncodeToString(digest[:]), "archived", 0, "passed"})
+	if err != nil {
+		return "", errors.New("encode Northstar terminal Product record")
+	}
+	return string(record), nil
+}
+
+func northstarProductDecimalsEqual(first, second string) bool {
+	firstValue, firstOK := new(big.Rat).SetString(first)
+	secondValue, secondOK := new(big.Rat).SetString(second)
+	return firstOK && secondOK && firstValue.Cmp(secondValue) == 0
 }
 
 func driftNorthstarProperty(ctx context.Context, clients *hubspot.ClientSet) error {

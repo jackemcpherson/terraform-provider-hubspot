@@ -6,6 +6,7 @@ package acceptance
 import (
 	"context"
 	"errors"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -161,6 +162,79 @@ func (s *Session) RequireFormArchived(id string) {
 	if form.ID != id || !form.Archived {
 		s.t.Fatal("form terminal probe did not verify the exact archived generated ID")
 	}
+}
+
+func (s *Session) MutateProduct(address string) {
+	s.t.Helper()
+	clients, err := s.probeClients()
+	if err != nil {
+		s.t.Fatalf("configure sanitized Product drift probe: %v", err)
+	}
+	id := s.OpaqueStateString(address, "id")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	if _, err := clients.Products.Patch(ctx, id, map[string]string{
+		"description": "Out-of-band Product description", "price": "1700",
+		"hs_cost_of_goods_sold": "450", "hs_recurring_billing_period": "P3M",
+	}); err != nil {
+		s.t.Fatalf("mutate Product for drift probe: %s", SanitizedHubSpotError(err))
+	}
+	product, err := clients.Products.Get(ctx, id)
+	if err != nil || product.ID != id || product.Description != "Out-of-band Product description" {
+		s.t.Fatal("Product drift probe did not verify the exact mutated identity")
+	}
+}
+
+func (s *Session) ArchiveProduct(address string) string {
+	s.t.Helper()
+	clients, err := s.probeClients()
+	if err != nil {
+		s.t.Fatalf("configure sanitized Product archive probe: %v", err)
+	}
+	id := s.OpaqueStateString(address, "id")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	if err := clients.Products.Archive(ctx, id); err != nil {
+		s.t.Fatalf("archive Product for external lifecycle probe: %s", SanitizedHubSpotError(err))
+	}
+	archived, err := clients.Products.GetArchived(ctx, id)
+	if err != nil || archived.ID != id || !archived.Archived {
+		s.t.Fatal("Product archive probe did not verify the exact archived identity")
+	}
+	return id
+}
+
+func (s *Session) RequireProductsTerminal(prefix string, expectedIDs ...string) {
+	s.t.Helper()
+	clients, err := s.probeClients()
+	if err != nil {
+		s.t.Fatalf("configure sanitized Product terminal probe: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	products, err := clients.Products.List(ctx)
+	if err != nil {
+		s.t.Fatalf("list Products for terminal probe: %s", SanitizedHubSpotError(err))
+	}
+	for _, product := range products {
+		if strings.HasPrefix(product.SKU, prefix) {
+			s.t.Fatal("Product terminal probe found active prefix-owned configuration")
+		}
+	}
+	for _, id := range expectedIDs {
+		if _, err := clients.Products.Get(ctx, id); !productProbeNotFound(err) {
+			s.t.Fatal("Product terminal probe found an expected generated identity active")
+		}
+		archived, err := clients.Products.GetArchived(ctx, id)
+		if err != nil || archived.ID != id || !archived.Archived {
+			s.t.Fatal("Product terminal probe did not verify the exact archived identity")
+		}
+	}
+}
+
+func productProbeNotFound(err error) bool {
+	var apiError *hubspot.Error
+	return errors.As(err, &apiError) && apiError.Status == http.StatusNotFound
 }
 
 // MutateFormPresentation applies one supported out-of-band presentation change

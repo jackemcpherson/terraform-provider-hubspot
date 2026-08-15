@@ -53,6 +53,12 @@ func TestAcc_JanitorReport(t *testing.T) {
 			t.Fatalf("report stale owned account memberships: %s", acceptance.SanitizedHubSpotError(err))
 		}
 		t.Logf("stale owned HubSpot configuration: active_account_memberships=%d", memberships)
+	case "product_definitions":
+		active, archived, err := countOwnedProducts(ctx, clients, prefix)
+		if err != nil {
+			t.Fatalf("report stale owned Product definitions: %s", acceptance.SanitizedHubSpotError(err))
+		}
+		t.Logf("stale owned HubSpot configuration: active_product_definitions=%d retained_archived_product_definitions=%d", active, archived)
 	}
 }
 
@@ -81,6 +87,14 @@ func TestAcc_ManualPrefixCleanup(t *testing.T) {
 			t.Fatalf("archive owned Form definitions: %s", acceptance.SanitizedHubSpotError(err))
 		}
 		t.Logf("terminal cleanup retained Archived form definitions: %d", archived)
+		return
+	}
+	if shard == "product_definitions" {
+		archived, err := archiveOwnedProducts(ctx, clients, prefix)
+		if err != nil {
+			t.Fatalf("archive owned Product definitions: %s", acceptance.SanitizedHubSpotError(err))
+		}
+		t.Logf("terminal cleanup retained archived Product definitions: %d", archived)
 		return
 	}
 
@@ -134,6 +148,117 @@ func TestAcc_ManualPrefixCleanup(t *testing.T) {
 	if propertyCount != 0 || groupCount != 0 {
 		t.Fatal("manual cleanup could not verify absence of all prefixed CRM configuration")
 	}
+}
+
+func TestProductJanitorArchivesOnlyPrefixOwnedExactIdentities(t *testing.T) {
+	fake := acceptance.NewFakeHubSpot("token", 123)
+	server := httptest.NewServer(fake)
+	defer server.Close()
+	origin, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clients, err := hubspot.NewClientSet(hubspot.TransportConfig{BaseURL: origin, AccessToken: "token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	owned, err := clients.Products.Create(ctx, hubspot.ProductWrite{
+		Name: "Owned", SKU: "tf_acc_owned_product", Description: "Owned Product", Price: "1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unowned, err := clients.Products.Create(ctx, hubspot.ProductWrite{
+		Name: "Unowned", SKU: "keep_product", Description: "Unowned Product", Price: "1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	active, archived, err := countOwnedProducts(ctx, clients, "tf_acc_owned_")
+	if err != nil || active != 1 || archived != 0 {
+		t.Fatalf("owned Product report = %d active, %d archived, %v", active, archived, err)
+	}
+	archivedCount, err := archiveOwnedProducts(ctx, clients, "tf_acc_owned_")
+	if err != nil || archivedCount != 1 {
+		t.Fatalf("owned Product cleanup = %d, %v", archivedCount, err)
+	}
+	if _, err := clients.Products.Get(ctx, owned.ID); !formJanitorNotFound(err) {
+		t.Fatal("Product cleanup retained the owned active identity")
+	}
+	if product, err := clients.Products.GetArchived(ctx, owned.ID); err != nil || product.ID != owned.ID || !product.Archived {
+		t.Fatal("Product cleanup did not verify the exact archived identity")
+	}
+	if _, err := clients.Products.Get(ctx, unowned.ID); err != nil {
+		t.Fatal("Product cleanup mutated an unowned identity")
+	}
+}
+
+func countOwnedProducts(ctx context.Context, clients *hubspot.ClientSet, prefix string) (int, int, error) {
+	activeProducts, err := clients.Products.List(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+	archivedProducts, err := clients.Products.ListArchived(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+	active := 0
+	for _, product := range activeProducts {
+		if strings.HasPrefix(product.SKU, prefix) {
+			active++
+		}
+	}
+	archived := 0
+	for _, product := range archivedProducts {
+		if strings.HasPrefix(product.SKU, prefix) {
+			archived++
+		}
+	}
+	return active, archived, nil
+}
+
+func archiveOwnedProducts(ctx context.Context, clients *hubspot.ClientSet, prefix string) (int, error) {
+	products, err := clients.Products.List(ctx)
+	if err != nil {
+		return 0, err
+	}
+	owned := make([]hubspot.Product, 0)
+	for _, product := range products {
+		if strings.HasPrefix(product.SKU, prefix) {
+			owned = append(owned, product)
+		}
+	}
+	for _, product := range owned {
+		exact, err := clients.Products.Get(ctx, product.ID)
+		if err != nil {
+			return 0, err
+		}
+		if exact.ID != product.ID || exact.Archived || exact.SKU != product.SKU || !strings.HasPrefix(exact.SKU, prefix) {
+			return 0, errors.New("Product cleanup ownership preflight did not verify an exact active identity")
+		}
+	}
+	for _, product := range owned {
+		archiveErr := clients.Products.Archive(ctx, product.ID)
+		archived, readErr := clients.Products.GetArchived(ctx, product.ID)
+		if readErr != nil || archived.ID != product.ID || !archived.Archived {
+			if archiveErr != nil {
+				return 0, archiveErr
+			}
+			if readErr != nil {
+				return 0, readErr
+			}
+			return 0, errors.New("Product cleanup did not verify the exact archived identity")
+		}
+	}
+	active, _, err := countOwnedProducts(ctx, clients, prefix)
+	if err != nil {
+		return 0, err
+	}
+	if active != 0 {
+		return 0, errors.New("Product cleanup could not verify zero active prefix-owned Product definitions")
+	}
+	return len(owned), nil
 }
 
 func TestFilesJanitorReportsAndDeletesOwnedConfigurationLeafFirst(t *testing.T) {
@@ -355,7 +480,7 @@ func TestAccountMembershipJanitorRefusesIdentityMismatchBeforeMutation(t *testin
 func janitorClients(t *testing.T) (*hubspot.ClientSet, string) {
 	t.Helper()
 	shard := requiredEnvironment(t, "CAPABILITY_SHARD")
-	if shard != "free_properties" && shard != "form_definitions" && shard != "files_configuration" && shard != "account_memberships" && shard != "deal_pipelines" && shard != "ticket_pipelines" {
+	if shard != "free_properties" && shard != "form_definitions" && shard != "files_configuration" && shard != "account_memberships" && shard != "product_definitions" && shard != "deal_pipelines" && shard != "ticket_pipelines" {
 		t.Fatal("janitor implementation is unavailable for the selected capability shard")
 	}
 	token := requiredEnvironment(t, "HUBSPOT_ACCESS_TOKEN")

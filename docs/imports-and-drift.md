@@ -13,6 +13,7 @@ after a create conflict.
 | `hubspot_file` | exact non-zero decimal generated file ID |
 | `hubspot_account_membership` | canonical Settings user ID or explicit `email:<address>` |
 | `hubspot_crm_user_profile` | canonical CRM user ID or explicit `membership:<Settings-ID>` |
+| `hubspot_product` | exact non-zero decimal generated Product ID |
 
 Examples:
 
@@ -27,6 +28,7 @@ tofu import hubspot_account_membership.operator \
   'email:operator@example.com'
 tofu import hubspot_crm_user_profile.operator \
   'membership:123456789'
+tofu import hubspot_product.support '246813579'
 ```
 
 Replace `tofu` with `terraform` when using Terraform.
@@ -58,3 +60,9 @@ ID. The membership form resolves one exact paginated `hs_internal_user_id`
 join. Import adopts job title and each other nonempty supported property. Null
 properties in later configuration remain unmanaged. Managed drift enters state
 on refresh and the next apply repairs only changed managed properties.
+
+Product import is active-only and accepts only the generated Product ID. It
+adopts required values and supported nonempty cost or recurrence. SKU and name
+never identify a Product. Null optional configuration remains unmanaged, empty
+string clears the remote value, and semantic decimal normalization does not
+produce a write.
