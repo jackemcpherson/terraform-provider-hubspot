@@ -72,6 +72,9 @@ type FakeHubSpot struct {
 	nextFilesFault               FilesFault
 	malformedNextManagedFileRead bool
 	staleFilesSearchCursor       bool
+	nextManagedFileMoveReadLag   int
+	nextManagedFileMoveSearchLag int
+	managedFileMoveVisibility    *fakeManagedFileMoveVisibility
 
 	accountMemberships          map[string]*fakeAccountMembership
 	accountMembershipIDsByEmail map[string]string
