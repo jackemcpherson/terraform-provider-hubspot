@@ -21,6 +21,8 @@ probe, and freeze the v0.6.0 contract.
   ran inside the filesystem sandbox, which hid the existing credential entry.
 - The guarded live probe completed at `2026-08-15T04:16:43Z` with the existing
   Keychain credential and approved reusable global identity.
+- The final reviewed probe reran successfully at `2026-08-15T04:28:17Z` with
+  exact profile restoration and owned membership cleanup.
 
 ## Answer
 
