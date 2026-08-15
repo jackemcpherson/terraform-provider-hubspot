@@ -38,7 +38,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: jackemcpherson/terraform-hubspot-instance-demo
-          ref: a43c591a36bbcc6ed49af90c7f8e6c55c2e83356
+          ref: 350546ce83a852ba880f1d47ed952f75cadbed69
           path: .demo-source
           persist-credentials: false
       - name: Set up provider toolchain
