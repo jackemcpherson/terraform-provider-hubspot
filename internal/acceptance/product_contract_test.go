@@ -4,12 +4,38 @@
 package acceptance_test
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/jackemcpherson/terraform-provider-hubspot/internal/acceptance"
 	"github.com/jackemcpherson/terraform-provider-hubspot/internal/hubspot"
 )
+
+func TestProductArchiveReplayAccepted(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		err  error
+		want bool
+	}{
+		"success":           {err: nil, want: true},
+		"not found":         {err: &hubspot.Error{Status: 404}, want: true},
+		"wrapped not found": {err: fmt.Errorf("archive replay: %w", &hubspot.Error{Status: 404}), want: true},
+		"forbidden":         {err: &hubspot.Error{Status: 403}, want: false},
+		"transport failure": {err: errors.New("connection failed"), want: false},
+	}
+	for name, test := range tests {
+		test := test
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if got := acceptance.ProductArchiveReplayAccepted(test.err); got != test.want {
+				t.Fatalf("ProductArchiveReplayAccepted() = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
 
 func TestValidateProductPropertySchemaAcceptsTextBackedRecurrence(t *testing.T) {
 	t.Parallel()

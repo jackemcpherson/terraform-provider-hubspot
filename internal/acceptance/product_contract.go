@@ -4,11 +4,24 @@
 package acceptance
 
 import (
+	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/jackemcpherson/terraform-provider-hubspot/internal/hubspot"
 )
+
+// ProductArchiveReplayAccepted reports whether a repeated exact-ID archive
+// completed idempotently. HubSpot portals can return success or not found after
+// the same archived identity has already been verified.
+func ProductArchiveReplayAccepted(err error) bool {
+	if err == nil {
+		return true
+	}
+	var apiError *hubspot.Error
+	return errors.As(err, &apiError) && apiError.Status == http.StatusNotFound
+}
 
 // ValidateProductPropertySchema checks the runtime properties needed by the
 // frozen Product resource contract. Recurrence remains text-backed across the
