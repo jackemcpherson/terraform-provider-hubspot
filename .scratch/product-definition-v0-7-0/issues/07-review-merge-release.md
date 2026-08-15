@@ -37,3 +37,12 @@ Blocked by: 01, 02, 03, 04, 05, 06
   the exact file, repairs and verifies the empty parent separately, and then
   moves the file home. The provider follow-up adds bounded exact-ID and complete
   parent-search convergence proof before folder drift.
+- 2026-08-15: Provider PR 84 merged the staged-file convergence guard and demo
+  pin as `f2636e0add3b5044087013ecb001d74d07d65db1`. Exact-main Required run
+  31876363264 passed. Protected maintenance run 31876456472 crossed the prior
+  combined-repair failure and completed the targeted parent-folder rename. The
+  Downloads child-folder path had not propagated within the existing 32-second
+  verification window. Staged verification therefore failed closed before the
+  private file was moved home. The follow-up retains the two-apply sequence and
+  extends only bounded descendant-path convergence beyond the observed
+  32-second delay.

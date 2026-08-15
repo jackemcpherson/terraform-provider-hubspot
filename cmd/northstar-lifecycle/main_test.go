@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http/httptest"
 	"net/url"
 	"strings"
@@ -790,20 +791,42 @@ func TestNorthstarFilesRunNamesFitSearchLimit(t *testing.T) {
 	}
 }
 
-func TestWaitForNorthstarFolderConvergence(t *testing.T) {
+func TestWaitForNorthstarDescendantPathConvergence(t *testing.T) {
+	var totalDelay time.Duration
+	for _, delay := range northstarDescendantPathConvergenceDelays {
+		totalDelay += delay
+	}
+	if totalDelay <= 32*time.Second {
+		t.Fatalf("descendant path convergence delay = %s, want more than live-observed 32s", totalDelay)
+	}
+	originalDelays := northstarDescendantPathConvergenceDelays
+	northstarDescendantPathConvergenceDelays = make([]time.Duration, len(originalDelays))
+	t.Cleanup(func() { northstarDescendantPathConvergenceDelays = originalDelays })
+
 	attempts := 0
-	folder, err := waitForNorthstarFolder(context.Background(), func(context.Context, string) (hubspot.FileFolder, error) {
+	folder, err := waitForNorthstarDescendantPath(context.Background(), func(context.Context, string) (hubspot.FileFolder, error) {
 		attempts++
 		path := "/old/child"
-		if attempts == 3 {
+		if attempts == len(northstarDescendantPathConvergenceDelays) {
 			path = "/current/child"
 		}
 		return hubspot.FileFolder{ID: "11", Path: path}, nil
 	}, "11", func(folder hubspot.FileFolder) bool {
 		return folder.Path == "/current/child"
-	}, []time.Duration{0, 0, 0})
-	if err != nil || attempts != 3 || folder.Path != "/current/child" {
+	})
+	if err != nil || attempts != len(northstarDescendantPathConvergenceDelays) || folder.Path != "/current/child" {
 		t.Fatalf("folder convergence = %#v after %d attempts, %v", folder, attempts, err)
+	}
+
+	attempts = 0
+	_, err = waitForNorthstarDescendantPath(context.Background(), func(context.Context, string) (hubspot.FileFolder, error) {
+		attempts++
+		return hubspot.FileFolder{ID: "11", Path: "/old/child"}, nil
+	}, "11", func(folder hubspot.FileFolder) bool {
+		return folder.Path == "/current/child"
+	})
+	if !errors.Is(err, errNorthstarFolderReadBack) || attempts != len(northstarDescendantPathConvergenceDelays) {
+		t.Fatalf("folder exhaustion after %d attempts = %v", attempts, err)
 	}
 }
 
