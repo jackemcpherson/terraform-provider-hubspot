@@ -35,7 +35,12 @@ const (
 	northstarApprovedMembershipEmail = "tfhs-probe-16-20260802024807@example.com"
 )
 
-var northstarFilesConvergenceDelays = []time.Duration{0, time.Second, 2 * time.Second, 3 * time.Second, 5 * time.Second, 8 * time.Second, 13 * time.Second}
+var (
+	northstarFilesConvergenceDelays          = []time.Duration{0, time.Second, 2 * time.Second, 3 * time.Second, 5 * time.Second, 8 * time.Second, 13 * time.Second}
+	northstarDescendantPathConvergenceDelays = []time.Duration{0, time.Second, 2 * time.Second, 3 * time.Second, 5 * time.Second, 8 * time.Second, 13 * time.Second, 21 * time.Second, 34 * time.Second}
+)
+
+var errNorthstarFolderReadBack = errors.New("northstar folder read-back did not converge")
 
 type northstarFilesIDs struct {
 	BrandFolder     string
@@ -637,10 +642,13 @@ func verifyNorthstarFiles(ctx context.Context, clients *hubspot.ClientSet, ids n
 		return fmt.Errorf("read Northstar brand folder: %s", acceptance.SanitizedHubSpotError(err))
 	}
 	expectedDownloadsPath := "/" + names.BrandFolder + "/" + names.DownloadsFolder
-	downloads, err := waitForNorthstarFolder(ctx, clients.FileFolders.Get, ids.DownloadsFolder, func(folder hubspot.FileFolder) bool {
+	downloads, err := waitForNorthstarDescendantPath(ctx, clients.FileFolders.Get, ids.DownloadsFolder, func(folder hubspot.FileFolder) bool {
 		return folder.ID == ids.DownloadsFolder && folder.Name == names.DownloadsFolder && folder.ParentFolderID != nil && *folder.ParentFolderID == ids.BrandFolder && folder.Path == expectedDownloadsPath
-	}, northstarFilesConvergenceDelays)
+	})
 	if err != nil {
+		if errors.Is(err, errNorthstarFolderReadBack) {
+			return errors.New("northstar downloads folder descendant path did not converge")
+		}
 		return fmt.Errorf("read Northstar downloads folder: %s", acceptance.SanitizedHubSpotError(err))
 	}
 	privateFile, err := clients.Files.Get(ctx, ids.PrivateFile)
@@ -691,7 +699,11 @@ func waitForNorthstarFolder(ctx context.Context, read func(context.Context, stri
 			return folder, nil
 		}
 	}
-	return observed, errors.New("northstar folder read-back did not converge")
+	return observed, errNorthstarFolderReadBack
+}
+
+func waitForNorthstarDescendantPath(ctx context.Context, read func(context.Context, string) (hubspot.FileFolder, error), id string, matches func(hubspot.FileFolder) bool) (hubspot.FileFolder, error) {
+	return waitForNorthstarFolder(ctx, read, id, matches, northstarDescendantPathConvergenceDelays)
 }
 
 func stageNorthstarFileForFolderRename(ctx context.Context, clients *hubspot.ClientSet, fileID, parentFolderID, stagingFolderID string, names northstarFilesNames) error {
@@ -778,10 +790,13 @@ func driftNorthstarFolderPath(ctx context.Context, clients *hubspot.ClientSet, p
 		return fmt.Errorf("author Northstar folder path drift: %s", acceptance.SanitizedHubSpotError(err))
 	}
 	expectedPath := "/" + names.BrandFolderRefresh + "/" + names.DownloadsFolder
-	child, err := waitForNorthstarFolder(ctx, clients.FileFolders.Get, childID, func(folder hubspot.FileFolder) bool {
+	child, err := waitForNorthstarDescendantPath(ctx, clients.FileFolders.Get, childID, func(folder hubspot.FileFolder) bool {
 		return folder.ID == childID && folder.ParentFolderID != nil && *folder.ParentFolderID == parentID && folder.Path == expectedPath
-	}, northstarFilesConvergenceDelays)
+	})
 	if err != nil {
+		if errors.Is(err, errNorthstarFolderReadBack) {
+			return errors.New("northstar refreshed child folder descendant path did not converge")
+		}
 		return fmt.Errorf("read Northstar refreshed child folder: %s", acceptance.SanitizedHubSpotError(err))
 	}
 	if child.ID != childID || child.ParentFolderID == nil || *child.ParentFolderID != parentID || child.Path != expectedPath {
