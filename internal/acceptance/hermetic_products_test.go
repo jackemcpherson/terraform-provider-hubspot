@@ -118,6 +118,11 @@ func runHermeticProductLifecycle(t *testing.T, engine acceptance.Engine, provide
 			t.Fatalf("rejected Product update changed patch count: %d", patches)
 		}
 
+		fake.FailNextProductOperation(acceptance.ProductFaultReadRejected)
+		session.RequirePlanFailure(semantic, "Product refresh failed")
+		session.RequireStateString("hubspot_product.managed", "id", id)
+		session.RequireEmptyPlan(semantic)
+
 		session.RemoveState("hubspot_product.managed")
 		for _, invalidID := range []string{"0", "01", "tf_acc_hermetic_product", "sku:tf_acc_hermetic_product"} {
 			session.RequireImportFailure(semantic, "hubspot_product.managed", invalidID, "Invalid Product import ID")
@@ -139,12 +144,28 @@ func runHermeticProductLifecycle(t *testing.T, engine acceptance.Engine, provide
 			t.Fatal("recreated Product reused an archived generated identity")
 		}
 
+		if !fake.RemoveProduct(recreatedID) {
+			t.Fatal("could not simulate complete Product absence")
+		}
+		session.Refresh(semantic)
+		session.RequireStateAbsent("hubspot_product.managed")
+		session.Apply(semantic)
+		terminalID := session.OpaqueStateString("hubspot_product.managed", "id")
+
+		fake.FailNextProductOperation(acceptance.ProductFaultArchiveRejected)
+		session.RequireDestroyFailure(semantic)
+		session.RequireStateString("hubspot_product.managed", "id", terminalID)
+		if product, ok := fake.ProductSnapshot(terminalID); !ok || product.Archived {
+			t.Fatalf("rejected archive mutated Product = %#v, %v", product, ok)
+		}
+
+		fake.FailNextProductOperation(acceptance.ProductFaultArchiveAmbiguous)
 		session.Destroy(semantic)
-		product, ok := fake.ProductSnapshot(recreatedID)
-		if !ok || !product.Archived || product.ID != recreatedID {
+		product, ok := fake.ProductSnapshot(terminalID)
+		if !ok || !product.Archived || product.ID != terminalID {
 			t.Fatalf("terminal Product = %#v, %v", product, ok)
 		}
-		if deletes := fake.ProductDeleteCount(recreatedID); deletes != 1 {
+		if deletes := fake.ProductDeleteCount(terminalID); deletes != 1 {
 			t.Fatalf("Product archive count = %d, want 1", deletes)
 		}
 	})

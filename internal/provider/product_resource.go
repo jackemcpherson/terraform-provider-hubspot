@@ -394,9 +394,8 @@ func productMatchesPlan(product hubspot.Product, plan productResourceModel) bool
 
 func productModelFromRemote(product hubspot.Product, prior *productResourceModel) (productResourceModel, error) {
 	if !validProductImportID(product.ID) || !productDecimalPattern.MatchString(product.Price) ||
-		product.Name == "" || strings.TrimSpace(product.Name) != product.Name ||
-		product.SKU == "" || strings.TrimSpace(product.SKU) != product.SKU ||
-		product.Description == "" || strings.TrimSpace(product.Description) != product.Description {
+		strings.TrimSpace(product.Name) == "" || strings.TrimSpace(product.SKU) == "" ||
+		strings.TrimSpace(product.Description) == "" {
 		return productResourceModel{}, errors.New("unsupported Product identity or price")
 	}
 	model := productResourceModel{

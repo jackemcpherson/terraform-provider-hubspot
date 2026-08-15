@@ -115,6 +115,25 @@ func TestProductDecimalAndRecurrenceValidation(t *testing.T) {
 	}
 }
 
+func TestProductRequiredTextAcceptsAnyNonblankValue(t *testing.T) {
+	for _, value := range []string{"value", " value", "value ", "\tvalue\n"} {
+		response := validator.StringResponse{}
+		productRequiredTextValidator{subject: "Product description"}.ValidateString(context.Background(), validator.StringRequest{
+			Path: path.Root("description"), ConfigValue: types.StringValue(value),
+		}, &response)
+		if response.Diagnostics.HasError() {
+			t.Errorf("nonblank Product text %q was rejected", value)
+		}
+	}
+	response := validator.StringResponse{}
+	productRequiredTextValidator{subject: "Product description"}.ValidateString(context.Background(), validator.StringRequest{
+		Path: path.Root("description"), ConfigValue: types.StringValue(" \t\n"),
+	}, &response)
+	if !response.Diagnostics.HasError() {
+		t.Fatal("blank Product text was accepted")
+	}
+}
+
 func TestProductDecimalEqualityIsSemantic(t *testing.T) {
 	if !productDecimalsEqual("1200.00", "1200") {
 		t.Fatal("equivalent decimal strings did not compare equal")

@@ -14,24 +14,24 @@ folder value.
 
 `name`, `sku`, `description`, and `price` are required. Price is an exact
 non-negative decimal string. HubSpot may normalize its spelling, such as
-`1200.00` to `1200`; the provider compares decimals semantically and preserves
+`1200.00` to `1200`. The provider compares decimals semantically and preserves
 the configured spelling, so normalization causes no PATCH.
 
 `cost` and `recurring_billing_period` are optional managed properties. Null
 means unmanaged, while an empty string explicitly clears the remote value.
 Recurrence accepts positive whole-month ISO periods in `P#M` form. Import adopts
-supported nonempty optional values; subsequent configuration chooses whether
+supported nonempty optional values. Subsequent configuration chooses whether
 they remain managed.
 
 PATCH includes only changed managed properties. Refresh and every recovery path
 read the exact generated ID. An ambiguous create with a returned ID retains it
-for exact read-back; without an ID, the provider fails with import guidance and
+for exact read-back. Without an ID, the provider fails with import guidance and
 does not search by SKU or name. Active SKU conflicts remain authoritative API
 rejections and are never treated as adoption.
 
 Destroy archives the exact ID, verifies active absence, then verifies the same
 archived identity. Already archived or absent IDs complete idempotently.
-HubSpot may retain archived Products for up to 90 days; this provider offers no
+HubSpot may retain archived Products for up to 90 days. This provider offers no
 restore or purge operation.
 
 Tiered pricing, folders, status, tax, terms, URLs, custom properties, line

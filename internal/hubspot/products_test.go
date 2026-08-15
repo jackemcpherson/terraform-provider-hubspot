@@ -40,9 +40,9 @@ func TestProductClientUsesExactIdentityAndManagedProperties(t *testing.T) {
 			if _, exists := body.Properties["hs_folder"]; exists {
 				t.Fatal("create sent hs_folder")
 			}
-			io.WriteString(writer, `{"id":"701","properties":{"name":"Support","hs_sku":"SUPPORT-1","description":"Annual support","price":"1200"},"archived":false,"futureField":true}`)
+			io.WriteString(writer, `{"id":"701","properties":{"name":"Support","hs_sku":"SUPPORT-1","description":"Annual support","price":"1200","hs_folder":""},"archived":false,"futureField":true}`)
 		case "GET /crm/objects/2026-03/products/701":
-			io.WriteString(writer, `{"id":"701","properties":{"name":"Support","hs_sku":"SUPPORT-1","description":"Annual support","price":"1200.0"},"archived":false,"futureField":true}`)
+			io.WriteString(writer, `{"id":"701","properties":{"name":"Support","hs_sku":"SUPPORT-1","description":"Annual support","price":"1200.0","hs_folder":"folder-42"},"archived":false,"futureField":true}`)
 		case "PATCH /crm/objects/2026-03/products/701":
 			var body struct {
 				Properties map[string]string `json:"properties"`
@@ -70,7 +70,7 @@ func TestProductClientUsesExactIdentityAndManagedProperties(t *testing.T) {
 		t.Fatalf("create = %#v, %v", created, err)
 	}
 	read, err := client.Get(context.Background(), "701")
-	if err != nil || read.Price != "1200.0" {
+	if err != nil || read.Price != "1200.0" || read.Folder != "folder-42" {
 		t.Fatalf("read = %#v, %v", read, err)
 	}
 	patched, err := client.Patch(context.Background(), "701", map[string]string{"description": "Priority support"})
@@ -83,7 +83,7 @@ func TestProductClientUsesExactIdentityAndManagedProperties(t *testing.T) {
 
 	wantRequests := []string{
 		"POST /crm/objects/2026-03/products",
-		"GET /crm/objects/2026-03/products/701?properties=description%2Chs_cost_of_goods_sold%2Chs_recurring_billing_period%2Chs_sku%2Cname%2Cprice",
+		"GET /crm/objects/2026-03/products/701?properties=description%2Chs_cost_of_goods_sold%2Chs_folder%2Chs_recurring_billing_period%2Chs_sku%2Cname%2Cprice",
 		"PATCH /crm/objects/2026-03/products/701",
 		"DELETE /crm/objects/2026-03/products/701",
 	}

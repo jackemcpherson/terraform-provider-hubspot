@@ -4,13 +4,8 @@ This map tracks the append-only work needed to publish v0.7.0.
 
 ## Frontier
 
-- [01 Validate the live contract](issues/01-validate-live-contract.md).
-- [02 Add the typed Product client](issues/02-add-typed-product-client.md).
-- [03 Add the Terraform resource](issues/03-add-product-resource.md).
-- [04 Extend lifecycle and cleanup](issues/04-extend-lifecycle-and-cleanup.md).
-- [05 Extend the cumulative demo](issues/05-extend-cumulative-demo.md).
-- [06 Publish documentation and release metadata](issues/06-publish-documentation.md).
-- [07 Review, merge, and release](issues/07-review-merge-release.md).
+- None. The remaining live-contract, documentation-pin, and release tickets are
+  claimed or blocked.
 
 ## Decisions So Far
 
@@ -18,4 +13,11 @@ This map tracks the append-only work needed to publish v0.7.0.
 - Official research is in
   [the 2026-03 Products contract](research/2026-03-products-contract.md).
 - Root placement uses omission, subject to the guarded live publication probe.
-
+- The [typed Product client](issues/02-add-typed-product-client.md) owns exact
+  `2026-03` HTTP identity and recovery behavior.
+- The [Product resource](issues/03-add-product-resource.md) owns the frozen
+  Terraform state contract and semantic decimal handling.
+- The [lifecycle and cleanup work](issues/04-extend-lifecycle-and-cleanup.md)
+  proves both engines, guarded archival, and cumulative helpers.
+- The [cumulative demo](issues/05-extend-cumulative-demo.md) composes the
+  stable-keyed module without touching the existing dirty worktree.

@@ -24,7 +24,7 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
-- Never identify, recover, or adopt a Product by SKU or name; ambiguous creates
+- Never identify, recover, or adopt a Product by SKU or name. Ambiguous creates
   without a returned ID now stop with exact-ID import guidance.
 
 ## [0.6.0] - 2026-08-15

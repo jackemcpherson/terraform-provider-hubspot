@@ -23,8 +23,11 @@ type fakeProduct struct {
 type ProductFault string
 
 const (
-	ProductFaultCreateKnown   ProductFault = "create_known"
-	ProductFaultCreateUnknown ProductFault = "create_unknown"
+	ProductFaultCreateKnown      ProductFault = "create_known"
+	ProductFaultCreateUnknown    ProductFault = "create_unknown"
+	ProductFaultReadRejected     ProductFault = "read_rejected"
+	ProductFaultArchiveRejected  ProductFault = "archive_rejected"
+	ProductFaultArchiveAmbiguous ProductFault = "archive_ambiguous"
 )
 
 func (f *FakeHubSpot) handleProducts(response http.ResponseWriter, request *http.Request, rest []string) {
@@ -103,6 +106,11 @@ func (f *FakeHubSpot) handleProductItem(response http.ResponseWriter, request *h
 	entry := f.products[id]
 	switch request.Method {
 	case http.MethodGet:
+		if f.nextProductFault == ProductFaultReadRejected {
+			f.nextProductFault = ""
+			writeFakeError(response, http.StatusForbidden, "MISSING_SCOPES", "", "The Product read was rejected.")
+			return
+		}
 		archived := request.URL.Query().Get("archived") == "true"
 		if entry == nil || entry.product.Archived != archived {
 			writeFakeError(response, http.StatusNotFound, "OBJECT_NOT_FOUND", "", "No Product matched this identity.")
@@ -141,8 +149,18 @@ func (f *FakeHubSpot) handleProductItem(response http.ResponseWriter, request *h
 			writeFakeError(response, http.StatusNotFound, "OBJECT_NOT_FOUND", "", "No active Product matched this identity.")
 			return
 		}
+		if f.nextProductFault == ProductFaultArchiveRejected {
+			f.nextProductFault = ""
+			writeFakeError(response, http.StatusForbidden, "MISSING_SCOPES", "", "The Product archive was rejected.")
+			return
+		}
 		entry.product.Archived = true
 		entry.deleteCount++
+		if f.nextProductFault == ProductFaultArchiveAmbiguous {
+			f.nextProductFault = ""
+			writeFakeError(response, http.StatusForbidden, "MISSING_SCOPES", "", "The Product archive response was ambiguous.")
+			return
+		}
 		response.WriteHeader(http.StatusNoContent)
 	default:
 		writeFakeError(response, http.StatusMethodNotAllowed, "VALIDATION_ERROR", "", "Unsupported method.")
@@ -219,6 +237,7 @@ func fakeProductDocument(product hubspot.Product) map[string]any {
 			"name": product.Name, "hs_sku": product.SKU,
 			"description": product.Description, "price": product.Price,
 			"hs_cost_of_goods_sold":       product.Cost,
+			"hs_folder":                   product.Folder,
 			"hs_recurring_billing_period": product.RecurringBillingPeriod,
 		},
 		"futureServiceMetadata": map[string]any{"revision": 1},
@@ -312,5 +331,15 @@ func (f *FakeHubSpot) ArchiveProduct(id string) bool {
 		return false
 	}
 	entry.product.Archived = true
+	return true
+}
+
+func (f *FakeHubSpot) RemoveProduct(id string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.products[id] == nil {
+		return false
+	}
+	delete(f.products, id)
 	return true
 }

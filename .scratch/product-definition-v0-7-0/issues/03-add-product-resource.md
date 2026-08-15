@@ -18,3 +18,9 @@ Blocked by: 02
 - 2026-08-15: Registered the frozen schema and passed exact-ID CRUD, import,
   drift, recovery, validation, optional-clearing, and destroy tests under both
   engines without changing existing resource schemas.
+
+## Answer
+
+`hubspot_product` now exposes the seven-attribute frozen schema. Public
+framework journeys prove exact-ID create, refresh, update, import, absence, and
+verified archival while preserving every existing resource contract.

@@ -16,3 +16,9 @@ Blocked by: None
 
 - 2026-08-15: Implemented exact typed endpoints, paging, archived reads,
   ambiguous-outcome preservation, and focused response-contract tests.
+
+## Answer
+
+The typed client uses only the `2026-03` Products and Product-property routes,
+keeps generated IDs exact, follows collection cursors, ignores additive fields,
+and preserves returned identity across ambiguous responses.

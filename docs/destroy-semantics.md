@@ -109,7 +109,7 @@ through `hubspot_account_membership` only when account removal is intended.
 Destroy archives the exact generated Product ID. The provider verifies active
 absence and then requires the same ID in HubSpot's archived view before it
 removes state. An already archived or completely absent ID completes
-idempotently; permission, transient, or identity-conflict responses retain
+idempotently. Permission, transient, or identity-conflict responses retain
 state for a safe retry.
 
 HubSpot can retain archived Products for up to 90 days. This provider neither

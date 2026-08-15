@@ -19,7 +19,7 @@ CRM user profile configuration needs the exact pair
 `crm.objects.users.read` and `crm.objects.users.write`. The same pair covers the
 linked Settings identity reads.
 Product definition management needs exactly `crm.objects.products.read` and
-`crm.objects.products.write`; it never needs the legacy `e-commerce` scope.
+`crm.objects.products.write`. It never needs the legacy `e-commerce` scope.
 The provider needs no CRM record, form-submission, or
 CMS content scope and never reads CRM record values or submissions.
 

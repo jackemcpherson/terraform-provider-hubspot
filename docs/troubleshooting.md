@@ -22,7 +22,7 @@ result.
 
 For a Product create without a returned generated ID, inspect the disposable
 portal and import only the intended exact numeric ID. Never retry by guessing
-from SKU or name; the provider deliberately does not search by either field.
+from SKU or name. The provider deliberately does not search by either field.
 
 ## Destroy is blocked
 
@@ -38,7 +38,7 @@ HubSpot rejects name updates until the user activates and can return
 `USER_NOT_ON_ANY_HUBS`. The provider does not retry that response indefinitely.
 It also refuses PUT while role or team assignments are present because omission
 semantics are undocumented. Activate the user or manage the global name outside
-this resource; roles and teams remain outside the v0.7 contract.
+this resource. Roles and teams remain outside the v0.7 contract.
 
 ## A Product Requires `hs_folder`
 
@@ -50,7 +50,7 @@ copy an account-specific folder ID into reusable configuration.
 ## A Product Decimal Keeps Changing Spelling
 
 Prices and costs are string attributes so configuration preserves exact decimal
-intent. HubSpot may return an equivalent spelling such as `1200`; the provider
+intent. HubSpot may return an equivalent spelling such as `1200`. The provider
 compares the numeric value and sends no PATCH. A different numeric value is
 ordinary drift and the next apply repairs only that managed property.
 

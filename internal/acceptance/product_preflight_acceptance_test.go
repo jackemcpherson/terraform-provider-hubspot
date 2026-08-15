@@ -48,6 +48,9 @@ func TestAcc_product_definitions_ContractPreflight(t *testing.T) {
 			t.Fatalf("Product runtime property %s did not match the frozen %s contract", name, propertyType)
 		}
 	}
+	if _, ok := seen["hs_folder"]; !ok {
+		t.Fatal("Product runtime property schema omitted hs_folder")
+	}
 
 	suffix := strings.ReplaceAll(time.Now().UTC().Format("20060102T150405.000000000"), ".", "")
 	sku := prefix + "contract_probe_" + suffix
@@ -72,7 +75,7 @@ func TestAcc_product_definitions_ContractPreflight(t *testing.T) {
 	}()
 
 	read, err := clients.Products.Get(ctx, created.ID)
-	if err != nil || read.ID != created.ID || read.Archived ||
+	if err != nil || read.ID != created.ID || read.Archived || read.Folder != "" ||
 		!productPreflightDecimalsEqual(read.Price, "1200.00") ||
 		!productPreflightDecimalsEqual(read.Cost, "300.00") || read.RecurringBillingPeriod != recurrence {
 		t.Fatal("Product contract probe did not round-trip the exact generated identity and supported values")

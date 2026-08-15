@@ -21,7 +21,7 @@ var (
 type productRequiredTextValidator struct{ subject string }
 
 func (v productRequiredTextValidator) Description(context.Context) string {
-	return v.subject + " must be non-blank and have no surrounding whitespace"
+	return v.subject + " must be non-blank"
 }
 
 func (v productRequiredTextValidator) MarkdownDescription(ctx context.Context) string {
@@ -33,7 +33,7 @@ func (v productRequiredTextValidator) ValidateString(_ context.Context, request 
 		return
 	}
 	value := request.ConfigValue.ValueString()
-	if value == "" || strings.TrimSpace(value) != value {
+	if strings.TrimSpace(value) == "" {
 		response.Diagnostics.AddAttributeError(request.Path, "Invalid Product text", v.Description(context.Background())+".")
 	}
 }

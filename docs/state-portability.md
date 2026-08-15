@@ -5,7 +5,7 @@ boundary is an offline, byte-preserving migration: IDs, nested map keys,
 ownership sets, and teardown safeguards are copied without contacting HubSpot
 or normalizing state. The account-membership resource begins at schema version
 0 and needs no legacy migration. The CRM-user-profile and Product resources also
-begin at schema version 0; each keeps its own documented numeric identity.
+begin at schema version 0. Each keeps its own documented numeric identity.
 
 The provider supports forward upgrades only. Downgrades are not promised.
 Legacy flatmap state is rejected before writing a replacement state file; first

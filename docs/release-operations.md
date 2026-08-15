@@ -38,6 +38,12 @@ runs pinned GoReleaser once. GoReleaser builds the provider archives, signs the
 checksum inventory, publishes the versioned Registry manifest, and creates the
 GitHub release used by Terraform Registry and OpenTofu Registry.
 
+Publication requires successful `Required` and `Weekly provider maintenance`
+checks on the exact release commit. Manually dispatch maintenance after the
+demo pin reaches `main`. This proves the guarded Product runtime schema,
+root-folder omission, disposable lifecycle, and cumulative Northstar journey
+with the protected portal before release credentials are available.
+
 The `release` environment stores `GPG_PRIVATE_KEY` and `GPG_FINGERPRINT`. During
 v0.x it does not require a reviewer. The environment still restricts the signing
 credentials to the publication job. Reconsider required approval during v1.0
@@ -69,9 +75,15 @@ CRM profile. Set
 `HUBSPOT_ACCEPTANCE_PORTAL_ID` to the expected disposable portal. Set the
 `HUBSPOT_NORTHSTAR_MEMBERSHIP_EMAIL` environment variable to a dedicated,
 disposable member in that portal. Do not use an ordinary account member or a
-Super Admin. A normal workflow failure identifies a maintenance problem. The
-workflow does not create custom evidence bundles or affect publication
-eligibility.
+Super Admin. A normal workflow failure identifies a maintenance problem and
+blocks publication for that exact commit. The workflow does not create custom
+evidence bundles.
+
+Maintenance first runs the guarded disposable Product contract probe. It then
+runs the cumulative demo under both engines. The probe verifies the runtime
+property schema, empty root folder after omission, decimal normalization,
+recurrence, active SKU uniqueness, clearing, archival reads, repeated archival,
+and exact cleanup.
 
 Run the non-live maintenance checks locally with:
 

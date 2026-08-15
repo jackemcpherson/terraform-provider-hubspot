@@ -12,7 +12,7 @@ import (
 	"net/url"
 )
 
-const productPropertySelection = "description,hs_cost_of_goods_sold,hs_recurring_billing_period,hs_sku,name,price"
+const productPropertySelection = "description,hs_cost_of_goods_sold,hs_folder,hs_recurring_billing_period,hs_sku,name,price"
 
 const productPageLimit = "100"
 
@@ -27,6 +27,7 @@ type Product struct {
 	Description            string
 	Price                  string
 	Cost                   string
+	Folder                 string
 	RecurringBillingPeriod string
 	Archived               bool
 }
@@ -57,6 +58,7 @@ type productWire struct {
 		Description            string `json:"description"`
 		Price                  string `json:"price"`
 		Cost                   string `json:"hs_cost_of_goods_sold"`
+		Folder                 string `json:"hs_folder"`
 		RecurringBillingPeriod string `json:"hs_recurring_billing_period"`
 	} `json:"properties"`
 	Archived bool `json:"archived"`
@@ -270,7 +272,7 @@ func productFromWire(wire productWire) Product {
 	return Product{
 		ID: wire.ID, Name: wire.Properties.Name, SKU: wire.Properties.SKU,
 		Description: wire.Properties.Description, Price: wire.Properties.Price,
-		Cost:                   wire.Properties.Cost,
+		Cost: wire.Properties.Cost, Folder: wire.Properties.Folder,
 		RecurringBillingPeriod: wire.Properties.RecurringBillingPeriod,
 		Archived:               wire.Archived,
 	}
