@@ -7,6 +7,13 @@ The local environment did not contain `HUBSPOT_ACCESS_TOKEN`,
 ID. The dedicated probe Keychain entry was also absent. No HubSpot request or
 mutation was sent.
 
+The protected GitHub `northstar` environment was rechecked on 15 August 2026.
+It exposes only the `HUBSPOT_ACCESS_TOKEN` secret and
+`HUBSPOT_ACCEPTANCE_PORTAL_ID` variable. It does not expose the expected
+fingerprint or protected Settings membership ID required by this probe, and
+the accepted ADR 0003 workflow topology provides no safe branch workflow that
+can supply them. Secret and variable values were not read or logged.
+
 Run `../probe/crm-user-profile-lifecycle.zsh` only with the approved environment
 credential, portal fingerprint, and protected activated Settings identity. The
 probe never prints credentials, email, names, CRM IDs, or Settings IDs. It

@@ -23,7 +23,9 @@ publication.
 - Destroy stops management without a remote write.
 - ADR 0003 remains the release architecture.
 - Current official documentation has no blocking contradiction.
-- Missing local live credentials block publication until resolved. GitHub CLI
+- Missing local live credentials block publication until resolved. The
+  protected GitHub environment has only the token and portal ID, not the two
+  probe guards; ADR 0003 provides no safe branch execution path. GitHub CLI
   authentication is currently valid.
 - [Typed client](issues/02-typed-client.md): paginated identity discovery,
   bounded readiness, partial PATCH, and canonical working hours are complete.
@@ -33,3 +35,5 @@ publication.
   pass the behavioural fake and cumulative Northstar profile journey.
 - [Demo and documentation](issues/05-demo-documentation.md): the stable-keyed
   module and complete v0.6.0 user guidance are generated and checked.
+- Provider PR 78 and demo PR 23 are draft, clean, mergeable, and green. Their
+  merges remain deliberately pending behind the guarded live probe.

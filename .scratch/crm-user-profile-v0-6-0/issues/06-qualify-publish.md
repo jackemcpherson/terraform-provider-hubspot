@@ -15,5 +15,7 @@ v0.6.0 release.
 
 - GitHub authentication is valid. Publication still requires the missing
   guarded live credential inputs.
-- All local provider and demo gates pass. Specialist review, hosted checks,
-  merges, and immutable publication remain pending.
+- All local provider and demo gates, specialist reviews, and hosted pull-request
+  checks pass. Both draft pull requests are clean and mergeable. The guarded
+  live probe, demo-first merges, exact demo merge pin, and immutable
+  publication remain pending in that order.
