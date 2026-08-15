@@ -37,6 +37,7 @@ const (
 
 var (
 	northstarFilesConvergenceDelays          = []time.Duration{0, time.Second, 2 * time.Second, 3 * time.Second, 5 * time.Second, 8 * time.Second, 13 * time.Second}
+	northstarFolderTaskConvergenceDelays     = []time.Duration{0, time.Second, 2 * time.Second, 3 * time.Second, 5 * time.Second, 8 * time.Second, 13 * time.Second}
 	northstarDescendantPathConvergenceDelays = []time.Duration{0, time.Second, 2 * time.Second, 3 * time.Second, 5 * time.Second, 8 * time.Second, 13 * time.Second, 21 * time.Second, 34 * time.Second}
 )
 
@@ -107,7 +108,7 @@ func main() {
 	if token == "" {
 		fatal(errors.New("HUBSPOT_ACCESS_TOKEN is required"))
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), northstarActionTimeout(os.Args[1]))
 	defer cancel()
 	clients, err := acceptance.NewRealPortalClientSet(ctx, token, "terraform-provider-hubspot/northstar-lifecycle")
 	if err != nil {
@@ -120,6 +121,13 @@ func main() {
 	if result != "" {
 		fmt.Println(result)
 	}
+}
+
+func northstarActionTimeout(action string) time.Duration {
+	if action == "drift-folder-path" {
+		return 3 * time.Minute
+	}
+	return 2 * time.Minute
 }
 
 func execute(ctx context.Context, action string, ids []string, clients *hubspot.ClientSet) (string, error) {
@@ -706,6 +714,37 @@ func waitForNorthstarDescendantPath(ctx context.Context, read func(context.Conte
 	return waitForNorthstarFolder(ctx, read, id, matches, northstarDescendantPathConvergenceDelays)
 }
 
+func waitForNorthstarFolderTask(ctx context.Context, read func(context.Context, string) (hubspot.FolderUpdateTask, error), id string, delays []time.Duration) error {
+	for _, delay := range delays {
+		if delay > 0 {
+			timer := time.NewTimer(delay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return errors.New("northstar folder update task timed out")
+			case <-timer.C:
+			}
+		}
+		task, err := read(ctx, id)
+		if err != nil {
+			return err
+		}
+		if len(task.Errors) > 0 {
+			return errors.New("northstar folder update task result was invalid")
+		}
+		switch task.Status {
+		case "COMPLETE":
+			return nil
+		case "PENDING", "RUNNING", "PROCESSING":
+		case "CANCELED", "ERROR", "FAILED", "":
+			return errors.New("northstar folder update task did not complete")
+		default:
+			return errors.New("northstar folder update task returned an unknown state")
+		}
+	}
+	return errors.New("northstar folder update task did not converge")
+}
+
 func stageNorthstarFileForFolderRename(ctx context.Context, clients *hubspot.ClientSet, fileID, parentFolderID, stagingFolderID string, names northstarFilesNames) error {
 	file, err := clients.Files.Get(ctx, fileID)
 	if err != nil {
@@ -785,8 +824,11 @@ func driftNorthstarFile(ctx context.Context, clients *hubspot.ClientSet, id stri
 }
 
 func driftNorthstarFolderPath(ctx context.Context, clients *hubspot.ClientSet, parentID, childID string, names northstarFilesNames) error {
-	_, err := clients.FileFolders.Rename(ctx, parentID, names.BrandFolderRefresh)
+	task, err := clients.FileFolders.Update(ctx, parentID, hubspot.FileFolderWrite{Name: names.BrandFolderRefresh})
 	if err != nil {
+		return fmt.Errorf("author Northstar folder path drift: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	if err := waitForNorthstarFolderTask(ctx, clients.FileFolders.GetUpdateTask, task.ID, northstarFolderTaskConvergenceDelays); err != nil {
 		return fmt.Errorf("author Northstar folder path drift: %s", acceptance.SanitizedHubSpotError(err))
 	}
 	expectedPath := "/" + names.BrandFolderRefresh + "/" + names.DownloadsFolder

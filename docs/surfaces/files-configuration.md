@@ -39,6 +39,11 @@ HubSpot also reports success and then reverts a folder rename when that folder
 contains direct Managed files. The provider rejects that rename before mutation.
 Move the direct files elsewhere, rename the folder, then move the files back in
 a later apply. Renaming an ancestor with only child folders remains supported.
+The provider uses HubSpot's
+[asynchronous hierarchy update](https://developers.hubspot.com/docs/api-reference/latest/files/folders/update-folder)
+for that case and waits for its terminal `COMPLETE` status. The protected
+cumulative journey then verifies the exact managed descendant path before a
+later file update can proceed.
 
 The `files-configuration` consumer module manages one hierarchy level with
 stable map keys. Compose deeper hierarchy by passing a generated `folder_ids`

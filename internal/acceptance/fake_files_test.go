@@ -82,6 +82,57 @@ func TestFakeHubSpotModelsFilesIdentityCollisionsAndInPlaceReplacement(t *testin
 	}
 }
 
+func TestFakeHubSpotDistinguishesPatchFromAsyncDescendantPropagation(t *testing.T) {
+	fake := NewFakeHubSpot("token", 123)
+	server := httptest.NewServer(fake)
+	defer server.Close()
+	origin, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clients, err := hubspot.NewClientSet(hubspot.TransportConfig{BaseURL: origin, AccessToken: "token", UserAgent: "fake-folder-propagation-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	root, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: "root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: "child", ParentFolderID: &root.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := clients.FileFolders.Rename(ctx, root.ID, "patched"); err != nil {
+		t.Fatal(err)
+	}
+	patchedChild, err := clients.FileFolders.Get(ctx, child.ID)
+	if err != nil || patchedChild.Path != "/root/child" {
+		t.Fatalf("PATCH descendant path = %q, %v", patchedChild.Path, err)
+	}
+	task, err := clients.FileFolders.Update(ctx, root.ID, hubspot.FileFolderWrite{Name: "async"})
+	if err != nil || task.Status != "PENDING" {
+		t.Fatalf("initial async task = %#v, %v", task, err)
+	}
+	taskID := task.ID
+	task, err = clients.FileFolders.GetUpdateTask(ctx, taskID)
+	if err != nil || task.Status != "PENDING" {
+		t.Fatalf("polled async task = %#v, %v", task, err)
+	}
+	pendingChild, err := clients.FileFolders.Get(ctx, child.ID)
+	if err != nil || pendingChild.Path != "/root/child" {
+		t.Fatalf("pending async descendant path = %q, %v", pendingChild.Path, err)
+	}
+	task, err = clients.FileFolders.GetUpdateTask(ctx, taskID)
+	if err != nil || task.Status != "COMPLETE" {
+		t.Fatalf("completed async task = %#v, %v", task, err)
+	}
+	updatedChild, err := clients.FileFolders.Get(ctx, child.ID)
+	if err != nil || updatedChild.Path != "/async/child" {
+		t.Fatalf("async descendant path = %q, %v", updatedChild.Path, err)
+	}
+}
+
 func rawFakeUpload(t *testing.T, serverURL, folderID, name, contents, scope, strategy string) hubspot.ManagedFile {
 	t.Helper()
 	var body bytes.Buffer

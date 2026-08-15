@@ -20,6 +20,15 @@ import (
 
 const northstarTestMembershipEmail = "tfhs-probe-16-20260802024807@example.com"
 
+func TestNorthstarActionTimeoutPreservesFolderDriftMargin(t *testing.T) {
+	if timeout := northstarActionTimeout("drift-folder-path"); timeout != 3*time.Minute {
+		t.Fatalf("folder drift timeout = %s", timeout)
+	}
+	if timeout := northstarActionTimeout("verify-files"); timeout != 2*time.Minute {
+		t.Fatalf("default timeout = %s", timeout)
+	}
+}
+
 func TestExecuteAuthorsDriftAndArchivesRefreshTarget(t *testing.T) {
 	server := httptest.NewServer(acceptance.NewFakeHubSpot("token", 123))
 	defer server.Close()
@@ -702,6 +711,9 @@ func TestExecuteManagesNorthstarFilesLifecycle(t *testing.T) {
 	}
 	if _, err := execute(ctx, "drift-folder-path", []string{brand.ID, downloads.ID}, clients); err != nil {
 		t.Fatal(err)
+	}
+	if patches, asyncUpdates := fake.FileFolderWriteCounts(brand.ID); patches != 0 || asyncUpdates != 1 {
+		t.Fatalf("Northstar parent folder drift writes = PATCH %d, async update %d", patches, asyncUpdates)
 	}
 	driftedDownloads, err := clients.FileFolders.Get(ctx, downloads.ID)
 	if err != nil || driftedDownloads.Path != "/"+names.BrandFolderRefresh+"/"+names.DownloadsFolder {
