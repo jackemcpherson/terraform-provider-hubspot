@@ -72,7 +72,7 @@ func TestProviderRegistersExactPublicTypes(t *testing.T) {
 	}
 	slices.Sort(resources)
 	slices.Sort(dataSources)
-	if !slices.Equal(resources, []string{"hubspot_account_membership", "hubspot_crm_user_profile", "hubspot_file", "hubspot_file_folder", "hubspot_form_definition", "hubspot_property", "hubspot_property_group"}) {
+	if !slices.Equal(resources, []string{"hubspot_account_membership", "hubspot_crm_user_profile", "hubspot_file", "hubspot_file_folder", "hubspot_form_definition", "hubspot_product", "hubspot_property", "hubspot_property_group"}) {
 		t.Fatalf("registered resources = %#v", resources)
 	}
 	if !slices.Equal(dataSources, []string{"hubspot_property_definition", "hubspot_property_definitions"}) {

@@ -4,6 +4,29 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-15
+
+### Added
+
+- Manage Free-compatible standard Product definitions through
+  `hubspot_product` with generated-ID import, decimal-string prices, optional
+  cost, and positive whole-month recurrence.
+- Publish a stable-keyed `product-definition` module, cumulative Northstar
+  lifecycle, guarded live contract probe, and ownership-safe archival shard.
+
+### Changed
+
+- PATCH only changed managed Product properties, treat decimal normalization as
+  a semantic no-op, and distinguish unmanaged null optionals from explicit
+  empty-string clearing.
+- Archive Products by exact ID and verify active absence plus the same archived
+  identity before removing state.
+
+### Fixed
+
+- Never identify, recover, or adopt a Product by SKU or name; ambiguous creates
+  without a returned ID now stop with exact-ID import guidance.
+
 ## [0.6.0] - 2026-08-15
 
 ### Added

@@ -60,8 +60,10 @@ executes the cumulative Northstar journey against the disposable HubSpot portal
 with both current engines.
 
 The job uses the `northstar` environment. Its `HUBSPOT_ACCESS_TOKEN` must contain
-the cumulative CRM schema, Forms, Files, account-membership, and CRM-profile
-scopes. Use Settings users read/write access for membership and the exact
+the cumulative CRM schema, Forms, Files, account-membership, CRM-profile, and
+Product scopes. Products require `crm.objects.products.read` and
+`crm.objects.products.write`. Use Settings users read/write access for
+membership and the exact
 `crm.objects.users.read` and `crm.objects.users.write` pair for the separate
 CRM profile. Set
 `HUBSPOT_ACCEPTANCE_PORTAL_ID` to the expected disposable portal. Set the
@@ -91,6 +93,7 @@ live tests. Select one configuration surface and enter its required confirmation
 - `form_definitions`: `archive-prefixed-form-definitions`
 - `files_configuration`: `delete-prefixed-files-configuration`
 - `account_memberships`: `delete-prefixed-account-memberships`
+- `product_definitions`: `archive-prefixed-product-definitions`
 
 The single archival job selects the corresponding GitHub environment from the
 validated choice. The cleanup script rejects an unknown surface, an unsafe
@@ -98,7 +101,9 @@ prefix, or a confirmation for a different surface. All cleanup operations share
 one non-cancelling portal concurrency group.
 
 HubSpot retains archived property and Form configuration. Files enter
-HubSpot-managed Trash retention. Account membership cleanup accepts only exact
+HubSpot-managed Trash retention. Product cleanup archives only exact generated
+IDs whose SKU has the guarded `tf_acc_` ownership prefix and verifies the same
+archived identity. Account membership cleanup accepts only exact
 `tf_acc_...@example.com` ownership, rereads both identities, refuses Super
 Admins, and verifies absence. It does not delete global identity. Do not
 describe any of these outcomes as permanent global deletion.

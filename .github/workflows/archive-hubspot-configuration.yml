@@ -12,6 +12,7 @@ on:
           - form_definitions
           - files_configuration
           - account_memberships
+          - product_definitions
       prefix:
         description: Exact tf_acc_ prefix ending in underscore
         required: true

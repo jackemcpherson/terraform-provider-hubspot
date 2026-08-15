@@ -20,6 +20,10 @@ again after the diagnostic. Resources with an immutable recovery key perform a
 bounded read-back. Updates and deletes retain state until a read confirms the
 result.
 
+For a Product create without a returned generated ID, inspect the disposable
+portal and import only the intended exact numeric ID. Never retry by guessing
+from SKU or name; the provider deliberately does not search by either field.
+
 ## Destroy is blocked
 
 Read the diagnostic before changing state manually. Property groups may be
@@ -34,7 +38,21 @@ HubSpot rejects name updates until the user activates and can return
 `USER_NOT_ON_ANY_HUBS`. The provider does not retry that response indefinitely.
 It also refuses PUT while role or team assignments are present because omission
 semantics are undocumented. Activate the user or manage the global name outside
-this resource; roles and teams remain outside the v0.6 contract.
+this resource; roles and teams remain outside the v0.7 contract.
+
+## A Product Requires `hs_folder`
+
+The v0.7 contract sends no folder property and the guarded release probe must
+prove HubSpot accepts the account-independent root. If HubSpot rejects create
+for missing `hs_folder`, stop and report a runtime contract conflict. Do not
+copy an account-specific folder ID into reusable configuration.
+
+## A Product Decimal Keeps Changing Spelling
+
+Prices and costs are string attributes so configuration preserves exact decimal
+intent. HubSpot may return an equivalent spelling such as `1200`; the provider
+compares the numeric value and sends no PATCH. A different numeric value is
+ordinary drift and the next apply repairs only that managed property.
 
 ## CRM User Profile Has Not Materialized
 

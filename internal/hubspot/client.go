@@ -30,6 +30,7 @@ type ClientSet struct {
 	Files              *FileClient
 	AccountMemberships *AccountMembershipClient
 	CRMUserProfiles    *CRMUserProfileClient
+	Products           *ProductClient
 }
 
 func NewClientSet(config TransportConfig) (*ClientSet, error) {
@@ -48,6 +49,7 @@ func NewClientSet(config TransportConfig) (*ClientSet, error) {
 		Files:              &FileClient{transport: transport},
 		AccountMemberships: &AccountMembershipClient{transport: transport},
 		CRMUserProfiles:    &CRMUserProfileClient{transport: transport},
+		Products:           &ProductClient{transport: transport},
 	}, nil
 }
 
