@@ -79,6 +79,13 @@ type FakeHubSpot struct {
 	nextAccountMembershipFault  AccountMembershipFault
 	nextAccountMembershipRead   *fakeAccountMembershipReadOverride
 	nextMembershipCollectionLag int
+
+	crmUserProfiles              map[string]*fakeCRMUserProfile
+	nextCRMUserProfileID         int
+	crmProfileReadiness          map[string]int
+	crmProfileListReads          int
+	rejectNextCRMPatch           bool
+	malformedNextCRMPatchSuccess bool
 }
 
 type fakeFormDefinition struct {
@@ -119,6 +126,8 @@ func NewFakeHubSpot(token string, portalID int64) *FakeHubSpot {
 		pendingFolderTasks:          make(map[string]bool),
 		accountMemberships:          make(map[string]*fakeAccountMembership),
 		accountMembershipIDsByEmail: make(map[string]string),
+		crmUserProfiles:             make(map[string]*fakeCRMUserProfile),
+		crmProfileReadiness:         make(map[string]int),
 	}
 }
 
@@ -143,6 +152,8 @@ func (f *FakeHubSpot) ServeHTTP(response http.ResponseWriter, request *http.Requ
 		f.handleFiles(response, request, segments[2:])
 	case len(segments) >= 3 && segments[0] == "settings" && segments[1] == "users" && segments[2] == "2026-03":
 		f.handleAccountMemberships(response, request, segments[3:])
+	case len(segments) >= 4 && segments[0] == "crm" && segments[1] == "objects" && segments[2] == "2026-03" && segments[3] == "users":
+		f.handleCRMUserProfiles(response, request, segments[4:])
 	default:
 		writeFakeError(response, http.StatusNotFound, "OBJECT_NOT_FOUND", "", "No route matched this request.")
 	}

@@ -60,9 +60,10 @@ executes the cumulative Northstar journey against the disposable HubSpot portal
 with both current engines.
 
 The job uses the `northstar` environment. Its `HUBSPOT_ACCESS_TOKEN` must contain
-the cumulative CRM schema, Forms, Files, and account-membership scopes. Use
-Settings users read/write or HubSpot's documented CRM users read/write
-alternative. Set
+the cumulative CRM schema, Forms, Files, account-membership, and CRM-profile
+scopes. Use Settings users read/write access for membership and the exact
+`crm.objects.users.read` and `crm.objects.users.write` pair for the separate
+CRM profile. Set
 `HUBSPOT_ACCEPTANCE_PORTAL_ID` to the expected disposable portal. Set the
 `HUBSPOT_NORTHSTAR_MEMBERSHIP_EMAIL` environment variable to a dedicated,
 disposable member in that portal. Do not use an ordinary account member or a

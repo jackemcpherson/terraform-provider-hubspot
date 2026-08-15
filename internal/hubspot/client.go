@@ -29,6 +29,7 @@ type ClientSet struct {
 	FileFolders        *FileFolderClient
 	Files              *FileClient
 	AccountMemberships *AccountMembershipClient
+	CRMUserProfiles    *CRMUserProfileClient
 }
 
 func NewClientSet(config TransportConfig) (*ClientSet, error) {
@@ -46,6 +47,7 @@ func NewClientSet(config TransportConfig) (*ClientSet, error) {
 		FileFolders:        &FileFolderClient{transport: transport},
 		Files:              &FileClient{transport: transport},
 		AccountMemberships: &AccountMembershipClient{transport: transport},
+		CRMUserProfiles:    &CRMUserProfileClient{transport: transport},
 	}, nil
 }
 

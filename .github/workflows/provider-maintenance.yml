@@ -22,7 +22,6 @@ jobs:
     env:
       HUBSPOT_DEMO_SCRIPT: ${{ github.workspace }}/.demo-source/scripts/demo
       HUBSPOT_PROVIDER_REPO: ${{ github.workspace }}
-      HUBSPOT_NORTHSTAR_SCOPE_FAMILIES: crm.schemas.contacts,crm.schemas.companies,crm.schemas.deals,tickets,forms,files,settings.users.read,settings.users.write
       HUBSPOT_NORTHSTAR_MEMBERSHIP_EMAIL: ${{ vars.HUBSPOT_NORTHSTAR_MEMBERSHIP_EMAIL }}
       HUBSPOT_ACCEPTANCE_PORTAL_ID: ${{ vars.HUBSPOT_ACCEPTANCE_PORTAL_ID }}
       HUBSPOT_PORTAL_LOCK_ID: free-configuration
@@ -39,7 +38,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: jackemcpherson/terraform-hubspot-instance-demo
-          ref: a43c591a36bbcc6ed49af90c7f8e6c55c2e83356
+          ref: 350546ce83a852ba880f1d47ed952f75cadbed69
           path: .demo-source
           persist-credentials: false
       - name: Set up provider toolchain

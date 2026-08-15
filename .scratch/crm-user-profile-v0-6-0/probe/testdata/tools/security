@@ -1,0 +1,9 @@
+#!/bin/zsh
+
+set -eu
+
+readonly state_dir="${FAKE_HUBSPOT_STATE_DIR:?FAKE_HUBSPOT_STATE_DIR is required}"
+
+[[ "$*" == *terraform-provider-hubspot-probes* ]]
+print -r -- 'called' >"${state_dir}/security-called"
+print -r -- 'fake-keychain-token'

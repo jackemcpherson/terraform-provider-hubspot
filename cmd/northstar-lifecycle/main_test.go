@@ -126,6 +126,62 @@ func TestExecuteVerifiesAccountMembershipLifecycle(t *testing.T) {
 	}
 }
 
+func TestExecuteManagesNorthstarCRMUserProfileLifecycle(t *testing.T) {
+	fake := acceptance.NewFakeHubSpot("token", 123)
+	crmID := fake.SeedCRMUserProfile("101")
+	server := httptest.NewServer(fake)
+	defer server.Close()
+	origin, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clients, err := hubspot.NewClientSet(hubspot.TransportConfig{BaseURL: origin, AccessToken: "token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	hours := []hubspot.CRMUserWorkingHours{{Days: "MONDAY_TO_FRIDAY", StartMinute: 540, EndMinute: 1020}}
+	hoursJSON, err := hubspot.SerializeCRMUserWorkingHours(hours)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := clients.CRMUserProfiles.PatchProperties(ctx, crmID, map[string]string{
+		"hs_job_title": "Cloud Operations Engineer", "hs_availability_status": "available", "hs_standard_time_zone": "Australia/Melbourne",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := clients.CRMUserProfiles.PatchProperties(ctx, crmID, map[string]string{"hs_working_hours": hoursJSON}); err != nil {
+		t.Fatal(err)
+	}
+	ids := []string{crmID, "101"}
+	if _, err := execute(ctx, "verify-profile", ids, clients); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(ctx, "drift-profile", ids, clients); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(ctx, "verify-profile", ids, clients); err == nil {
+		t.Fatal("profile verification accepted drift")
+	}
+	drifted, err := clients.CRMUserProfiles.Get(ctx, crmID)
+	if err != nil || drifted.JobTitle != "Out-of-band Northstar role" || drifted.AvailabilityStatus != "away" {
+		t.Fatalf("drifted CRM profile = %#v, %v", drifted, err)
+	}
+	if _, err := clients.CRMUserProfiles.PatchProperties(ctx, crmID, map[string]string{
+		"hs_job_title": "Cloud Operations Engineer", "hs_availability_status": "available",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := clients.AccountMemberships.Delete(ctx, "101"); err != nil {
+		t.Fatal(err)
+	}
+	record, err := execute(ctx, "verify-profile-terminal", ids, clients)
+	if err != nil || strings.Contains(record, crmID) || strings.Contains(record, "101") ||
+		!strings.Contains(record, `"residual":"retained_profile_values"`) || !strings.Contains(record, `"remote_write":"none"`) {
+		t.Fatalf("CRM profile terminal record = %q, %v", record, err)
+	}
+}
+
 func TestExecuteCleansInterruptedNorthstarLifecycle(t *testing.T) {
 	t.Setenv("HUBSPOT_NORTHSTAR_FILES_PREFIX", "ns_1a2b3c4d_o_")
 	names, err := northstarFilesNamesFromEnvironment()

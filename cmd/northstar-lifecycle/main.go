@@ -21,6 +21,12 @@ import (
 
 const driftLabel = "Out-of-band Northstar buyer role"
 
+const (
+	northstarProfileJobTitle     = "Cloud Operations Engineer"
+	northstarProfileAvailability = "available"
+	northstarProfileTimeZone     = "Australia/Melbourne"
+)
+
 var northstarFolderReadDelays = []time.Duration{0, time.Second, 2 * time.Second, 3 * time.Second, 5 * time.Second, 8 * time.Second, 13 * time.Second}
 
 type northstarFilesIDs struct {
@@ -145,6 +151,21 @@ func execute(ctx context.Context, action string, ids []string, clients *hubspot.
 			return "", errors.New("northstar membership Settings ID and email are required for terminal verification")
 		}
 		return verifyNorthstarMembershipTerminal(ctx, clients, ids[0], ids[1])
+	case "verify-profile":
+		if len(ids) != 2 {
+			return "", errors.New("northstar CRM profile ID and membership Settings ID are required for verification")
+		}
+		return "", verifyNorthstarCRMProfile(ctx, clients, ids[0], ids[1])
+	case "drift-profile":
+		if len(ids) != 2 {
+			return "", errors.New("northstar CRM profile ID and membership Settings ID are required for drift")
+		}
+		return "", driftNorthstarCRMProfile(ctx, clients, ids[0], ids[1])
+	case "verify-profile-terminal":
+		if len(ids) != 2 {
+			return "", errors.New("northstar CRM profile ID and membership Settings ID are required for terminal verification")
+		}
+		return verifyNorthstarCRMProfileTerminal(ctx, clients, ids[0], ids[1])
 	case "verify-files":
 		if len(ids) != 4 {
 			return "", errors.New("four Northstar Files generated IDs are required for verification")
@@ -668,6 +689,105 @@ func verifyNorthstarMembershipTerminal(ctx context.Context, clients *hubspot.Cli
 		return "", errors.New("encode Northstar membership terminal record")
 	}
 	return string(record), nil
+}
+
+func verifyNorthstarCRMProfile(ctx context.Context, clients *hubspot.ClientSet, crmID, membershipID string) error {
+	profile, err := exactNorthstarCRMProfile(ctx, clients, crmID, membershipID, true)
+	if err != nil {
+		return err
+	}
+	if !northstarCRMProfileMatches(profile) {
+		return errors.New("northstar CRM profile did not match every managed property")
+	}
+	return nil
+}
+
+func driftNorthstarCRMProfile(ctx context.Context, clients *hubspot.ClientSet, crmID, membershipID string) error {
+	if _, err := exactNorthstarCRMProfile(ctx, clients, crmID, membershipID, true); err != nil {
+		return err
+	}
+	if _, err := clients.CRMUserProfiles.PatchProperties(ctx, crmID, map[string]string{
+		"hs_job_title": "Out-of-band Northstar role", "hs_availability_status": "away",
+	}); err != nil {
+		return fmt.Errorf("author Northstar CRM profile drift: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	drifted, err := exactNorthstarCRMProfile(ctx, clients, crmID, membershipID, true)
+	if err != nil {
+		return err
+	}
+	if drifted.JobTitle != "Out-of-band Northstar role" || drifted.AvailabilityStatus != "away" {
+		return errors.New("northstar CRM profile drift mutation was not observable")
+	}
+	return nil
+}
+
+func verifyNorthstarCRMProfileTerminal(ctx context.Context, clients *hubspot.ClientSet, crmID, membershipID string) (string, error) {
+	if _, err := clients.AccountMemberships.GetByID(ctx, membershipID); err == nil {
+		return "", errors.New("northstar account membership remained active after teardown")
+	} else {
+		var apiError *hubspot.Error
+		if !errors.As(err, &apiError) || apiError.Status != 404 {
+			return "", fmt.Errorf("verify Northstar membership terminal identity: %s", acceptance.SanitizedHubSpotError(err))
+		}
+	}
+	profile, err := exactNorthstarCRMProfile(ctx, clients, crmID, membershipID, false)
+	if err != nil {
+		return "", err
+	}
+	if !northstarCRMProfileMatches(profile) {
+		return "", errors.New("northstar teardown did not retain the managed CRM profile values")
+	}
+	digest := sha256.Sum256([]byte("northstar-crm-profile-identity\x00" + crmID + "\x00" + membershipID))
+	record, err := json.Marshal(struct {
+		GeneratedIdentityHash string `json:"generated_identity_hash"`
+		Residual              string `json:"residual"`
+		RemoteWrite           string `json:"remote_write"`
+		Cleanup               string `json:"cleanup"`
+	}{hex.EncodeToString(digest[:]), "retained_profile_values", "none", "passed"})
+	if err != nil {
+		return "", errors.New("encode Northstar CRM profile terminal record")
+	}
+	return string(record), nil
+}
+
+func exactNorthstarCRMProfile(ctx context.Context, clients *hubspot.ClientSet, crmID, membershipID string, requireMembership bool) (hubspot.CRMUserProfile, error) {
+	if requireMembership {
+		membership, err := clients.AccountMemberships.GetByID(ctx, membershipID)
+		if err != nil {
+			return hubspot.CRMUserProfile{}, fmt.Errorf("read Northstar profile membership: %s", acceptance.SanitizedHubSpotError(err))
+		}
+		if membership.ID != membershipID {
+			return hubspot.CRMUserProfile{}, errors.New("northstar profile membership returned a different Settings ID")
+		}
+	}
+	profile, err := clients.CRMUserProfiles.Get(ctx, crmID)
+	if err != nil {
+		return hubspot.CRMUserProfile{}, fmt.Errorf("read Northstar CRM profile: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	if profile.ID != crmID || profile.SettingsID != membershipID {
+		return hubspot.CRMUserProfile{}, errors.New("northstar CRM profile did not match its exact CRM and Settings identities")
+	}
+	joined, err := clients.CRMUserProfiles.FindBySettingsID(ctx, membershipID)
+	if err != nil {
+		return hubspot.CRMUserProfile{}, fmt.Errorf("join Northstar CRM profile: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	if joined.ID != crmID || joined.SettingsID != membershipID {
+		return hubspot.CRMUserProfile{}, errors.New("northstar CRM profile join returned a different identity")
+	}
+	return profile, nil
+}
+
+func northstarCRMProfileMatches(profile hubspot.CRMUserProfile) bool {
+	desiredHours, err := hubspot.SerializeCRMUserWorkingHours([]hubspot.CRMUserWorkingHours{{
+		Days: "MONDAY_TO_FRIDAY", StartMinute: 540, EndMinute: 1020,
+	}})
+	if err != nil {
+		return false
+	}
+	actualHours, err := hubspot.SerializeCRMUserWorkingHours(profile.WorkingHours)
+	return err == nil && profile.JobTitle == northstarProfileJobTitle &&
+		profile.AvailabilityStatus == northstarProfileAvailability && profile.TimeZone == northstarProfileTimeZone &&
+		actualHours == desiredHours
 }
 
 func driftNorthstarProperty(ctx context.Context, clients *hubspot.ClientSet) error {

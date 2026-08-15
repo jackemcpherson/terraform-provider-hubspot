@@ -101,7 +101,7 @@ func (p *Provider) Configure(ctx context.Context, request provider.ConfigureRequ
 }
 
 func (p *Provider) Resources(context.Context) []func() resource.Resource {
-	return []func() resource.Resource{NewPropertyGroupResource, NewPropertyResource, NewFormDefinitionResource, NewFileFolderResource, NewFileResource, NewAccountMembershipResource}
+	return []func() resource.Resource{NewPropertyGroupResource, NewPropertyResource, NewFormDefinitionResource, NewFileFolderResource, NewFileResource, NewAccountMembershipResource, NewCRMUserProfileResource}
 }
 
 func (p *Provider) DataSources(context.Context) []func() datasource.DataSource {

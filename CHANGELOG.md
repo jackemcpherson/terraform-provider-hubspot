@@ -4,6 +4,28 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-15
+
+### Added
+
+- Manage CRM user job title, availability, timezone, and canonical working
+  hours through `hubspot_crm_user_profile` with exact CRM and Settings identity
+  verification.
+- Support canonical CRM-ID and explicit `membership:<Settings-ID>` import,
+  bounded profile readiness, drift repair, and stable-keyed demo composition.
+
+### Changed
+
+- PATCH only changed managed profile properties, verify timezone before working
+  hours, and suppress semantic no-op writes.
+- Stop CRM profile management without a remote write and document retained
+  profile values as non-destructive residual configuration.
+
+### Fixed
+
+- Keep CRM user IDs distinct from Settings membership IDs and fail closed on
+  missing or duplicate `hs_internal_user_id` joins.
+
 ## [0.5.0] - 2026-08-15
 
 ### Added
