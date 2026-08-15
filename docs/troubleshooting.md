@@ -34,7 +34,21 @@ HubSpot rejects name updates until the user activates and can return
 `USER_NOT_ON_ANY_HUBS`. The provider does not retry that response indefinitely.
 It also refuses PUT while role or team assignments are present because omission
 semantics are undocumented. Activate the user or manage the global name outside
-this resource; roles and teams remain outside the v0.5 contract.
+this resource; roles and teams remain outside the v0.6 contract.
+
+## CRM User Profile Has Not Materialized
+
+The Settings membership exists before HubSpot exposes a matching CRM user in
+some lifecycles. The provider polls the paginated `hs_internal_user_id` join 20
+times at one-second intervals. If the timeout remains, complete any required
+human activation and retry. Do not substitute a CRM ID or owner ID for the
+Settings user ID.
+
+## CRM User Working Hours Are Rejected
+
+Configure `time_zone` with `working_hours`. Use a documented day value, minute
+values from 0 through 1440, and an end later than the start. Grouped day values
+expand before overlap checks. Adjacent intervals are valid.
 
 ## Drift returns after apply
 

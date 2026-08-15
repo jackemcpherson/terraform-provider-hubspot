@@ -22,7 +22,6 @@ jobs:
     env:
       HUBSPOT_DEMO_SCRIPT: ${{ github.workspace }}/.demo-source/scripts/demo
       HUBSPOT_PROVIDER_REPO: ${{ github.workspace }}
-      HUBSPOT_NORTHSTAR_SCOPE_FAMILIES: crm.schemas.contacts,crm.schemas.companies,crm.schemas.deals,tickets,forms,files,settings.users.read,settings.users.write
       HUBSPOT_NORTHSTAR_MEMBERSHIP_EMAIL: ${{ vars.HUBSPOT_NORTHSTAR_MEMBERSHIP_EMAIL }}
       HUBSPOT_ACCEPTANCE_PORTAL_ID: ${{ vars.HUBSPOT_ACCEPTANCE_PORTAL_ID }}
       HUBSPOT_PORTAL_LOCK_ID: free-configuration

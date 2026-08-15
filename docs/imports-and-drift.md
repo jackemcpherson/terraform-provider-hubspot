@@ -12,6 +12,7 @@ after a create conflict.
 | `hubspot_file_folder` | exact non-zero decimal generated folder ID |
 | `hubspot_file` | exact non-zero decimal generated file ID |
 | `hubspot_account_membership` | canonical Settings user ID or explicit `email:<address>` |
+| `hubspot_crm_user_profile` | canonical CRM user ID or explicit `membership:<Settings-ID>` |
 
 Examples:
 
@@ -24,6 +25,8 @@ tofu import hubspot_file_folder.assets '123456789'
 tofu import hubspot_file.logo '987654321'
 tofu import hubspot_account_membership.operator \
   'email:operator@example.com'
+tofu import hubspot_crm_user_profile.operator \
+  'membership:123456789'
 ```
 
 Replace `tofu` with `terraform` when using Terraform.
@@ -49,3 +52,9 @@ user ID. Import records `send_welcome_email = false` and
 requires a separate reviewed opt-in. Configured name drift is repaired only
 after exact ID/email reread and only when current role and team assignments are
 empty. Unconfigured optional-name drift remains observed state.
+
+CRM user profile import always stores the canonical account-specific CRM user
+ID. The membership form resolves one exact paginated `hs_internal_user_id`
+join. Import adopts job title and each other nonempty supported property. Null
+properties in later configuration remain unmanaged. Managed drift enters state
+on refresh and the next apply repairs only changed managed properties.

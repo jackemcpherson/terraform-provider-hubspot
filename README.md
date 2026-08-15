@@ -1,7 +1,7 @@
 # HubSpot provider
 
 This provider manages HubSpot configuration with OpenTofu or Terraform. The
-v0.5.0 release is a public beta and does not promise compatibility with v1.
+v0.6.0 release is a public beta and does not promise compatibility with v1.
 
 Managed resources:
 
@@ -9,13 +9,14 @@ Managed resources:
 - narrowly typed contact email Form definitions
 - explicit File folders and locally sourced Managed files
 - guarded account membership by canonical Settings user ID
+- selected CRM user profile properties by account-specific CRM user ID
 
 The two property-definition data sources inspect non-sensitive schema metadata.
 The provider does not read CRM records, record values, form submissions, or
-responses. v0.5.0 supports ordinary non-sensitive CRM property schema, one
+responses. v0.6.0 supports ordinary non-sensitive CRM property schema, one
 contact email Form definition aggregate, Files configuration, and account
-membership on HubSpot Free. Pipelines, custom schemas, and sensitive
-definitions are deferred.
+membership plus separate CRM user profile configuration on HubSpot Free.
+Pipelines, custom schemas, and sensitive definitions are deferred.
 
 Observed custom-property limit telemetry is advisory, not local admission
 control. Review [permissions, account tiers, and exclusions](docs/permissions-and-limits.md)
@@ -56,6 +57,7 @@ Terraform users can change the source to
 - [Form definition surface](docs/surfaces/form-definition.md)
 - [Files configuration surface](docs/surfaces/files-configuration.md)
 - [Account membership surface](docs/surfaces/account-membership.md)
+- [CRM user profile surface](docs/surfaces/crm-user-profile.md)
 - [Destroy semantics](docs/destroy-semantics.md)
 - [State portability](docs/state-portability.md)
 - [Troubleshooting](docs/troubleshooting.md)
@@ -83,13 +85,14 @@ localhost build; `make docs-portal-update` intentionally refreshes that digest.
 
 ## Exclusions
 
-The v0.5.0 release does not manage CRM records, record values, form
+The v0.6.0 release does not manage CRM records, record values, form
 submissions, pipelines, custom schemas, association labels, sensitive
 definitions, OAuth, consent, notification or automation behavior, non-email
 form fields, HubSpot-defined properties, CMS Developer File System content, URL
 imports, signed URLs, roles, teams, seats, permissions, user activation,
-deactivation, CRM user profiles, global-user deletion, or arbitrary HTTP/JSON
-payloads. It does not migrate state from third-party HubSpot providers.
+deactivation, global-user deletion, or arbitrary HTTP/JSON payloads. CRM user
+profile management is limited to job title, availability, timezone, and working
+hours. It does not migrate state from third-party HubSpot providers.
 
 ## Development
 

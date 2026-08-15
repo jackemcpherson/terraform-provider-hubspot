@@ -93,3 +93,13 @@ profile.
 **Non-destructive alternative:** `tofu state rm
 hubspot_account_membership.<name>` (or the equivalent `terraform` command)
 leaves the account membership active and unmanaged.
+
+## hubspot_crm_user_profile
+
+Destroy performs no remote write. The resource stops managing the selected CRM
+profile properties and removes only local state. HubSpot retains job title,
+availability, timezone, and working-hours values.
+
+This behavior is the resource lifecycle, so a separate state-removal
+alternative has the same remote result. Remove the linked account membership
+through `hubspot_account_membership` only when account removal is intended.

@@ -26,7 +26,7 @@ func resetOutput(output string) error {
 
 func renderPortal(config Config, metadata manifest, resources, dataSources []providerType, modules []moduleDoc) error {
 	header := provenanceHeader(metadata)
-	if err := writeFile(filepath.Join(config.OutputDir, "index.html"), page("HubSpot configuration portal", "", header, `<h1>HubSpot configuration surfaces</h1><ul><li><a href="crm-property-schema.html">CRM property schema</a></li><li><a href="form-definition.html">Form definition</a></li><li><a href="files-configuration.html">Files configuration</a></li><li><a href="account-membership.html">Account membership</a></li></ul><nav><a href="resources/index.html">Resources</a> · <a href="data-sources/index.html">Data sources</a> · <a href="modules/index.html">Consumer modules</a> · <a href="provenance.json">Provenance</a></nav>`)); err != nil {
+	if err := writeFile(filepath.Join(config.OutputDir, "index.html"), page("HubSpot configuration portal", "", header, `<h1>HubSpot configuration surfaces</h1><ul><li><a href="crm-property-schema.html">CRM property schema</a></li><li><a href="form-definition.html">Form definition</a></li><li><a href="files-configuration.html">Files configuration</a></li><li><a href="account-membership.html">Account membership</a></li><li><a href="crm-user-profile.html">CRM user profile</a></li></ul><nav><a href="resources/index.html">Resources</a> · <a href="data-sources/index.html">Data sources</a> · <a href="modules/index.html">Consumer modules</a> · <a href="provenance.json">Provenance</a></nav>`)); err != nil {
 		return err
 	}
 	if err := writeSurfaceOverview(config, "crm-property-schema", "CRM property schema", `<a href="resources/index.html">Provider resources</a> · <a href="data-sources/index.html">Property discovery</a> · <a href="modules/crm-schema.html">crm-schema module</a>`, header); err != nil {
@@ -39,6 +39,9 @@ func renderPortal(config Config, metadata manifest, resources, dataSources []pro
 		return err
 	}
 	if err := writeSurfaceOverview(config, "account-membership", "Account membership", `<a href="resources/hubspot_account_membership.html">hubspot_account_membership resource</a> · <a href="modules/account-membership.html">account-membership module</a>`, header); err != nil {
+		return err
+	}
+	if err := writeSurfaceOverview(config, "crm-user-profile", "CRM user profile", `<a href="resources/hubspot_crm_user_profile.html">hubspot_crm_user_profile resource</a> · <a href="modules/crm-user-profile.html">crm-user-profile module</a>`, header); err != nil {
 		return err
 	}
 	if err := writeProviderIndex(config.OutputDir, "resources", "Resources", resources, header); err != nil {
@@ -155,6 +158,9 @@ func writeStringList(body *strings.Builder, title string, values []string) {
 }
 
 func resourceLifecycle(name string) string {
+	if name == "hubspot_crm_user_profile" {
+		return "<h2>Lifecycle</h2><p>Create waits for a unique Settings-to-CRM identity join, then writes only changed managed properties with time zone before working hours. Refresh verifies both identities. Destroy performs no remote write and retains profile values.</p>"
+	}
 	if name == "hubspot_account_membership" {
 		return "<h2>Lifecycle</h2><p>Refresh uses the canonical Settings user ID. Name PUT fails closed around activation and current assignments. Destroy requires the local removal opt-in, exact ID and email, non-Super-Admin status, and verified account-membership absence without deleting global identity.</p>"
 	}
@@ -174,6 +180,9 @@ func resourceLifecycle(name string) string {
 }
 
 func resourceImport(name string) string {
+	if name == "hubspot_crm_user_profile" {
+		return `<h2>Import</h2><p>Import by canonical numeric CRM user ID or explicit <code>membership:Settings-ID</code>. State always stores the canonical account-specific CRM ID.</p>`
+	}
 	if name == "hubspot_account_membership" {
 		return `<h2>Import</h2><p>Import one membership by canonical numeric Settings user ID or explicit <code>email:address</code> lookup. State always stores the canonical ID and records welcome delivery and removal opt-in as false.</p>`
 	}
@@ -190,6 +199,9 @@ func resourceImport(name string) string {
 }
 
 func providerSurface(name string) string {
+	if name == "hubspot_crm_user_profile" {
+		return "crm-user-profile"
+	}
 	if name == "hubspot_account_membership" {
 		return "account-membership"
 	}
@@ -203,6 +215,9 @@ func providerSurface(name string) string {
 }
 
 func moduleSurface(name string) string {
+	if name == "crm-user-profile" {
+		return "crm-user-profile"
+	}
 	if name == "account-membership" {
 		return "account-membership"
 	}
@@ -216,6 +231,9 @@ func moduleSurface(name string) string {
 }
 
 func moduleContract(name string) string {
+	if name == "crm-user-profile" {
+		return "<h2>Validation and dependency contract</h2><p>Stable map keys own CRM profile management relationships. Account-membership IDs create explicit ordering. Null properties remain unmanaged; working hours require a managed time zone.</p>"
+	}
 	if name == "account-membership" {
 		return "<h2>Validation and dependency contract</h2><p>Stable map keys own canonical Settings identities. Each entry requires an explicit welcome-email choice; removal defaults off. Email or welcome changes replace membership, while configured names remain guarded global-identity updates.</p>"
 	}

@@ -20,11 +20,11 @@ func TestGenerateBuildsRegisteredProviderAndConsumerModulePages(t *testing.T) {
 	output := filepath.Join(t.TempDir(), "portal")
 
 	err := docsportal.Generate(context.Background(), docsportal.Config{
-		Provider:     providerimpl.New("0.5.0")(),
+		Provider:     providerimpl.New("0.6.0")(),
 		ProviderRepo: providerRepo,
 		DemoRepo:     demoRepo,
 		OutputDir:    output,
-		Version:      "0.5.0",
+		Version:      "0.6.0",
 		ProviderProvenance: docsportal.Provenance{
 			Commit: "provider-commit", Timestamp: "2026-08-02T00:00:00Z",
 		},
@@ -35,14 +35,15 @@ func TestGenerateBuildsRegisteredProviderAndConsumerModulePages(t *testing.T) {
 	}
 
 	for _, relative := range []string{
-		"index.html", "crm-property-schema.html", "form-definition.html", "files-configuration.html", "account-membership.html", "resources/index.html",
+		"index.html", "crm-property-schema.html", "form-definition.html", "files-configuration.html", "account-membership.html", "crm-user-profile.html", "resources/index.html",
 		"resources/hubspot_property.html", "resources/hubspot_property_group.html",
 		"resources/hubspot_form_definition.html",
 		"resources/hubspot_file_folder.html", "resources/hubspot_file.html",
 		"resources/hubspot_account_membership.html",
+		"resources/hubspot_crm_user_profile.html",
 		"data-sources/index.html", "data-sources/hubspot_property_definition.html",
 		"data-sources/hubspot_property_definitions.html", "modules/index.html",
-		"modules/crm-schema.html", "modules/form-definition.html", "modules/files-configuration.html", "modules/account-membership.html", "provenance.json",
+		"modules/crm-schema.html", "modules/form-definition.html", "modules/files-configuration.html", "modules/account-membership.html", "modules/crm-user-profile.html", "provenance.json",
 	} {
 		if _, err := os.Stat(filepath.Join(output, relative)); err != nil {
 			t.Errorf("missing generated %s: %v", relative, err)
@@ -111,6 +112,24 @@ func TestGenerateBuildsRegisteredProviderAndConsumerModulePages(t *testing.T) {
 			t.Errorf("account membership overview missing %q", expected)
 		}
 	}
+	profileModulePage := readFile(t, filepath.Join(output, "modules", "crm-user-profile.html"))
+	for _, expected := range []string{"profiles", "hubspot_crm_user_profile", "ids", "Stable map keys", "Null properties", "Complete usage", `module &#34;crm_profiles&#34;`, "0.6.0"} {
+		if !strings.Contains(profileModulePage, expected) {
+			t.Errorf("CRM user profile module page missing %q", expected)
+		}
+	}
+	profileResourcePage := readFile(t, filepath.Join(output, "resources", "hubspot_crm_user_profile.html"))
+	for _, expected := range []string{"account_membership_id", "working_hours", "membership:Settings-ID", "Destroy performs no remote write", "canonical account-specific CRM ID"} {
+		if !strings.Contains(profileResourcePage, expected) {
+			t.Errorf("CRM user profile resource page missing %q", expected)
+		}
+	}
+	profileOverview := readFile(t, filepath.Join(output, "crm-user-profile.html"))
+	for _, expected := range []string{"/crm/objects/2026-03/users", "hs_internal_user_id", "20", "non-destructive residual", "crm.objects.users.read"} {
+		if !strings.Contains(profileOverview, expected) {
+			t.Errorf("CRM user profile overview missing %q", expected)
+		}
+	}
 	propertyPage := readFile(t, filepath.Join(output, "resources", "hubspot_property.html"))
 	for _, expected := range []string{"object_type", "field_type", "options", "Import", "Lifecycle"} {
 		if !strings.Contains(propertyPage, expected) {
@@ -118,7 +137,7 @@ func TestGenerateBuildsRegisteredProviderAndConsumerModulePages(t *testing.T) {
 		}
 	}
 	provenance := readFile(t, filepath.Join(output, "provenance.json"))
-	for _, expected := range []string{"provider-commit", "demo-commit", `"version": "0.5.0"`, "2026-08-02T00:00:00Z", `"state": "unreleased"`, `"dirty": false`, "hubspot_form_definition", "hubspot_file_folder", "hubspot_file", "hubspot_account_membership", "form-definition", "files-configuration", "account-membership"} {
+	for _, expected := range []string{"provider-commit", "demo-commit", `"version": "0.6.0"`, "2026-08-02T00:00:00Z", `"state": "unreleased"`, `"dirty": false`, "hubspot_form_definition", "hubspot_file_folder", "hubspot_file", "hubspot_account_membership", "hubspot_crm_user_profile", "form-definition", "files-configuration", "account-membership", "crm-user-profile"} {
 		if !strings.Contains(provenance, expected) {
 			t.Errorf("provenance missing %q", expected)
 		}
@@ -128,8 +147,8 @@ func TestGenerateBuildsRegisteredProviderAndConsumerModulePages(t *testing.T) {
 	}
 	secondOutput := filepath.Join(t.TempDir(), "portal")
 	err = docsportal.Generate(context.Background(), docsportal.Config{
-		Provider: providerimpl.New("0.5.0")(), ProviderRepo: providerRepo, DemoRepo: demoRepo,
-		OutputDir: secondOutput, Version: "0.5.0",
+		Provider: providerimpl.New("0.6.0")(), ProviderRepo: providerRepo, DemoRepo: demoRepo,
+		OutputDir: secondOutput, Version: "0.6.0",
 		ProviderProvenance: docsportal.Provenance{Commit: "provider-commit", Timestamp: "2026-08-02T00:00:00Z"},
 		DemoProvenance:     docsportal.Provenance{Commit: "demo-commit", Timestamp: "2026-08-01T00:00:00Z"},
 	})
@@ -267,6 +286,7 @@ func createDemoFixture(t *testing.T) string {
 	formModule := filepath.Join(root, "modules", "form-definition")
 	filesModule := filepath.Join(root, "modules", "files-configuration")
 	membershipModule := filepath.Join(root, "modules", "account-membership")
+	profileModule := filepath.Join(root, "modules", "crm-user-profile")
 	if err := os.MkdirAll(crmModule, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -277,6 +297,9 @@ func createDemoFixture(t *testing.T) string {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(membershipModule, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(profileModule, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	files := map[string]string{
@@ -358,6 +381,24 @@ output "super_admin" { value = { for key, membership in hubspot_account_membersh
 	if err := os.WriteFile(filepath.Join(membershipModule, "README.md"), []byte("Stable map keys require an explicit welcome-email choice and guarded removal. Requires provider 0.5.0.\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	profileFiles := map[string]string{
+		"main.tf": `resource "hubspot_crm_user_profile" "this" { for_each = var.profiles }
+`,
+		"variables.tf": `variable "profiles" { type = map(object({ account_membership_id = string })) }
+`,
+		"outputs.tf": `output "ids" { value = { for key, profile in hubspot_crm_user_profile.this : key => profile.id } }
+`,
+		"versions.tf": `terraform { required_version = ">= 1.8, < 2.0" }
+`,
+	}
+	for name, contents := range profileFiles {
+		if err := os.WriteFile(filepath.Join(profileModule, name), []byte(contents), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(profileModule, "README.md"), []byte("Stable map keys preserve identity. Null properties are unmanaged. Requires provider 0.6.0.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(root, "main.tf"), []byte(`module "crm_schema" { source = "./modules/crm-schema" }
 `), 0o644); err != nil {
 		t.Fatal(err)
@@ -391,6 +432,17 @@ output "super_admin" { value = { for key, membership in hubspot_account_membersh
 	if err := os.WriteFile(filepath.Join(membershipExample, "main.tf"), []byte(`module "operators" {
   source = "../../modules/account-membership"
   memberships = { operator = { email = "operator@example.com", send_welcome_email = false } }
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	profileExample := filepath.Join(root, "examples", "crm-user-profile")
+	if err := os.MkdirAll(profileExample, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(profileExample, "main.tf"), []byte(`module "crm_profiles" {
+  source   = "../../modules/crm-user-profile"
+  profiles = { operator = { account_membership_id = "101" } }
 }
 `), 0o644); err != nil {
 		t.Fatal(err)
