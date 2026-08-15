@@ -33,11 +33,6 @@ func TestAcc_product_definitions_ContractPreflight(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Product runtime property schema failed: %s", acceptance.SanitizedHubSpotError(err))
 	}
-	wantTypes := map[string]string{
-		"name": "string", "hs_sku": "string", "description": "string",
-		"price": "number", "hs_cost_of_goods_sold": "number",
-		"hs_recurring_billing_period": "enumeration",
-	}
 	createdIDs := make([]string, 0, 2)
 	defer func() {
 		for _, id := range createdIDs {
@@ -46,18 +41,8 @@ func TestAcc_product_definitions_ContractPreflight(t *testing.T) {
 			}
 		}
 	}()
-	seen := make(map[string]hubspot.ProductProperty)
-	for _, property := range properties {
-		seen[property.Name] = property
-	}
-	for name, propertyType := range wantTypes {
-		property, ok := seen[name]
-		if !ok || property.Type != propertyType {
-			t.Fatalf("Product runtime property %s did not match the frozen %s contract", name, propertyType)
-		}
-	}
-	if _, ok := seen["hs_folder"]; !ok {
-		t.Fatal("Product runtime property schema omitted hs_folder")
+	if err := acceptance.ValidateProductPropertySchema(properties); err != nil {
+		t.Fatal(err)
 	}
 
 	suffix := strings.ReplaceAll(time.Now().UTC().Format("20060102T150405.000000000"), ".", "")
