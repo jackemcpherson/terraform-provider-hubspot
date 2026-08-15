@@ -35,7 +35,7 @@ const (
 	northstarApprovedMembershipEmail = "tfhs-probe-16-20260802024807@example.com"
 )
 
-var northstarFolderReadDelays = []time.Duration{0, time.Second, 2 * time.Second, 3 * time.Second, 5 * time.Second, 8 * time.Second, 13 * time.Second}
+var northstarFilesConvergenceDelays = []time.Duration{0, time.Second, 2 * time.Second, 3 * time.Second, 5 * time.Second, 8 * time.Second, 13 * time.Second}
 
 type northstarFilesIDs struct {
 	BrandFolder     string
@@ -639,7 +639,7 @@ func verifyNorthstarFiles(ctx context.Context, clients *hubspot.ClientSet, ids n
 	expectedDownloadsPath := "/" + names.BrandFolder + "/" + names.DownloadsFolder
 	downloads, err := waitForNorthstarFolder(ctx, clients.FileFolders.Get, ids.DownloadsFolder, func(folder hubspot.FileFolder) bool {
 		return folder.ID == ids.DownloadsFolder && folder.Name == names.DownloadsFolder && folder.ParentFolderID != nil && *folder.ParentFolderID == ids.BrandFolder && folder.Path == expectedDownloadsPath
-	}, northstarFolderReadDelays)
+	}, northstarFilesConvergenceDelays)
 	if err != nil {
 		return fmt.Errorf("read Northstar downloads folder: %s", acceptance.SanitizedHubSpotError(err))
 	}
@@ -717,7 +717,39 @@ func stageNorthstarFileForFolderRename(ctx context.Context, clients *hubspot.Cli
 	if updated.ID != fileID || updated.FolderID != stagingFolderID || updated.Name != names.PrivateFile {
 		return errors.New("northstar folder-rename staging move did not preserve the exact file identity")
 	}
+	if err := waitForNorthstarFileStaging(ctx, clients, fileID, parentFolderID, stagingFolderID, names, northstarFilesConvergenceDelays); err != nil {
+		return fmt.Errorf("verify Northstar file staging before folder rename: %s", acceptance.SanitizedHubSpotError(err))
+	}
 	return nil
+}
+
+func waitForNorthstarFileStaging(ctx context.Context, clients *hubspot.ClientSet, fileID, parentFolderID, stagingFolderID string, names northstarFilesNames, delays []time.Duration) error {
+	for _, delay := range delays {
+		if delay > 0 {
+			timer := time.NewTimer(delay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return errors.New("northstar staged file read-back timed out")
+			case <-timer.C:
+			}
+		}
+		file, err := clients.Files.Get(ctx, fileID)
+		if err != nil {
+			return err
+		}
+		if file.ID != fileID || file.Name != names.PrivateFile || file.FolderID != stagingFolderID {
+			continue
+		}
+		directFiles, err := clients.Files.Search(ctx, &parentFolderID, "")
+		if err != nil {
+			return err
+		}
+		if len(directFiles) == 0 {
+			return nil
+		}
+	}
+	return errors.New("northstar staged file and empty parent folder did not converge")
 }
 
 func driftNorthstarFile(ctx context.Context, clients *hubspot.ClientSet, id string, names northstarFilesNames) error {
@@ -748,7 +780,7 @@ func driftNorthstarFolderPath(ctx context.Context, clients *hubspot.ClientSet, p
 	expectedPath := "/" + names.BrandFolderRefresh + "/" + names.DownloadsFolder
 	child, err := waitForNorthstarFolder(ctx, clients.FileFolders.Get, childID, func(folder hubspot.FileFolder) bool {
 		return folder.ID == childID && folder.ParentFolderID != nil && *folder.ParentFolderID == parentID && folder.Path == expectedPath
-	}, northstarFolderReadDelays)
+	}, northstarFilesConvergenceDelays)
 	if err != nil {
 		return fmt.Errorf("read Northstar refreshed child folder: %s", acceptance.SanitizedHubSpotError(err))
 	}

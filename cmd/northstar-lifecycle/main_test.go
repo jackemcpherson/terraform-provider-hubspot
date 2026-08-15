@@ -639,7 +639,8 @@ func TestExecuteManagesNorthstarFilesLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(acceptance.NewFakeHubSpot("token", 123))
+	fake := acceptance.NewFakeHubSpot("token", 123)
+	server := httptest.NewServer(fake)
 	defer server.Close()
 	origin, err := url.Parse(server.URL)
 	if err != nil {
@@ -670,8 +671,15 @@ func TestExecuteManagesNorthstarFilesLifecycle(t *testing.T) {
 	if _, err := execute(ctx, "verify-files", ids, clients); err != nil {
 		t.Fatal(err)
 	}
+	originalReadDelays := northstarFilesConvergenceDelays
+	northstarFilesConvergenceDelays = []time.Duration{0, 0, 0, 0, 0}
+	t.Cleanup(func() { northstarFilesConvergenceDelays = originalReadDelays })
+	fake.LagNextManagedFileMoveVisibility(2, 2)
 	if _, err := execute(ctx, "stage-file-for-folder-rename", []string{privateFile.ID, brand.ID, downloads.ID}, clients); err != nil {
 		t.Fatal(err)
+	}
+	if readLag, searchLag := fake.ManagedFileMoveVisibilityLag(); readLag != 0 || searchLag != 0 {
+		t.Fatalf("staged file visibility lag remained: read=%d search=%d", readLag, searchLag)
 	}
 	t.Setenv("HUBSPOT_NORTHSTAR_FILES_STAGED", "1")
 	if _, err := execute(ctx, "verify-files", ids, clients); err != nil {
@@ -711,6 +719,51 @@ func TestExecuteManagesNorthstarFilesLifecycle(t *testing.T) {
 	record, err := execute(ctx, "verify-files-terminal", ids, clients)
 	if err != nil || strings.Contains(record, brand.ID) || strings.Contains(record, publicFile.ID) || !strings.Contains(record, `"active_owned_files":0`) || !strings.Contains(record, `"active_owned_folders":0`) {
 		t.Fatalf("terminal record = %q, %v", record, err)
+	}
+}
+
+func TestExecuteRejectsUnconvergedFileStagingBeforeFolderDrift(t *testing.T) {
+	t.Setenv("HUBSPOT_NORTHSTAR_FILES_PREFIX", "ns_1a2b3c4d_o_")
+	names, err := northstarFilesNamesFromEnvironment()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake := acceptance.NewFakeHubSpot("token", 123)
+	server := httptest.NewServer(fake)
+	defer server.Close()
+	origin, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clients, err := hubspot.NewClientSet(hubspot.TransportConfig{BaseURL: origin, AccessToken: "token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	brand, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: names.BrandFolder})
+	if err != nil {
+		t.Fatal(err)
+	}
+	downloads, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: names.DownloadsFolder, ParentFolderID: &brand.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateFile, err := clients.Files.Upload(ctx, hubspot.FileUpload{
+		Name: names.PrivateFile, FolderID: brand.ID, Access: "PRIVATE", Bytes: []byte("Northstar private file\n"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalReadDelays := northstarFilesConvergenceDelays
+	northstarFilesConvergenceDelays = []time.Duration{0}
+	t.Cleanup(func() { northstarFilesConvergenceDelays = originalReadDelays })
+	fake.LagNextManagedFileMoveVisibility(2, 0)
+	if _, err := execute(ctx, "stage-file-for-folder-rename", []string{privateFile.ID, brand.ID, downloads.ID}, clients); err == nil || !strings.Contains(err.Error(), "could not be verified") {
+		t.Fatalf("unconverged staging error = %v", err)
+	}
+	currentBrand, err := clients.FileFolders.Get(ctx, brand.ID)
+	if err != nil || currentBrand.Name != names.BrandFolder {
+		t.Fatalf("failed staging changed the parent folder = %#v, %v", currentBrand, err)
 	}
 }
 

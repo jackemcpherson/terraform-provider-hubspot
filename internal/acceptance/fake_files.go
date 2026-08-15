@@ -21,6 +21,13 @@ import (
 	"github.com/jackemcpherson/terraform-provider-hubspot/internal/hubspot"
 )
 
+type fakeManagedFileMoveVisibility struct {
+	id               string
+	previousFolderID string
+	readLag          int
+	searchLag        int
+}
+
 type fakeManagedFile struct {
 	file     hubspot.ManagedFile
 	contents []byte
@@ -380,6 +387,14 @@ func (f *FakeHubSpot) handleManagedFileSearch(response http.ResponseWriter, requ
 		}
 		ids = append(ids, id)
 	}
+	if visibility := f.managedFileMoveVisibility; visibility != nil && visibility.searchLag > 0 && folderID == visibility.previousFolderID {
+		file := f.managedFiles[visibility.id]
+		if file != nil && (name == "" || file.file.Name == name) {
+			ids = append(ids, visibility.id)
+		}
+		visibility.searchLag--
+		f.clearManagedFileMoveVisibility()
+	}
 	sort.Strings(ids)
 	results := make([]hubspot.ManagedFile, 0, len(ids))
 	start, end, next := fakeFilesPage(request, len(ids))
@@ -419,7 +434,14 @@ func (f *FakeHubSpot) handleManagedFileItem(response http.ResponseWriter, reques
 			fmt.Fprintf(response, `{"id":%q,"archived":"invalid"}`, id)
 			return
 		}
-		writeFakeJSON(response, http.StatusOK, file.file)
+		observed := file.file
+		if visibility := f.managedFileMoveVisibility; visibility != nil && visibility.id == id && visibility.readLag > 0 {
+			observed.FolderID = visibility.previousFolderID
+			observed.Path = f.deriveFilePath(observed.FolderID, observed.Name)
+			visibility.readLag--
+			f.clearManagedFileMoveVisibility()
+		}
+		writeFakeJSON(response, http.StatusOK, observed)
 	case http.MethodPatch:
 		if file == nil {
 			writeFakeError(response, http.StatusNotFound, "OBJECT_NOT_FOUND", "", "No active Managed file matched this identity.")
@@ -442,7 +464,16 @@ func (f *FakeHubSpot) handleManagedFileItem(response http.ResponseWriter, reques
 				writeFakeError(response, http.StatusBadRequest, "VALIDATION_ERROR", "", "Destination folder does not exist.")
 				return
 			}
+			previousFolderID := file.file.FolderID
 			file.file.FolderID = *patch.FolderID
+			if previousFolderID != *patch.FolderID && (f.nextManagedFileMoveReadLag > 0 || f.nextManagedFileMoveSearchLag > 0) {
+				f.managedFileMoveVisibility = &fakeManagedFileMoveVisibility{
+					id: id, previousFolderID: previousFolderID,
+					readLag: f.nextManagedFileMoveReadLag, searchLag: f.nextManagedFileMoveSearchLag,
+				}
+				f.nextManagedFileMoveReadLag = 0
+				f.nextManagedFileMoveSearchLag = 0
+			}
 		}
 		if patch.Access != nil {
 			file.file.Access = *patch.Access
@@ -728,6 +759,29 @@ func (f *FakeHubSpot) FailNextFilesOperation(fault FilesFault) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.nextFilesFault = fault
+}
+
+func (f *FakeHubSpot) LagNextManagedFileMoveVisibility(reads, searches int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.nextManagedFileMoveReadLag = reads
+	f.nextManagedFileMoveSearchLag = searches
+}
+
+func (f *FakeHubSpot) ManagedFileMoveVisibilityLag() (reads, searches int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if visibility := f.managedFileMoveVisibility; visibility != nil {
+		return visibility.readLag, visibility.searchLag
+	}
+	return 0, 0
+}
+
+func (f *FakeHubSpot) clearManagedFileMoveVisibility() {
+	visibility := f.managedFileMoveVisibility
+	if visibility != nil && visibility.readLag == 0 && visibility.searchLag == 0 {
+		f.managedFileMoveVisibility = nil
+	}
 }
 
 func fakeNullableStringEqual(a, b *string) bool {

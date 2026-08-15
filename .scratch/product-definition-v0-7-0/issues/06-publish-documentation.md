@@ -25,6 +25,11 @@ Blocked by: 03, 04, 05
   during refresh-only reconciliation. Demo PR 25 fixed the defect and merged as
   `3daa63da44464c971ab1ca55ac91345ed1279dd7`. Maintenance now pins that exact
   reviewed commit.
+- 2026-08-15: The next protected refresh reached folder repair and proved that
+  HubSpot requires file staging plus separate folder and file applies. Demo PR
+  26 implemented that choreography and merged as
+  `b322cf0793ebbf9c934a11b4160afe5c0a93c966`. Maintenance now pins that exact
+  reviewed commit.
 
 ## Answer
 
