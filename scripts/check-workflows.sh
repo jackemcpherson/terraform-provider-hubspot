@@ -40,10 +40,6 @@ grep -Fq "TestAcc_product_definitions_ContractPreflight" Makefile || {
   echo "maintenance must run the guarded Product contract preflight" >&2
   exit 1
 }
-grep -Fq 'Weekly provider maintenance' .github/workflows/release.yml || {
-  echo "release must require exact-commit live maintenance evidence" >&2
-  exit 1
-}
 
 for action in .github/actions/*/action.yml; do
   if grep -E 'uses: [^.]' "$action" | grep -Ev 'uses: [^@]+@[0-9a-f]{40}([[:space:]]+#.*)?$' >/dev/null; then

@@ -237,7 +237,7 @@ func (r *ProductResource) Delete(ctx context.Context, request resource.DeleteReq
 		}
 		return
 	}
-	if presence == productPresenceActive {
+	if presence != productPresenceArchived {
 		response.Diagnostics.AddError("Product archival was not verified", "HubSpot did not prove exact active absence and the same archived Product identity. Prior state was retained.")
 		return
 	}

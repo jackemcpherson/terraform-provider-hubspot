@@ -38,6 +38,14 @@ func TestAcc_product_definitions_ContractPreflight(t *testing.T) {
 		"price": "number", "hs_cost_of_goods_sold": "number",
 		"hs_recurring_billing_period": "enumeration",
 	}
+	createdIDs := make([]string, 0, 2)
+	defer func() {
+		for _, id := range createdIDs {
+			if err := clients.Products.Archive(context.Background(), id); err != nil && !productPreflightNotFound(err) {
+				t.Errorf("Product contract probe cleanup failed: %s", acceptance.SanitizedHubSpotError(err))
+			}
+		}
+	}()
 	seen := make(map[string]hubspot.ProductProperty)
 	for _, property := range properties {
 		seen[property.Name] = property
@@ -61,19 +69,12 @@ func TestAcc_product_definitions_ContractPreflight(t *testing.T) {
 		Description: "Disposable Product contract probe", Price: "1200.00",
 		Cost: &cost, RecurringBillingPeriod: &recurrence,
 	})
+	if created.ID != "" {
+		createdIDs = append(createdIDs, created.ID)
+	}
 	if createErr != nil || created.ID == "" {
 		t.Fatalf("Product root create probe failed: %s", acceptance.SanitizedHubSpotError(createErr))
 	}
-	archived := false
-	defer func() {
-		if archived {
-			return
-		}
-		if err := clients.Products.Archive(context.Background(), created.ID); err != nil && !productPreflightNotFound(err) {
-			t.Errorf("Product contract probe cleanup failed: %s", acceptance.SanitizedHubSpotError(err))
-		}
-	}()
-
 	read, err := clients.Products.Get(ctx, created.ID)
 	if err != nil || read.ID != created.ID || read.Archived || read.Folder != "" ||
 		!productPreflightDecimalsEqual(read.Price, "1200.00") ||
@@ -84,6 +85,9 @@ func TestAcc_product_definitions_ContractPreflight(t *testing.T) {
 		Name: "Duplicate Product contract probe", SKU: sku,
 		Description: "Duplicate SKU probe", Price: "1",
 	})
+	if duplicate.ID != "" {
+		createdIDs = append(createdIDs, duplicate.ID)
+	}
 	if duplicateErr == nil || duplicate.ID != "" {
 		t.Fatal("Product contract probe did not reject a duplicate active SKU")
 	}
@@ -114,7 +118,6 @@ func TestAcc_product_definitions_ContractPreflight(t *testing.T) {
 	if err := clients.Products.Archive(ctx, created.ID); !productPreflightNotFound(err) {
 		t.Fatal("Product duplicate archive probe returned an unexpected result")
 	}
-	archived = true
 }
 
 func productPreflightDecimalsEqual(first, second string) bool {

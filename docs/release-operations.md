@@ -38,11 +38,11 @@ runs pinned GoReleaser once. GoReleaser builds the provider archives, signs the
 checksum inventory, publishes the versioned Registry manifest, and creates the
 GitHub release used by Terraform Registry and OpenTofu Registry.
 
-Publication requires successful `Required` and `Weekly provider maintenance`
-checks on the exact release commit. Manually dispatch maintenance after the
-demo pin reaches `main`. This proves the guarded Product runtime schema,
-root-folder omission, disposable lifecycle, and cumulative Northstar journey
-with the protected portal before release credentials are available.
+Before dispatching publication, manually run `Provider maintenance` on the
+exact release commit after the demo pin reaches `main`. Confirm its success in
+the operator checklist. This proves the guarded Product runtime schema,
+root-folder omission, disposable lifecycle, and cumulative Northstar journey.
+ADR 0003 keeps this live evidence outside the automated publication gate.
 
 The `release` environment stores `GPG_PRIVATE_KEY` and `GPG_FINGERPRINT`. During
 v0.x it does not require a reviewer. The environment still restricts the signing

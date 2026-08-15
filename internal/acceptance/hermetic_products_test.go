@@ -151,6 +151,15 @@ func runHermeticProductLifecycle(t *testing.T, engine acceptance.Engine, provide
 		session.RequireStateAbsent("hubspot_product.managed")
 		session.Apply(semantic)
 		terminalID := session.OpaqueStateString("hubspot_product.managed", "id")
+		fake.FailNextProductOperation(acceptance.ProductFaultArchiveDisappears)
+		session.RequireDestroyFailure(semantic)
+		session.RequireStateString("hubspot_product.managed", "id", terminalID)
+		if _, ok := fake.ProductSnapshot(terminalID); ok {
+			t.Fatal("disappearing archive retained a fake Product identity")
+		}
+		session.Destroy(semantic)
+		session.Apply(semantic)
+		terminalID = session.OpaqueStateString("hubspot_product.managed", "id")
 
 		fake.FailNextProductOperation(acceptance.ProductFaultArchiveRejected)
 		session.RequireDestroyFailure(semantic)

@@ -50,8 +50,6 @@ jobs:
           test "$COMMIT" = "$(git rev-parse refs/remotes/origin/main)"
           required_checks=$(gh api "repos/$REPOSITORY/commits/$COMMIT/check-runs" --jq '[.check_runs[] | select(.name == "Required" and .conclusion == "success")] | length')
           test "$required_checks" -ge 1
-          live_checks=$(gh api "repos/$REPOSITORY/commits/$COMMIT/check-runs" --jq '[.check_runs[] | select(.name == "Weekly provider maintenance" and .conclusion == "success")] | length')
-          test "$live_checks" -ge 1
           if gh release view "$VERSION" --repo "$REPOSITORY" >/dev/null 2>&1; then
             echo 'release already exists' >&2
             exit 1

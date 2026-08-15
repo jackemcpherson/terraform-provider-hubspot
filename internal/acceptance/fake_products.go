@@ -23,11 +23,12 @@ type fakeProduct struct {
 type ProductFault string
 
 const (
-	ProductFaultCreateKnown      ProductFault = "create_known"
-	ProductFaultCreateUnknown    ProductFault = "create_unknown"
-	ProductFaultReadRejected     ProductFault = "read_rejected"
-	ProductFaultArchiveRejected  ProductFault = "archive_rejected"
-	ProductFaultArchiveAmbiguous ProductFault = "archive_ambiguous"
+	ProductFaultCreateKnown       ProductFault = "create_known"
+	ProductFaultCreateUnknown     ProductFault = "create_unknown"
+	ProductFaultReadRejected      ProductFault = "read_rejected"
+	ProductFaultArchiveRejected   ProductFault = "archive_rejected"
+	ProductFaultArchiveAmbiguous  ProductFault = "archive_ambiguous"
+	ProductFaultArchiveDisappears ProductFault = "archive_disappears"
 )
 
 func (f *FakeHubSpot) handleProducts(response http.ResponseWriter, request *http.Request, rest []string) {
@@ -152,6 +153,12 @@ func (f *FakeHubSpot) handleProductItem(response http.ResponseWriter, request *h
 		if f.nextProductFault == ProductFaultArchiveRejected {
 			f.nextProductFault = ""
 			writeFakeError(response, http.StatusForbidden, "MISSING_SCOPES", "", "The Product archive was rejected.")
+			return
+		}
+		if f.nextProductFault == ProductFaultArchiveDisappears {
+			f.nextProductFault = ""
+			delete(f.products, id)
+			response.WriteHeader(http.StatusNoContent)
 			return
 		}
 		entry.product.Archived = true
