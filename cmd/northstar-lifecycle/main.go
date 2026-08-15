@@ -38,7 +38,7 @@ const (
 var (
 	northstarFilesConvergenceDelays          = []time.Duration{0, time.Second, 2 * time.Second, 3 * time.Second, 5 * time.Second, 8 * time.Second, 13 * time.Second}
 	northstarFolderTaskConvergenceDelays     = []time.Duration{0, time.Second, 2 * time.Second, 3 * time.Second, 5 * time.Second, 8 * time.Second, 13 * time.Second}
-	northstarDescendantPathConvergenceDelays = []time.Duration{0, time.Second, 2 * time.Second, 3 * time.Second, 5 * time.Second, 8 * time.Second, 13 * time.Second, 21 * time.Second, 34 * time.Second}
+	northstarDescendantPathConvergenceDelays = []time.Duration{0, time.Second, 2 * time.Second, 3 * time.Second, 5 * time.Second, 8 * time.Second, 13 * time.Second, 21 * time.Second, 34 * time.Second, 55 * time.Second}
 )
 
 var errNorthstarFolderReadBack = errors.New("northstar folder read-back did not converge")
@@ -124,10 +124,14 @@ func main() {
 }
 
 func northstarActionTimeout(action string) time.Duration {
-	if action == "drift-folder-path" {
+	switch action {
+	case "drift-folder-path":
+		return 4 * time.Minute
+	case "verify-files":
 		return 3 * time.Minute
+	default:
+		return 2 * time.Minute
 	}
-	return 2 * time.Minute
 }
 
 func execute(ctx context.Context, action string, ids []string, clients *hubspot.ClientSet) (string, error) {

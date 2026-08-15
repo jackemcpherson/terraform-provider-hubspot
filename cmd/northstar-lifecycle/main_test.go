@@ -21,11 +21,30 @@ import (
 const northstarTestMembershipEmail = "tfhs-probe-16-20260802024807@example.com"
 
 func TestNorthstarActionTimeoutPreservesFolderDriftMargin(t *testing.T) {
-	if timeout := northstarActionTimeout("drift-folder-path"); timeout != 3*time.Minute {
+	const minimumMargin = 30 * time.Second
+
+	if timeout := northstarActionTimeout("drift-folder-path"); timeout != 4*time.Minute {
 		t.Fatalf("folder drift timeout = %s", timeout)
 	}
-	if timeout := northstarActionTimeout("verify-files"); timeout != 2*time.Minute {
+	if timeout := northstarActionTimeout("verify-files"); timeout != 3*time.Minute {
+		t.Fatalf("file verification timeout = %s", timeout)
+	}
+	if timeout := northstarActionTimeout("cleanup"); timeout != 2*time.Minute {
 		t.Fatalf("default timeout = %s", timeout)
+	}
+	var taskDelay time.Duration
+	for _, delay := range northstarFolderTaskConvergenceDelays {
+		taskDelay += delay
+	}
+	var descendantDelay time.Duration
+	for _, delay := range northstarDescendantPathConvergenceDelays {
+		descendantDelay += delay
+	}
+	if timeout := northstarActionTimeout("verify-files"); timeout <= descendantDelay+minimumMargin {
+		t.Fatalf("file verification timeout = %s, convergence = %s", timeout, descendantDelay)
+	}
+	if timeout := northstarActionTimeout("drift-folder-path"); timeout <= taskDelay+descendantDelay+minimumMargin {
+		t.Fatalf("folder drift timeout = %s, convergence = %s", timeout, taskDelay+descendantDelay)
 	}
 }
 
@@ -808,8 +827,8 @@ func TestWaitForNorthstarDescendantPathConvergence(t *testing.T) {
 	for _, delay := range northstarDescendantPathConvergenceDelays {
 		totalDelay += delay
 	}
-	if totalDelay <= 32*time.Second {
-		t.Fatalf("descendant path convergence delay = %s, want more than live-observed 32s", totalDelay)
+	if totalDelay <= 87*time.Second {
+		t.Fatalf("descendant path convergence delay = %s, want more than live-observed 87s", totalDelay)
 	}
 	originalDelays := northstarDescendantPathConvergenceDelays
 	northstarDescendantPathConvergenceDelays = make([]time.Duration, len(originalDelays))
