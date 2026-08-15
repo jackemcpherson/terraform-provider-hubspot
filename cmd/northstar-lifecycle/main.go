@@ -23,15 +23,16 @@ import (
 const driftLabel = "Out-of-band Northstar buyer role"
 
 const (
-	northstarProfileJobTitle     = "Cloud Operations Engineer"
-	northstarProfileAvailability = "available"
-	northstarProfileTimeZone     = "Australia/Melbourne"
-	northstarProductSKU          = "ns_support_annual"
-	northstarProductName         = "Northstar annual support"
-	northstarProductDescription  = "Priority support for Northstar customers"
-	northstarProductPrice        = "1200.00"
-	northstarProductCost         = "300.00"
-	northstarProductRecurrence   = "P12M"
+	northstarProfileJobTitle         = "Cloud Operations Engineer"
+	northstarProfileAvailability     = "available"
+	northstarProfileTimeZone         = "Australia/Melbourne"
+	northstarProductSKU              = "ns_support_annual"
+	northstarProductName             = "Northstar annual support"
+	northstarProductDescription      = "Priority support for Northstar customers"
+	northstarProductPrice            = "1200.00"
+	northstarProductCost             = "300.00"
+	northstarProductRecurrence       = "P12M"
+	northstarApprovedMembershipEmail = "tfhs-probe-16-20260802024807@example.com"
 )
 
 var northstarFolderReadDelays = []time.Duration{0, time.Second, 2 * time.Second, 3 * time.Second, 5 * time.Second, 8 * time.Second, 13 * time.Second}
@@ -253,13 +254,25 @@ func execute(ctx context.Context, action string, ids []string, clients *hubspot.
 		if err != nil {
 			return "", err
 		}
-		if err := cleanupNorthstar(ctx, clients, names); err != nil {
+		membershipEmail, err := northstarMembershipEmailFromEnvironment()
+		if err != nil {
+			return "", err
+		}
+		if err := cleanupNorthstar(ctx, clients, names, membershipEmail); err != nil {
 			return "", err
 		}
 		return "Northstar cleanup verified zero active owned configuration", nil
 	default:
 		return "", errors.New("unknown Northstar lifecycle action")
 	}
+}
+
+func northstarMembershipEmailFromEnvironment() (string, error) {
+	email := os.Getenv("HUBSPOT_NORTHSTAR_MEMBERSHIP_EMAIL")
+	if email != northstarApprovedMembershipEmail {
+		return "", errors.New("HUBSPOT_NORTHSTAR_MEMBERSHIP_EMAIL must be the exact approved reserved Northstar fixture")
+	}
+	return email, nil
 }
 
 var northstarCRMNames = map[string]struct {
@@ -293,6 +306,7 @@ type northstarCleanupPlan struct {
 	files      []string
 	folders    []hubspot.FileFolder
 	products   []string
+	membership *hubspot.AccountMembership
 }
 
 func stringSet(values ...string) map[string]struct{} {
@@ -303,10 +317,15 @@ func stringSet(values ...string) map[string]struct{} {
 	return result
 }
 
-func cleanupNorthstar(ctx context.Context, clients *hubspot.ClientSet, names northstarFilesNames) error {
-	plan, err := inspectNorthstarCleanup(ctx, clients, names)
+func cleanupNorthstar(ctx context.Context, clients *hubspot.ClientSet, names northstarFilesNames, membershipEmail string) error {
+	plan, err := inspectNorthstarCleanup(ctx, clients, names, membershipEmail)
 	if err != nil {
 		return err
+	}
+	if plan.membership != nil {
+		if err := deleteNorthstarMembership(ctx, clients, *plan.membership); err != nil {
+			return err
+		}
 	}
 	for _, id := range plan.files {
 		if err := deleteNorthstarIdentity(ctx, clients.Files.Delete, func(ctx context.Context, id string) error {
@@ -360,11 +379,25 @@ func cleanupNorthstar(ctx context.Context, clients *hubspot.ClientSet, names nor
 			}
 		}
 	}
-	return verifyNorthstarCleanup(ctx, clients, names)
+	return verifyNorthstarCleanup(ctx, clients, names, membershipEmail)
 }
 
-func inspectNorthstarCleanup(ctx context.Context, clients *hubspot.ClientSet, names northstarFilesNames) (northstarCleanupPlan, error) {
+func inspectNorthstarCleanup(ctx context.Context, clients *hubspot.ClientSet, names northstarFilesNames, membershipEmail string) (northstarCleanupPlan, error) {
 	plan := northstarCleanupPlan{properties: map[string][]string{}, groups: map[string][]string{}}
+	memberships, err := clients.AccountMemberships.List(ctx)
+	if err != nil {
+		return plan, fmt.Errorf("list Northstar account memberships: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	for _, membership := range memberships {
+		if membership.Email != membershipEmail {
+			continue
+		}
+		if plan.membership != nil || membership.SuperAdmin || membership.HasRoleOrTeamAssignments() {
+			return plan, errors.New("refusing unsafe Northstar account membership")
+		}
+		owned := membership
+		plan.membership = &owned
+	}
 	for objectType, expected := range northstarCRMNames {
 		properties, err := clients.Properties.List(ctx, objectType, false, "non_sensitive", "")
 		if err != nil {
@@ -503,8 +536,8 @@ func inspectNorthstarCleanup(ctx context.Context, clients *hubspot.ClientSet, na
 	return plan, nil
 }
 
-func verifyNorthstarCleanup(ctx context.Context, clients *hubspot.ClientSet, names northstarFilesNames) error {
-	plan, err := inspectNorthstarCleanup(ctx, clients, names)
+func verifyNorthstarCleanup(ctx context.Context, clients *hubspot.ClientSet, names northstarFilesNames, membershipEmail string) error {
+	plan, err := inspectNorthstarCleanup(ctx, clients, names, membershipEmail)
 	if err != nil {
 		return err
 	}
@@ -521,13 +554,57 @@ func verifyNorthstarCleanup(ctx context.Context, clients *hubspot.ClientSet, nam
 	if len(plan.forms) != 0 || len(plan.files) != 0 || len(plan.folders) != 0 || len(plan.products) != 0 {
 		return errors.New("northstar cleanup left active Forms, Files, or Product configuration")
 	}
+	if plan.membership != nil {
+		return errors.New("northstar cleanup left the disposable account membership active")
+	}
 	return nil
+}
+
+func deleteNorthstarMembership(ctx context.Context, clients *hubspot.ClientSet, membership hubspot.AccountMembership) error {
+	current, err := clients.AccountMemberships.GetByID(ctx, membership.ID)
+	if northstarNotFound(err) {
+		_, emailErr := clients.AccountMemberships.GetByEmail(ctx, membership.Email)
+		if !northstarNotFound(emailErr) {
+			if emailErr != nil {
+				return fmt.Errorf("read absent Northstar account membership by email: %s", acceptance.SanitizedHubSpotError(emailErr))
+			}
+			return errors.New("refusing Northstar account membership whose email resolved after ID absence")
+		}
+		if err := clients.AccountMemberships.WaitForAbsence(ctx, membership.ID, membership.Email); err != nil {
+			return fmt.Errorf("verify absent Northstar account membership cleanup: %s", acceptance.SanitizedHubSpotError(err))
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read Northstar account membership: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	byEmail, err := clients.AccountMemberships.GetByEmail(ctx, membership.Email)
+	if err != nil {
+		return fmt.Errorf("read Northstar account membership by email: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	if current.ID != membership.ID || current.Email != membership.Email ||
+		byEmail.ID != membership.ID || byEmail.Email != membership.Email ||
+		current.SuperAdmin || byEmail.SuperAdmin || current.HasRoleOrTeamAssignments() || byEmail.HasRoleOrTeamAssignments() {
+		return errors.New("refusing Northstar account membership whose exact safe identity was not verified")
+	}
+	deleteErr := clients.AccountMemberships.Delete(ctx, membership.ID)
+	if deleteErr != nil && !northstarNotFound(deleteErr) && !northstarAmbiguous(deleteErr) {
+		return fmt.Errorf("delete Northstar account membership: %s", acceptance.SanitizedHubSpotError(deleteErr))
+	}
+	if err := clients.AccountMemberships.WaitForAbsence(ctx, membership.ID, membership.Email); err != nil {
+		return fmt.Errorf("verify Northstar account membership cleanup: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	return nil
+}
+
+func northstarAmbiguous(err error) bool {
+	var apiError *hubspot.Error
+	return errors.As(err, &apiError) && apiError.Ambiguous
 }
 
 func deleteNorthstarIdentity(ctx context.Context, deleteByID func(context.Context, string) error, readByID func(context.Context, string) error, id string) error {
 	if err := deleteByID(ctx, id); err != nil && !northstarNotFound(err) {
-		var apiError *hubspot.Error
-		if !errors.As(err, &apiError) || !apiError.Ambiguous {
+		if !northstarAmbiguous(err) {
 			return err
 		}
 	}

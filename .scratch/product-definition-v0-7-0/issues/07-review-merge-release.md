@@ -22,3 +22,10 @@ Blocked by: 01, 02, 03, 04, 05, 06
   Product preflight passed in protected maintenance run 31871546257. Cumulative
   Northstar maintenance and publication remain blocked until the protected
   `HUBSPOT_NORTHSTAR_MEMBERSHIP_EMAIL` variable is configured.
+- 2026-08-15: The protected variable now uses the approved reserved fixture.
+  Maintenance run 31872888242 passed the Product probe and reached the live
+  OpenTofu refresh phase. The run correctly archived the Product, then stopped
+  because the root demo output indexed the temporarily empty Product ID map.
+  Demo PR 25 fixed and tested the nullable refresh output. The provider recovery
+  change adds guarded pre-run cleanup for exact owned residuals before the gate
+  is rerun.
