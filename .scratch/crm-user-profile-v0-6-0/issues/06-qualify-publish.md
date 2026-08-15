@@ -1,7 +1,7 @@
 # 06: Qualify And Publish v0.6.0
 
 Type: task
-Status: open
+Status: claimed
 
 Blocked by: 01, 04, 05
 
@@ -13,9 +13,9 @@ v0.6.0 release.
 
 ## Comments
 
-- GitHub authentication is valid. Publication still requires the missing
-  guarded live credential inputs.
+- The guarded live probe passed through the existing approved Keychain
+  credential. GitHub authentication is valid.
 - All local provider and demo gates, specialist reviews, and hosted pull-request
-  checks pass. Both draft pull requests are clean and mergeable. The guarded
-  live probe, demo-first merges, exact demo merge pin, and immutable
-  publication remain pending in that order.
+  checks pass. Both draft pull requests are clean and mergeable. Demo-first
+  merges, the exact demo merge pin, and immutable publication remain pending in
+  that order.

@@ -1,26 +1,55 @@
 # CRM User Profile Live Probe
 
-Status: blocked before execution on 15 August 2026.
+This note records the guarded CRM user-profile probe for v0.6.0. The probe used
+the approved normal-Free portal and the existing non-deliverable global
+identity from the v0.5.0 account-membership probe.
 
-The local environment did not contain `HUBSPOT_ACCESS_TOKEN`,
-`HUBSPOT_PROBE_EXPECTED_FINGERPRINT`, or the protected Northstar Settings user
-ID. The dedicated probe Keychain entry was also absent. No HubSpot request or
-mutation was sent.
+## Execution Boundary
 
-The protected GitHub `northstar` environment was rechecked on 15 August 2026.
-It exposes only the `HUBSPOT_ACCESS_TOKEN` secret and
-`HUBSPOT_ACCEPTANCE_PORTAL_ID` variable. It does not expose the expected
-fingerprint or protected Settings membership ID required by this probe, and
-the accepted ADR 0003 workflow topology provides no safe branch workflow that
-can supply them. Secret and variable values were not read or logged.
+- Execution completed at `2026-08-15T04:16:43Z`.
+- The portal fingerprint was `sha256:c26c791399aeb246`.
+- The credential came from the `terraform-provider-hubspot-probes` Keychain
+  entry.
+- The opening portal had one protected baseline membership.
+- Membership creation sent `sendWelcomeEmail: false`.
+- The probe output contained no names, emails, CRM IDs, Settings IDs, or
+  credential values.
 
-Run `../probe/crm-user-profile-lifecycle.zsh` only with the approved environment
-credential, portal fingerprint, and protected activated Settings identity. The
-probe never prints credentials, email, names, CRM IDs, or Settings IDs. It
-restores the exact opening profile properties on every guarded exit.
+The guarded script is
+[`crm-user-profile-lifecycle.zsh`](../probe/crm-user-profile-lifecycle.zsh).
+Its local regression test proves Keychain fallback, welcome-disabled creation,
+ordered profile writes, exact restoration, owned cleanup, and zero mutation on
+a portal-fingerprint mismatch.
 
-Prior live evidence from 2 August 2026 remains in
-`.scratch/hubspot-free-configuration-coverage/research/16-user-configuration-live-lifecycle.md`.
-That evidence confirms the distinct identities, unique join in the test portal,
-profile property lifecycle, timezone prerequisite, and activation-dependent
-materialization. It does not replace the required fresh release probe.
+## Results
+
+Creation returned one canonical Settings ID for the approved reusable global
+identity. An exact Settings read verified that identity without logging it.
+Paginated CRM discovery found one `hs_internal_user_id` join within the bounded
+20-second materialization window.
+
+The probe then completed these operations:
+
+1. Read the exact CRM profile and verified both identity domains.
+2. Set job title, availability, and `Australia/Melbourne` timezone.
+3. Set canonical Monday-to-Friday working hours in a later PATCH.
+4. Read back the exact profile and verified every managed value.
+5. Restored all four opening profile values.
+6. Removed only the owned Settings membership.
+
+Exact ID and email reads proved membership absence. The final paginated
+inventory matched the opening count and retained the protected baseline. The
+CRM profile remains a documented non-destructive residual after membership
+removal.
+
+## Contract Consequences
+
+The live evidence confirms the frozen v0.6.0 contract. It found no stop-level
+contradiction. Profile identity remains distinct from Settings membership
+identity, materialization requires a bounded join, timezone precedes working
+hours, and stopping management must not delete the CRM identity.
+
+An earlier local audit incorrectly reported that the Keychain entry was absent.
+The audit ran `security` inside the filesystem sandbox, which hid the available
+entry. The corrected probe restores the v0.4.0 and v0.5.0 Keychain fallback and
+owned welcome-disabled lifecycle.

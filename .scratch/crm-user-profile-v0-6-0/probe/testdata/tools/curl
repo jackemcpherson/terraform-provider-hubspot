@@ -1,0 +1,109 @@
+#!/bin/zsh
+
+set -eu
+
+readonly state_dir="${FAKE_HUBSPOT_STATE_DIR:?FAKE_HUBSPOT_STATE_DIR is required}"
+readonly fixture_email="${FAKE_HUBSPOT_FIXTURE_EMAIL:?FAKE_HUBSPOT_FIXTURE_EMAIL is required}"
+
+method='GET'
+body=''
+url=''
+
+while (( $# > 0 )); do
+  case "$1" in
+    -X)
+      shift
+      method="$1"
+      ;;
+    --data)
+      shift
+      body="$1"
+      ;;
+    -H | -w)
+      shift
+      ;;
+    http*)
+      url="$1"
+      ;;
+  esac
+  shift
+done
+
+readonly route="${url#https://api.hubapi.com}"
+
+respond() {
+  print -rn -- "$1"
+  print
+  print -r -- "$2"
+}
+
+membership_json() {
+  jq -nc --arg email "$fixture_email" \
+    '{id: "101", email: $email, firstName: "Probe", lastName: "User", superAdmin: false, sendWelcomeEmail: false}'
+}
+
+case "${method} ${route}" in
+  'GET /account-info/v3/details')
+    respond '{"portalId":"12345"}' 200
+    ;;
+  'GET /settings/users/2026-03?limit=100')
+    if [[ -f "${state_dir}/membership-present" ]]; then
+      respond "$(jq -nc --argjson fixture "$(membership_json)" \
+        '{results: [{id: "1", email: "baseline@example.invalid", superAdmin: true}, $fixture]}')" 200
+    else
+      respond '{"results":[{"id":"1","email":"baseline@example.invalid","superAdmin":true}]}' 200
+    fi
+    ;;
+  'POST /settings/users/2026-03')
+    [[ "$(jq -r --arg email "$fixture_email" \
+      '.email == $email and .sendWelcomeEmail == false' <<<"$body")" == true ]]
+    print -r -- 'present' >"${state_dir}/membership-present"
+    print -r -- 'POST welcome-disabled membership' >>"${state_dir}/requests.log"
+    respond "$(membership_json)" 201
+    ;;
+  'GET /settings/users/2026-03/101')
+    if [[ -f "${state_dir}/membership-present" ]]; then
+      respond "$(membership_json)" 200
+    else
+      respond '{"status":"error"}' 404
+    fi
+    ;;
+  "GET /settings/users/2026-03/${fixture_email}?idProperty=EMAIL")
+    if [[ -f "${state_dir}/membership-present" ]]; then
+      respond "$(membership_json)" 200
+    else
+      respond '{"status":"error"}' 404
+    fi
+    ;;
+  'DELETE /settings/users/2026-03/101')
+    rm -f "${state_dir}/membership-present"
+    print -r -- 'DELETE owned membership' >>"${state_dir}/requests.log"
+    respond '' 204
+    ;;
+  GET\ /crm/objects/2026-03/users\?*)
+    if [[ -f "${state_dir}/membership-present" ]]; then
+      respond "$(jq -nc --argjson properties "$(<"${state_dir}/profile.json")" \
+        '{results: [{id: "301", properties: $properties}]}')" 200
+    else
+      respond '{"results":[]}' 200
+    fi
+    ;;
+  GET\ /crm/objects/2026-03/users/301\?*)
+    respond "$(jq -nc --argjson properties "$(<"${state_dir}/profile.json")" \
+      '{id: "301", properties: $properties}')" 200
+    ;;
+  'PATCH /crm/objects/2026-03/users/301')
+    patch_keys="$(jq -r '.properties | keys | join(",")' <<<"$body")"
+    print -r -- "PATCH ${patch_keys}" >>"${state_dir}/requests.log"
+    jq -nc --argjson existing "$(<"${state_dir}/profile.json")" \
+      --argjson patch "$(jq -c '.properties' <<<"$body")" \
+      '$existing * $patch' >"${state_dir}/profile.next.json"
+    mv "${state_dir}/profile.next.json" "${state_dir}/profile.json"
+    respond "$(jq -nc --argjson properties "$(<"${state_dir}/profile.json")" \
+      '{id: "301", properties: $properties}')" 200
+    ;;
+  *)
+    print -u2 -- "unexpected fake HubSpot request: ${method} ${route}"
+    respond '{"status":"error"}' 599
+    ;;
+esac

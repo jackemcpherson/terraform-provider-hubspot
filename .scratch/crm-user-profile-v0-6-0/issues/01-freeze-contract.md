@@ -1,7 +1,7 @@
 # 01: Freeze The API And Live Contract
 
 Type: research
-Status: claimed
+Status: resolved
 
 ## Scope
 
@@ -12,9 +12,13 @@ probe, and freeze the v0.6.0 contract.
 
 - Official documentation was revalidated on 15 August 2026 with no blocking
   contradiction.
-- The fresh live probe is pending because the local environment has no HubSpot
-  access token, approved portal fingerprint, or protected Settings membership
-  ID.
-- The protected GitHub `northstar` environment has the access token and portal
-  ID only. It has neither probe guard, and the retained ADR 0003 workflows do
-  not provide a safe pre-merge execution path for the probe.
+- Official and live evidence found no blocking contradiction.
+- The guarded live probe completed at `2026-08-15T04:16:43Z` through the
+  existing Keychain credential and approved reusable global identity.
+
+## Answer
+
+The current official API and the guarded normal-Free lifecycle confirm the
+frozen contract. The probe verified separate Settings and CRM identities, one
+paginated join, bounded materialization, ordered profile writes, exact
+restoration, welcome-disabled membership creation, and exact owned cleanup.
