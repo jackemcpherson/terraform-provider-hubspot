@@ -1,7 +1,7 @@
 # 06: Qualify And Publish v0.6.0
 
 Type: task
-Status: claimed
+Status: open
 
 Blocked by: 01, 04, 05
 
@@ -13,7 +13,7 @@ v0.6.0 release.
 
 ## Comments
 
-- Publication requires valid GitHub authentication and the missing guarded live
-  credential inputs.
+- GitHub authentication is valid. Publication still requires the missing
+  guarded live credential inputs.
 - All local provider and demo gates pass. Specialist review, hosted checks,
   merges, and immutable publication remain pending.

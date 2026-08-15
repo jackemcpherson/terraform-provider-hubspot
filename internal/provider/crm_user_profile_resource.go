@@ -75,6 +75,7 @@ func (r *CRMUserProfileResource) Schema(_ context.Context, _ resource.SchemaRequ
 				Description:         "Settings user ID joined through hs_internal_user_id; changes replace this management relationship.",
 				MarkdownDescription: "Settings user `id` joined through `hs_internal_user_id`. Changes replace this management relationship.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
+				Validators:          []validator.String{crmUserSettingsIDValidator{}},
 			},
 			"job_title": schema.StringAttribute{
 				Optional:            true,
@@ -147,7 +148,7 @@ func (r *CRMUserProfileResource) Create(ctx context.Context, request resource.Cr
 	if response.Diagnostics.HasError() {
 		return
 	}
-	profile, err := r.verifiedProfile(ctx, "", plan.AccountMembershipID.ValueString(), true)
+	profile, err := r.verifiedProfile(ctx, "", plan.AccountMembershipID.ValueString(), true, crmUserProfileFieldsFromModel(plan))
 	if err != nil {
 		appendHubSpotDiagnostic(&response.Diagnostics, "CRM user profile readiness failed", err)
 		return
@@ -174,7 +175,7 @@ func (r *CRMUserProfileResource) Read(ctx context.Context, request resource.Read
 	if response.Diagnostics.HasError() {
 		return
 	}
-	profile, err := r.verifiedProfile(ctx, state.ID.ValueString(), state.AccountMembershipID.ValueString(), false)
+	profile, err := r.verifiedProfile(ctx, state.ID.ValueString(), state.AccountMembershipID.ValueString(), false, crmUserProfileFieldsFromModel(state))
 	if err != nil {
 		if isNotFound(err) {
 			response.State.RemoveResource(ctx)
@@ -198,12 +199,12 @@ func (r *CRMUserProfileResource) Update(ctx context.Context, request resource.Up
 	if response.Diagnostics.HasError() {
 		return
 	}
-	if state.ID.IsNull() || !canonicalSettingsUserID.MatchString(state.ID.ValueString()) ||
+	if state.ID.IsNull() || !canonicalCRMUserID.MatchString(state.ID.ValueString()) ||
 		state.AccountMembershipID.ValueString() != plan.AccountMembershipID.ValueString() {
 		response.Diagnostics.AddError("CRM user profile update identity is invalid", "The prior CRM ID and planned Settings user ID did not preserve the exact management relationship. No update was sent.")
 		return
 	}
-	profile, err := r.verifiedProfile(ctx, state.ID.ValueString(), state.AccountMembershipID.ValueString(), false)
+	profile, err := r.verifiedProfile(ctx, state.ID.ValueString(), state.AccountMembershipID.ValueString(), false, crmUserProfileFieldsFromModel(plan))
 	if err != nil {
 		appendHubSpotDiagnostic(&response.Diagnostics, "CRM user profile update preflight failed", err)
 		return
@@ -238,9 +239,9 @@ func (r *CRMUserProfileResource) ImportState(ctx context.Context, request resour
 			response.Diagnostics.AddAttributeError(path.Root("account_membership_id"), "Invalid CRM user profile membership import ID", "Use membership: followed by one canonical numeric Settings user ID.")
 			return
 		}
-		profile, err = r.verifiedProfile(ctx, "", membershipID, true)
+		profile, err = r.verifiedProfile(ctx, "", membershipID, true, crmUserProfileAllFields())
 	} else {
-		if !canonicalSettingsUserID.MatchString(request.ID) {
+		if !canonicalCRMUserID.MatchString(request.ID) {
 			response.Diagnostics.AddAttributeError(path.Root("id"), "Invalid CRM user profile import ID", "Use one canonical numeric CRM user ID or membership: followed by one canonical numeric Settings user ID.")
 			return
 		}
@@ -249,7 +250,7 @@ func (r *CRMUserProfileResource) ImportState(ctx context.Context, request resour
 			if !canonicalSettingsUserID.MatchString(profile.SettingsID) {
 				err = errors.New("HubSpot CRM user profile returned a non-canonical Settings user ID")
 			} else {
-				profile, err = r.verifiedProfile(ctx, request.ID, profile.SettingsID, false)
+				profile, err = r.verifiedProfile(ctx, request.ID, profile.SettingsID, false, crmUserProfileAllFields())
 			}
 		}
 	}
@@ -266,7 +267,7 @@ func (r *CRMUserProfileResource) ImportState(ctx context.Context, request resour
 	response.Diagnostics.Append(response.State.Set(ctx, &model)...)
 }
 
-func (r *CRMUserProfileResource) verifiedProfile(ctx context.Context, crmID, membershipID string, wait bool) (hubspot.CRMUserProfile, error) {
+func (r *CRMUserProfileResource) verifiedProfile(ctx context.Context, crmID, membershipID string, wait bool, fields hubspot.CRMUserProfileFields) (hubspot.CRMUserProfile, error) {
 	if !canonicalSettingsUserID.MatchString(membershipID) {
 		return hubspot.CRMUserProfile{}, errors.New("account membership id must be one canonical numeric Settings user ID")
 	}
@@ -277,16 +278,22 @@ func (r *CRMUserProfileResource) verifiedProfile(ctx context.Context, crmID, mem
 	if membership.ID != membershipID {
 		return hubspot.CRMUserProfile{}, errors.New("HubSpot account membership read returned a different Settings user ID")
 	}
-	var profile hubspot.CRMUserProfile
+	profileID := crmID
 	if wait {
-		profile, err = r.profiles.WaitForSettingsID(ctx, membershipID)
-	} else {
-		profile, err = r.profiles.Get(ctx, crmID)
+		discovered, waitErr := r.profiles.WaitForSettingsID(ctx, membershipID)
+		if waitErr != nil {
+			return hubspot.CRMUserProfile{}, waitErr
+		}
+		if !canonicalCRMUserID.MatchString(discovered.ID) {
+			return hubspot.CRMUserProfile{}, errors.New("HubSpot returned a non-canonical CRM user ID")
+		}
+		profileID = discovered.ID
 	}
+	profile, err := r.profiles.GetManaged(ctx, profileID, fields)
 	if err != nil {
 		return hubspot.CRMUserProfile{}, err
 	}
-	if !canonicalSettingsUserID.MatchString(profile.ID) {
+	if !canonicalCRMUserID.MatchString(profile.ID) {
 		return hubspot.CRMUserProfile{}, errors.New("HubSpot returned a non-canonical CRM user ID")
 	}
 	if crmID != "" && profile.ID != crmID {
@@ -313,7 +320,7 @@ func (r *CRMUserProfileResource) reconcile(ctx context.Context, current hubspot.
 	ambiguous := false
 	var err error
 	if len(properties) != 0 {
-		current, ambiguous, err = r.patchAndVerify(ctx, current.ID, current.SettingsID, properties)
+		current, ambiguous, err = r.patchAndVerify(ctx, current, properties)
 		if err != nil {
 			return hubspot.CRMUserProfile{}, ambiguous, err
 		}
@@ -336,16 +343,16 @@ func (r *CRMUserProfileResource) reconcile(ctx context.Context, current hubspot.
 	if desiredJSON == currentJSON {
 		return current, ambiguous, nil
 	}
-	current, hoursAmbiguous, err := r.patchAndVerify(ctx, current.ID, current.SettingsID, map[string]string{"hs_working_hours": desiredJSON})
+	current, hoursAmbiguous, err := r.patchAndVerify(ctx, current, map[string]string{"hs_working_hours": desiredJSON})
 	return current, ambiguous || hoursAmbiguous, err
 }
 
-func (r *CRMUserProfileResource) patchAndVerify(ctx context.Context, id, membershipID string, properties map[string]string) (hubspot.CRMUserProfile, bool, error) {
-	_, patchErr := r.profiles.PatchProperties(ctx, id, properties)
+func (r *CRMUserProfileResource) patchAndVerify(ctx context.Context, current hubspot.CRMUserProfile, properties map[string]string) (hubspot.CRMUserProfile, bool, error) {
+	_, patchErr := r.profiles.PatchProperties(ctx, current.ID, properties)
 	if patchErr != nil && !isAmbiguous(patchErr) {
 		return hubspot.CRMUserProfile{}, false, patchErr
 	}
-	verified, verifyErr := r.verifiedProfile(ctx, id, membershipID, false)
+	verified, verifyErr := r.verifiedProfile(ctx, current.ID, current.SettingsID, false, crmUserProfileFieldsFromProperties(properties))
 	if verifyErr != nil {
 		if patchErr != nil {
 			return hubspot.CRMUserProfile{}, true, fmt.Errorf("ambiguous PATCH was not verified: %w", verifyErr)
@@ -357,7 +364,25 @@ func (r *CRMUserProfileResource) patchAndVerify(ctx context.Context, id, members
 			return hubspot.CRMUserProfile{}, patchErr != nil, fmt.Errorf("HubSpot CRM user profile PATCH did not apply %s", name)
 		}
 	}
-	return verified, patchErr != nil, nil
+	return mergeCRMUserProfileProperties(current, verified, properties), patchErr != nil, nil
+}
+
+func mergeCRMUserProfileProperties(current, verified hubspot.CRMUserProfile, properties map[string]string) hubspot.CRMUserProfile {
+	current.ID = verified.ID
+	current.SettingsID = verified.SettingsID
+	if mapHasKey(properties, "hs_job_title") {
+		current.JobTitle = verified.JobTitle
+	}
+	if mapHasKey(properties, "hs_availability_status") {
+		current.AvailabilityStatus = verified.AvailabilityStatus
+	}
+	if mapHasKey(properties, "hs_standard_time_zone") {
+		current.TimeZone = verified.TimeZone
+	}
+	if mapHasKey(properties, "hs_working_hours") {
+		current.WorkingHours = verified.WorkingHours
+	}
+	return current
 }
 
 func crmUserProfilePropertyMatches(profile hubspot.CRMUserProfile, name, value string) bool {
@@ -426,6 +451,33 @@ func crmUserWorkingHoursFromSet(ctx context.Context, set types.Set) ([]hubspot.C
 
 func crmUserStringManaged(value types.String) bool {
 	return !value.IsNull() && !value.IsUnknown()
+}
+
+func crmUserProfileFieldsFromModel(model crmUserProfileResourceModel) hubspot.CRMUserProfileFields {
+	return hubspot.CRMUserProfileFields{
+		JobTitle:           crmUserStringManaged(model.JobTitle),
+		AvailabilityStatus: crmUserStringManaged(model.AvailabilityStatus),
+		TimeZone:           crmUserStringManaged(model.TimeZone),
+		WorkingHours:       !model.WorkingHours.IsNull() && !model.WorkingHours.IsUnknown(),
+	}
+}
+
+func crmUserProfileAllFields() hubspot.CRMUserProfileFields {
+	return hubspot.CRMUserProfileFields{JobTitle: true, AvailabilityStatus: true, TimeZone: true, WorkingHours: true}
+}
+
+func crmUserProfileFieldsFromProperties(properties map[string]string) hubspot.CRMUserProfileFields {
+	return hubspot.CRMUserProfileFields{
+		JobTitle:           mapHasKey(properties, "hs_job_title"),
+		AvailabilityStatus: mapHasKey(properties, "hs_availability_status"),
+		TimeZone:           mapHasKey(properties, "hs_standard_time_zone"),
+		WorkingHours:       mapHasKey(properties, "hs_working_hours"),
+	}
+}
+
+func mapHasKey(values map[string]string, key string) bool {
+	_, ok := values[key]
+	return ok
 }
 
 func crmUserProfileImportMask(profile hubspot.CRMUserProfile) crmUserProfileResourceModel {

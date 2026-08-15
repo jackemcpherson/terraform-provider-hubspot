@@ -3,8 +3,6 @@
 Type: task
 Status: resolved
 
-Blocked by: 01
-
 ## Scope
 
 Implement paginated discovery, exact reads, the unique Settings-ID join,

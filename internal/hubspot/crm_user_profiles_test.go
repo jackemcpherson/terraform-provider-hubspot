@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -40,6 +41,36 @@ func TestCRMUserWorkingHoursUseCanonicalJSON(t *testing.T) {
 		{Days: "SATURDAY_SUNDAY", StartMinute: 600, EndMinute: 900},
 	}) {
 		t.Fatalf("parsed working hours = %#v", decoded)
+	}
+}
+
+func TestCRMUserProfileManagedReadIgnoresUnmanagedWorkingHours(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if properties := request.URL.Query().Get("properties"); properties != "hs_internal_user_id,hs_job_title" {
+			t.Fatalf("managed read properties = %q", properties)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		io.WriteString(writer, `{"id":"301","properties":{"hs_internal_user_id":"101","hs_job_title":"Engineer","hs_working_hours":"future-format"}}`)
+	}))
+	defer server.Close()
+	client := &CRMUserProfileClient{transport: newTestTransport(t, server.URL)}
+	profile, err := client.GetManaged(context.Background(), "301", CRMUserProfileFields{JobTitle: true})
+	if err != nil || profile.JobTitle != "Engineer" || len(profile.WorkingHours) != 0 {
+		t.Fatalf("managed profile = %#v, %v", profile, err)
+	}
+}
+
+func TestCRMUserProfilePatchTreatsMalformedSuccessAsAmbiguous(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		io.WriteString(writer, `{"id":"301","properties":{"hs_working_hours":"future-format"}}`)
+	}))
+	defer server.Close()
+	client := &CRMUserProfileClient{transport: newTestTransport(t, server.URL)}
+	_, err := client.PatchProperties(context.Background(), "301", map[string]string{"hs_job_title": "Engineer"})
+	var operationError *Error
+	if !errors.As(err, &operationError) || !operationError.Ambiguous {
+		t.Fatalf("PATCH error = %v, want ambiguous success-body failure", err)
 	}
 }
 
@@ -152,7 +183,7 @@ func TestCRMUserProfileClientDiscoversExactIdentityAndPatchesProperties(t *testi
 		switch request.Method + " " + request.URL.Path {
 		case "GET /crm/objects/2026-03/users":
 			if request.URL.Query().Get("after") == "next-page" {
-				io.WriteString(writer, `{"results":[{"id":"302","properties":{"hs_internal_user_id":"202"},"futureField":true}]}`)
+				io.WriteString(writer, `{"results":[{"id":"302","properties":{"hs_internal_user_id":"202","hs_working_hours":"future-format"},"futureField":true}]}`)
 				return
 			}
 			firstPageReads++
@@ -187,7 +218,7 @@ func TestCRMUserProfileClientDiscoversExactIdentityAndPatchesProperties(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if profile.ID != "301" || profile.SettingsID != "101" || profile.JobTitle != "Engineer" || len(profile.WorkingHours) != 1 {
+	if profile.ID != "301" || profile.SettingsID != "101" {
 		t.Fatalf("discovered profile = %#v", profile)
 	}
 	read, err := client.Get(context.Background(), "301")
@@ -201,9 +232,9 @@ func TestCRMUserProfileClientDiscoversExactIdentityAndPatchesProperties(t *testi
 
 	properties := "hs_availability_status,hs_internal_user_id,hs_job_title,hs_standard_time_zone,hs_working_hours"
 	want := []string{
-		"GET /crm/objects/2026-03/users?limit=100&properties=" + properties,
-		"GET /crm/objects/2026-03/users?after=next-page&limit=100&properties=" + properties,
-		"GET /crm/objects/2026-03/users?limit=100&properties=" + properties,
+		"GET /crm/objects/2026-03/users?limit=100&properties=hs_internal_user_id",
+		"GET /crm/objects/2026-03/users?after=next-page&limit=100&properties=hs_internal_user_id",
+		"GET /crm/objects/2026-03/users?limit=100&properties=hs_internal_user_id",
 		"GET /crm/objects/2026-03/users/301?properties=" + properties,
 		"PATCH /crm/objects/2026-03/users/301",
 	}

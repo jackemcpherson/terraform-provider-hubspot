@@ -14,8 +14,9 @@ import (
 )
 
 type fakeCRMUserProfile struct {
-	profile    hubspot.CRMUserProfile
-	patchCount int
+	profile      hubspot.CRMUserProfile
+	patchCount   int
+	patchHistory [][]string
 }
 
 func (f *FakeHubSpot) handleCRMUserProfiles(response http.ResponseWriter, request *http.Request, rest []string) {
@@ -80,22 +81,23 @@ func (f *FakeHubSpot) handleCRMUserProfileItem(response http.ResponseWriter, req
 			writeFakeError(response, http.StatusBadRequest, "VALIDATION_ERROR", "", "A CRM user profile patch requires one property.")
 			return
 		}
+		updated := profile.profile
 		for name, value := range body.Properties {
 			switch name {
 			case "hs_job_title":
-				profile.profile.JobTitle = value
+				updated.JobTitle = value
 			case "hs_availability_status":
 				if value != "available" && value != "away" {
 					writeFakeError(response, http.StatusBadRequest, "VALIDATION_ERROR", "", "Unsupported availability status.")
 					return
 				}
-				profile.profile.AvailabilityStatus = value
+				updated.AvailabilityStatus = value
 			case "hs_standard_time_zone":
 				if value == "" {
 					writeFakeError(response, http.StatusBadRequest, "VALIDATION_ERROR", "", "A timezone is required.")
 					return
 				}
-				profile.profile.TimeZone = value
+				updated.TimeZone = value
 			case "hs_working_hours":
 				if profile.profile.TimeZone == "" {
 					writeFakeError(response, http.StatusBadRequest, "VALIDATION_ERROR", "", "Set timezone before working hours.")
@@ -106,13 +108,28 @@ func (f *FakeHubSpot) handleCRMUserProfileItem(response http.ResponseWriter, req
 					writeFakeError(response, http.StatusBadRequest, "VALIDATION_ERROR", "", "Working hours were invalid.")
 					return
 				}
-				profile.profile.WorkingHours = hours
+				updated.WorkingHours = hours
 			default:
 				writeFakeError(response, http.StatusBadRequest, "VALIDATION_ERROR", "", "The CRM user property is not writable.")
 				return
 			}
 		}
+		propertyNames := make([]string, 0, len(body.Properties))
+		for name := range body.Properties {
+			propertyNames = append(propertyNames, name)
+		}
+		sort.Strings(propertyNames)
+		profile.profile = updated
 		profile.patchCount++
+		profile.patchHistory = append(profile.patchHistory, propertyNames)
+		if f.malformedNextCRMPatchSuccess {
+			f.malformedNextCRMPatchSuccess = false
+			writeFakeJSON(response, http.StatusOK, map[string]any{
+				"id":         profile.profile.ID,
+				"properties": map[string]string{"hs_working_hours": "future-format"},
+			})
+			return
+		}
 		writeFakeJSON(response, http.StatusOK, fakeCRMUserProfileDocument(profile.profile))
 	default:
 		writeFakeError(response, http.StatusMethodNotAllowed, "VALIDATION_ERROR", "", "Unsupported method.")
@@ -192,6 +209,12 @@ func (f *FakeHubSpot) RejectNextCRMUserProfilePatch() {
 	f.rejectNextCRMPatch = true
 }
 
+func (f *FakeHubSpot) MalformNextCRMUserProfilePatchSuccess() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.malformedNextCRMPatchSuccess = true
+}
+
 func (f *FakeHubSpot) CRMUserProfilePatchCount(id string) int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -199,6 +222,20 @@ func (f *FakeHubSpot) CRMUserProfilePatchCount(id string) int {
 		return profile.patchCount
 	}
 	return 0
+}
+
+func (f *FakeHubSpot) CRMUserProfilePatchHistory(id string) [][]string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	profile := f.crmUserProfiles[id]
+	if profile == nil {
+		return nil
+	}
+	history := make([][]string, len(profile.patchHistory))
+	for index := range profile.patchHistory {
+		history[index] = append([]string(nil), profile.patchHistory[index]...)
+	}
+	return history
 }
 
 func (f *FakeHubSpot) DriftCRMUserProfile(id, jobTitle, availability string) bool {

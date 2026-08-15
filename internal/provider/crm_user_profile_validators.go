@@ -5,6 +5,7 @@ package provider
 
 import (
 	"context"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -12,6 +13,27 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 )
+
+var canonicalCRMUserID = regexp.MustCompile(`^[1-9][0-9]*$`)
+
+type crmUserSettingsIDValidator struct{}
+
+func (crmUserSettingsIDValidator) Description(context.Context) string {
+	return "account_membership_id must be one canonical numeric Settings user ID"
+}
+
+func (v crmUserSettingsIDValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v crmUserSettingsIDValidator) ValidateString(_ context.Context, request validator.StringRequest, response *validator.StringResponse) {
+	if request.ConfigValue.IsNull() || request.ConfigValue.IsUnknown() {
+		return
+	}
+	if !canonicalSettingsUserID.MatchString(request.ConfigValue.ValueString()) {
+		response.Diagnostics.AddAttributeError(request.Path, "Invalid CRM user profile account membership ID", v.Description(context.Background())+".")
+	}
+}
 
 type crmUserAvailabilityValidator struct{}
 

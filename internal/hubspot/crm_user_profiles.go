@@ -20,7 +20,7 @@ const (
 	crmUserProfilePageLimit    = "100"
 	crmUserProfileWaitAttempts = 20
 	crmUserProfileWaitDelay    = time.Second
-	crmUserProfileProperties   = "hs_availability_status,hs_internal_user_id,hs_job_title,hs_standard_time_zone,hs_working_hours"
+	crmUserProfileIdentity     = "hs_internal_user_id"
 )
 
 // CRMUserProfileClient manages the account-scoped CRM projection of one
@@ -36,6 +36,15 @@ type CRMUserProfile struct {
 	AvailabilityStatus string
 	TimeZone           string
 	WorkingHours       []CRMUserWorkingHours
+}
+
+// CRMUserProfileFields selects profile properties that the caller actively
+// manages. Identity is always requested regardless of these flags.
+type CRMUserProfileFields struct {
+	JobTitle           bool
+	AvailabilityStatus bool
+	TimeZone           bool
+	WorkingHours       bool
 }
 
 type crmUserProfileWire struct {
@@ -63,10 +72,18 @@ func crmUserProfilesPath() string { return "/crm/objects/2026-03/users" }
 // Get reads one exact active CRM user identity and requests every property the
 // provider can manage or uses for identity verification.
 func (c *CRMUserProfileClient) Get(ctx context.Context, id string) (CRMUserProfile, error) {
+	return c.GetManaged(ctx, id, CRMUserProfileFields{
+		JobTitle: true, AvailabilityStatus: true, TimeZone: true, WorkingHours: true,
+	})
+}
+
+// GetManaged reads exact identity plus only the properties selected by the
+// caller. Unmanaged fields cannot make the typed read fail.
+func (c *CRMUserProfileClient) GetManaged(ctx context.Context, id string, fields CRMUserProfileFields) (CRMUserProfile, error) {
 	if id == "" {
 		return CRMUserProfile{}, errors.New("CRM user profile id must not be empty")
 	}
-	query := url.Values{"properties": []string{crmUserProfileProperties}}
+	query := url.Values{"properties": []string{crmUserProfilePropertySelection(fields)}}
 	var wire crmUserProfileWire
 	if err := c.transport.Do(ctx, Operation{
 		Name: "crm-user-profile-read", Method: http.MethodGet,
@@ -74,7 +91,7 @@ func (c *CRMUserProfileClient) Get(ctx context.Context, id string) (CRMUserProfi
 	}, nil, &wire); err != nil {
 		return CRMUserProfile{}, err
 	}
-	profile, err := crmUserProfileFromWire(wire)
+	profile, err := crmUserProfileFromWire(wire, fields.WorkingHours)
 	if err != nil {
 		return CRMUserProfile{}, err
 	}
@@ -82,6 +99,24 @@ func (c *CRMUserProfileClient) Get(ctx context.Context, id string) (CRMUserProfi
 		return CRMUserProfile{}, errors.New("HubSpot CRM user profile response returned a different id")
 	}
 	return profile, nil
+}
+
+func crmUserProfilePropertySelection(fields CRMUserProfileFields) string {
+	properties := make([]string, 0, 5)
+	if fields.AvailabilityStatus {
+		properties = append(properties, "hs_availability_status")
+	}
+	properties = append(properties, crmUserProfileIdentity)
+	if fields.JobTitle {
+		properties = append(properties, "hs_job_title")
+	}
+	if fields.TimeZone {
+		properties = append(properties, "hs_standard_time_zone")
+	}
+	if fields.WorkingHours {
+		properties = append(properties, "hs_working_hours")
+	}
+	return strings.Join(properties, ",")
 }
 
 // List returns every active CRM user profile by following HubSpot's cursor.
@@ -92,7 +127,7 @@ func (c *CRMUserProfileClient) List(ctx context.Context) ([]CRMUserProfile, erro
 	for {
 		query := url.Values{
 			"limit":      []string{crmUserProfilePageLimit},
-			"properties": []string{crmUserProfileProperties},
+			"properties": []string{crmUserProfileIdentity},
 		}
 		if after != "" {
 			query.Set("after", after)
@@ -105,7 +140,7 @@ func (c *CRMUserProfileClient) List(ctx context.Context) ([]CRMUserProfile, erro
 			return nil, err
 		}
 		for _, wire := range page.Results {
-			profile, err := crmUserProfileFromWire(wire)
+			profile, err := crmUserProfileFromWire(wire, false)
 			if err != nil {
 				return nil, err
 			}
@@ -196,25 +231,33 @@ func (c *CRMUserProfileClient) PatchProperties(ctx context.Context, id string, p
 		Path: crmUserProfilesPath() + "/" + url.PathEscape(id), Replay: ReplayExplicit,
 	}, bytes.NewReader(body), &wire)
 	if err != nil {
+		var operationError *Error
+		if errors.As(err, &operationError) && operationError.Status >= 200 && operationError.Status < 300 {
+			operationError.Ambiguous = true
+		}
 		return CRMUserProfile{}, err
 	}
-	profile, err := crmUserProfileFromWire(wire)
+	profile, err := crmUserProfileFromWire(wire, true)
 	if err != nil {
-		return CRMUserProfile{}, err
+		return CRMUserProfile{}, &Error{Operation: "crm-user-profile-update", Status: http.StatusOK, Cause: err, Ambiguous: true}
 	}
 	if profile.ID != id {
-		return CRMUserProfile{}, errors.New("HubSpot CRM user profile update returned a different id")
+		return CRMUserProfile{}, &Error{Operation: "crm-user-profile-update", Status: http.StatusOK, Cause: errors.New("HubSpot CRM user profile update returned a different id"), Ambiguous: true}
 	}
 	return profile, nil
 }
 
-func crmUserProfileFromWire(wire crmUserProfileWire) (CRMUserProfile, error) {
+func crmUserProfileFromWire(wire crmUserProfileWire, parseWorkingHours bool) (CRMUserProfile, error) {
 	if strings.TrimSpace(wire.ID) == "" {
 		return CRMUserProfile{}, errors.New("HubSpot CRM user profile response omitted id")
 	}
-	hours, err := ParseCRMUserWorkingHours(wire.Properties.WorkingHours)
-	if err != nil {
-		return CRMUserProfile{}, fmt.Errorf("decode HubSpot CRM user working hours: %w", err)
+	hours := []CRMUserWorkingHours{}
+	if parseWorkingHours {
+		var err error
+		hours, err = ParseCRMUserWorkingHours(wire.Properties.WorkingHours)
+		if err != nil {
+			return CRMUserProfile{}, fmt.Errorf("decode HubSpot CRM user working hours: %w", err)
+		}
 	}
 	return CRMUserProfile{
 		ID: wire.ID, SettingsID: wire.Properties.SettingsID,

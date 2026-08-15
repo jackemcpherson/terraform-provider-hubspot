@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http/httptest"
 	"os/exec"
+	"reflect"
 	"testing"
 
 	"github.com/jackemcpherson/terraform-provider-hubspot/internal/acceptance"
@@ -77,6 +78,12 @@ func runHermeticCRMUserProfileLifecycle(t *testing.T, engine acceptance.Engine, 
 		if patches := fake.CRMUserProfilePatchCount(crmID); patches != 2 {
 			t.Fatalf("initial CRM user profile patches = %d, want 2", patches)
 		}
+		if history := fake.CRMUserProfilePatchHistory(crmID); !reflect.DeepEqual(history, [][]string{
+			{"hs_availability_status", "hs_job_title", "hs_standard_time_zone"},
+			{"hs_working_hours"},
+		}) {
+			t.Fatalf("initial CRM user profile patch ordering = %#v", history)
+		}
 		if reads := fake.CRMUserProfileListReads(); reads != 3 {
 			t.Fatalf("readiness list reads = %d, want 3", reads)
 		}
@@ -85,6 +92,7 @@ func runHermeticCRMUserProfileLifecycle(t *testing.T, engine acceptance.Engine, 
 			t.Fatal("could not inject CRM user profile drift")
 		}
 		session.RequirePlanDiffAttributes(config, "hubspot_crm_user_profile.managed", "job_title", "availability_status")
+		fake.MalformNextCRMUserProfilePatchSuccess()
 		session.Apply(config)
 		session.RequireEmptyPlan(config)
 		if patches := fake.CRMUserProfilePatchCount(crmID); patches != 3 {

@@ -23,8 +23,13 @@ publication.
 - Destroy stops management without a remote write.
 - ADR 0003 remains the release architecture.
 - Current official documentation has no blocking contradiction.
-- Missing local live credentials and invalid GitHub CLI authentication block
-  publication until resolved.
-- The typed client, provider resource, behavioural lifecycle, cumulative
-  Northstar helper, demo module, and documentation are implemented with all
-  local provider and demo gates passing.
+- Missing local live credentials block publication until resolved. GitHub CLI
+  authentication is currently valid.
+- [Typed client](issues/02-typed-client.md): paginated identity discovery,
+  bounded readiness, partial PATCH, and canonical working hours are complete.
+- [Provider resource](issues/03-provider-resource.md): the frozen managed-field,
+  identity, import, drift, and destroy contract is complete.
+- [Lifecycle maintenance](issues/04-lifecycle-maintenance.md): both real CLIs
+  pass the behavioural fake and cumulative Northstar profile journey.
+- [Demo and documentation](issues/05-demo-documentation.md): the stable-keyed
+  module and complete v0.6.0 user guidance are generated and checked.

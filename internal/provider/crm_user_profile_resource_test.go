@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/jackemcpherson/terraform-provider-hubspot/internal/hubspot"
 )
 
 func TestCRMUserProfileSchemaMatchesFrozenContract(t *testing.T) {
@@ -94,6 +95,18 @@ func TestCRMUserProfileScalarValidators(t *testing.T) {
 	for _, test := range []struct {
 		value string
 		valid bool
+	}{{"101", true}, {"0", false}, {"01", false}, {"member", false}} {
+		response := validator.StringResponse{}
+		crmUserSettingsIDValidator{}.ValidateString(context.Background(), validator.StringRequest{
+			Path: path.Root("account_membership_id"), ConfigValue: types.StringValue(test.value),
+		}, &response)
+		if got := !response.Diagnostics.HasError(); got != test.valid {
+			t.Errorf("Settings ID %q valid = %v, want %v", test.value, got, test.valid)
+		}
+	}
+	for _, test := range []struct {
+		value string
+		valid bool
 	}{{"available", true}, {"away", true}, {"offline", false}, {"", false}} {
 		response := validator.StringResponse{}
 		crmUserAvailabilityValidator{}.ValidateString(context.Background(), validator.StringRequest{
@@ -114,6 +127,26 @@ func TestCRMUserProfileScalarValidators(t *testing.T) {
 		if got := !response.Diagnostics.HasError(); got != test.valid {
 			t.Errorf("minute %d valid = %v, want %v", test.value, got, test.valid)
 		}
+	}
+}
+
+func TestCRMUserProfileModelLeavesNullPropertiesUnmanaged(t *testing.T) {
+	remote := hubspot.CRMUserProfile{
+		ID: "301", SettingsID: "101", JobTitle: "Engineer", AvailabilityStatus: "away",
+		TimeZone: "Australia/Melbourne", WorkingHours: []hubspot.CRMUserWorkingHours{{Days: "MONDAY", StartMinute: 540, EndMinute: 1020}},
+	}
+	managed := crmUserProfileResourceModel{
+		JobTitle:           types.StringValue("Engineer"),
+		AvailabilityStatus: types.StringNull(),
+		TimeZone:           types.StringNull(),
+		WorkingHours:       types.SetNull(crmUserWorkingHoursObjectType),
+	}
+	model, diagnostics := crmUserProfileModelFromRemote(context.Background(), remote, managed)
+	if diagnostics.HasError() {
+		t.Fatalf("model conversion diagnostics = %v", diagnostics)
+	}
+	if model.JobTitle.ValueString() != "Engineer" || !model.AvailabilityStatus.IsNull() || !model.TimeZone.IsNull() || !model.WorkingHours.IsNull() {
+		t.Fatalf("null-as-unmanaged model = %#v", model)
 	}
 }
 

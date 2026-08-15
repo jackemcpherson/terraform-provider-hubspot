@@ -80,11 +80,12 @@ type FakeHubSpot struct {
 	nextAccountMembershipRead   *fakeAccountMembershipReadOverride
 	nextMembershipCollectionLag int
 
-	crmUserProfiles      map[string]*fakeCRMUserProfile
-	nextCRMUserProfileID int
-	crmProfileReadiness  map[string]int
-	crmProfileListReads  int
-	rejectNextCRMPatch   bool
+	crmUserProfiles              map[string]*fakeCRMUserProfile
+	nextCRMUserProfileID         int
+	crmProfileReadiness          map[string]int
+	crmProfileListReads          int
+	rejectNextCRMPatch           bool
+	malformedNextCRMPatchSuccess bool
 }
 
 type fakeFormDefinition struct {
