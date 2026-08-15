@@ -1,0 +1,7 @@
+#!/bin/zsh
+
+set -eu
+
+readonly state_dir="${FAKE_HUBSPOT_STATE_DIR:?FAKE_HUBSPOT_STATE_DIR is required}"
+
+print -r -- 'SLEEP' >>"${state_dir}/requests.log"

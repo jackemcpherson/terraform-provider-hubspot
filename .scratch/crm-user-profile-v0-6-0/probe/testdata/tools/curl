@@ -81,7 +81,14 @@ case "${method} ${route}" in
     respond '' 204
     ;;
   GET\ /crm/objects/2026-03/users\?*)
-    if [[ -f "${state_dir}/membership-present" ]]; then
+    profile_attempt=0
+    if [[ -f "${state_dir}/profile-attempt" ]]; then
+      profile_attempt="$(<"${state_dir}/profile-attempt")"
+    fi
+    (( profile_attempt += 1 ))
+    print -r -- "$profile_attempt" >"${state_dir}/profile-attempt"
+    if [[ -f "${state_dir}/membership-present" && \
+      "$profile_attempt" -gt "${FAKE_HUBSPOT_PROFILE_DELAY:-0}" ]]; then
       respond "$(jq -nc --argjson properties "$(<"${state_dir}/profile.json")" \
         '{results: [{id: "301", properties: $properties}]}')" 200
     else
@@ -94,6 +101,12 @@ case "${method} ${route}" in
     ;;
   'PATCH /crm/objects/2026-03/users/301')
     patch_keys="$(jq -r '.properties | keys | join(",")' <<<"$body")"
+    if [[ "$patch_keys" == hs_working_hours && \
+      "${FAKE_HUBSPOT_FAIL_WORKING_HOURS:-false}" == true ]]; then
+      print -r -- 'PATCH hs_working_hours rejected' >>"${state_dir}/requests.log"
+      respond '{"status":"error","category":"TEST_REJECTION"}' 500
+      exit 0
+    fi
     print -r -- "PATCH ${patch_keys}" >>"${state_dir}/requests.log"
     jq -nc --argjson existing "$(<"${state_dir}/profile.json")" \
       --argjson patch "$(jq -c '.properties' <<<"$body")" \

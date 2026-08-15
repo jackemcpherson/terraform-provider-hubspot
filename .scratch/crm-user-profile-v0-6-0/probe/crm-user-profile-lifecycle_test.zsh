@@ -14,15 +14,24 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-print -r -- "$opening_profile" >"${state_dir}/profile.json"
-touch "${state_dir}/requests.log"
+reset_state() {
+  rm -f "${state_dir}/membership-present" "${state_dir}/profile-attempt" \
+    "${state_dir}/security-called"
+  print -r -- "$opening_profile" >"${state_dir}/profile.json"
+  print -n -- '' >"${state_dir}/requests.log"
+}
+
+reset_state
 
 export FAKE_HUBSPOT_STATE_DIR="$state_dir"
 export FAKE_HUBSPOT_FIXTURE_EMAIL="$fixture_email"
+export HUBSPOT_ONE_PORTAL_LOCK_DIR="${state_dir}/portal.lock"
 HUBSPOT_PROBE_EXPECTED_FINGERPRINT="sha256:$(printf '12345' | shasum -a 256 | cut -c1-16)"
 export HUBSPOT_PROBE_EXPECTED_FINGERPRINT
 export PATH="${probe_dir}/testdata/tools:${PATH}"
+export FAKE_HUBSPOT_PROFILE_DELAY=2
 unset HUBSPOT_ACCESS_TOKEN HUBSPOT_NORTHSTAR_MEMBERSHIP_ID
+unset FAKE_HUBSPOT_FAIL_WORKING_HOURS
 
 output="$("${probe_dir}/crm-user-profile-lifecycle.zsh")"
 
@@ -48,13 +57,41 @@ grep -Fqx 'PATCH hs_availability_status,hs_job_title,hs_standard_time_zone' \
   "${state_dir}/requests.log"
 grep -Fqx 'PATCH hs_working_hours' "${state_dir}/requests.log"
 grep -Fqx 'DELETE owned membership' "${state_dir}/requests.log"
+[[ "$(grep -cFx 'SLEEP' "${state_dir}/requests.log")" == 2 ]]
 
 prerequisite_line="$(grep -nxF 'PATCH hs_availability_status,hs_job_title,hs_standard_time_zone' \
   "${state_dir}/requests.log" | cut -d: -f1)"
 hours_line="$(grep -nxF 'PATCH hs_working_hours' "${state_dir}/requests.log" | cut -d: -f1)"
 (( prerequisite_line < hours_line ))
 
-print -n -- '' >"${state_dir}/requests.log"
+reset_state
+export FAKE_HUBSPOT_PROFILE_DELAY=0
+export FAKE_HUBSPOT_FAIL_WORKING_HOURS=true
+if "${probe_dir}/crm-user-profile-lifecycle.zsh" >/dev/null 2>&1; then
+  exit 1
+fi
+[[ ! -f "${state_dir}/membership-present" ]]
+[[ "$(jq -S . "${state_dir}/profile.json")" == "$(jq -S . <<<"$opening_profile")" ]]
+grep -Fqx 'PATCH hs_working_hours rejected' "${state_dir}/requests.log"
+grep -Fqx 'PATCH hs_availability_status,hs_job_title,hs_standard_time_zone,hs_working_hours' \
+  "${state_dir}/requests.log"
+grep -Fqx 'DELETE owned membership' "${state_dir}/requests.log"
+
+reset_state
+export FAKE_HUBSPOT_PROFILE_DELAY=99
+unset FAKE_HUBSPOT_FAIL_WORKING_HOURS
+if "${probe_dir}/crm-user-profile-lifecycle.zsh" >/dev/null 2>&1; then
+  exit 1
+fi
+[[ ! -f "${state_dir}/membership-present" ]]
+[[ "$(jq -S . "${state_dir}/profile.json")" == "$(jq -S . <<<"$opening_profile")" ]]
+[[ "$(grep -cFx 'SLEEP' "${state_dir}/requests.log")" == 19 ]]
+if grep -Fq 'PATCH ' "${state_dir}/requests.log"; then
+  exit 1
+fi
+grep -Fqx 'DELETE owned membership' "${state_dir}/requests.log"
+
+reset_state
 export HUBSPOT_PROBE_EXPECTED_FINGERPRINT='sha256:wrong-portal'
 if "${probe_dir}/crm-user-profile-lifecycle.zsh" >/dev/null 2>&1; then
   exit 1

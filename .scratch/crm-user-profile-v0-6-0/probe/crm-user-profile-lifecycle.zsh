@@ -2,7 +2,7 @@
 
 set -eu
 
-readonly service='terraform-provider-hubspot-probes'
+readonly keychain_service='terraform-provider-hubspot-probes'
 readonly origin='https://api.hubapi.com'
 readonly expected_fingerprint="${HUBSPOT_PROBE_EXPECTED_FINGERPRINT:?HUBSPOT_PROBE_EXPECTED_FINGERPRINT is required}"
 readonly fixture_email="${HUBSPOT_CRM_PROFILE_FIXTURE_EMAIL:-tfhs-probe-16-20260802024807@example.com}"
@@ -21,6 +21,7 @@ membership_id=''
 restore_body=''
 guard_passed=false
 ownership_boundary_ready=false
+cleanup_running=false
 typeset -a baseline_ids
 baseline_ids=()
 
@@ -129,8 +130,12 @@ restore_profile() {
 cleanup() {
   local exit_status=$?
   local owned_ids owned_id
+  if [[ "$cleanup_running" == true ]]; then
+    return "$exit_status"
+  fi
+  cleanup_running=true
   set +eu
-  trap - EXIT HUP INT TERM
+  trap - ZERR EXIT HUP INT TERM
   if [[ "$guard_passed" == true ]]; then
     restore_profile
     if [[ "$ownership_boundary_ready" == true ]]; then
@@ -189,7 +194,7 @@ mkdir "$lock_dir" 2>/dev/null || {
   print -u2 -- 'HubSpot Free portal is already in use'
   exit 1
 }
-trap cleanup EXIT HUP INT TERM
+trap cleanup ZERR EXIT HUP INT TERM
 
 [[ "$fixture_email" == tfhs-probe-16-*@example.com ]] || {
   print -u2 -- 'fixture email is outside the approved residual identity class'
@@ -201,7 +206,7 @@ if [[ -n "${HUBSPOT_ACCESS_TOKEN:-}" ]]; then
   credential_class='environment_static_token'
   unset HUBSPOT_ACCESS_TOKEN
 else
-  token="$(security find-generic-password -a "$USER" -s "$service" -w)"
+  token="$(security find-generic-password -a "$USER" -s "$keychain_service" -w)"
   credential_class='keychain_static_token'
 fi
 
@@ -334,4 +339,4 @@ ownership_boundary_ready=false
 guard_passed=false
 unset token HUBSPOT_ACCESS_TOKEN RESPONSE_BODY restore_body profile_id membership_id
 rmdir "$lock_dir"
-trap - EXIT HUP INT TERM
+trap - ZERR EXIT HUP INT TERM

@@ -12,9 +12,15 @@ probe, and freeze the v0.6.0 contract.
 
 - Official documentation was revalidated on 15 August 2026 with no blocking
   contradiction.
-- Official and live evidence found no blocking contradiction.
-- The guarded live probe completed at `2026-08-15T04:16:43Z` through the
-  existing Keychain credential and approved reusable global identity.
+- The fresh live probe was initially reported as pending because the local
+  environment had no HubSpot token, portal fingerprint, or Settings membership
+  ID.
+- The protected GitHub `northstar` environment had a token and portal ID only.
+  It had neither probe guard nor a safe pre-merge execution path.
+- The Keychain conclusion was corrected on 15 August 2026. The earlier check
+  ran inside the filesystem sandbox, which hid the existing credential entry.
+- The guarded live probe completed at `2026-08-15T04:16:43Z` with the existing
+  Keychain credential and approved reusable global identity.
 
 ## Answer
 

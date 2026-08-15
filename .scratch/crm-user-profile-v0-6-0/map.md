@@ -23,9 +23,9 @@ publication.
 - Destroy stops management without a remote write.
 - ADR 0003 remains the release architecture.
 - Current official documentation has no blocking contradiction.
-- The guarded normal-Free probe passed with the approved Keychain credential,
-  unique Settings-to-CRM join, ordered profile writes, exact restoration, and
-  exact owned membership cleanup.
+- [The guarded contract probe](issues/01-freeze-contract.md) passed with the
+  approved Keychain credential, unique Settings-to-CRM join, ordered profile
+  writes, exact restoration, and exact owned membership cleanup.
 - [Typed client](issues/02-typed-client.md): paginated identity discovery,
   bounded readiness, partial PATCH, and canonical working hours are complete.
 - [Provider resource](issues/03-provider-resource.md): the frozen managed-field,
