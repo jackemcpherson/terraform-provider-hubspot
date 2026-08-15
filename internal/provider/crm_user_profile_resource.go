@@ -148,6 +148,10 @@ func (r *CRMUserProfileResource) Create(ctx context.Context, request resource.Cr
 	if response.Diagnostics.HasError() {
 		return
 	}
+	response.Diagnostics.Append(validateCRMUserProfileModel(ctx, plan)...)
+	if response.Diagnostics.HasError() {
+		return
+	}
 	profile, err := r.verifiedProfile(ctx, "", plan.AccountMembershipID.ValueString(), true, crmUserProfileFieldsFromModel(plan))
 	if err != nil {
 		appendHubSpotDiagnostic(&response.Diagnostics, "CRM user profile readiness failed", err)
@@ -196,6 +200,10 @@ func (r *CRMUserProfileResource) Update(ctx context.Context, request resource.Up
 	var state, plan crmUserProfileResourceModel
 	response.Diagnostics.Append(request.State.Get(ctx, &state)...)
 	response.Diagnostics.Append(request.Plan.Get(ctx, &plan)...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+	response.Diagnostics.Append(validateCRMUserProfileModel(ctx, plan)...)
 	if response.Diagnostics.HasError() {
 		return
 	}

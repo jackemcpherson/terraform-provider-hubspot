@@ -42,6 +42,12 @@ func TestHermeticCRMUserProfileValidationAndAmbiguousJoin(t *testing.T) {
 			hermeticCRMUserProfileNoPropertiesConfig(server.URL, "registry.opentofu.org/jackemcpherson/hubspot", "101"),
 			"CRM user profile manages no properties",
 		)
+		session.RequireApplyFailure(hermeticCRMUserProfileResolvedNullConfig(
+			server.URL, "registry.opentofu.org/jackemcpherson/hubspot", "101",
+		))
+		if reads := fake.CRMUserProfileListReads(); reads != 0 {
+			t.Fatalf("apply-time validation performed readiness reads: %d", reads)
+		}
 		session.RequireApplyFailure(hermeticCRMUserProfileConfig(
 			server.URL, "registry.opentofu.org/jackemcpherson/hubspot", "101", "Engineer", "away",
 		))
@@ -188,6 +194,31 @@ provider "hubspot" {
 
 resource "hubspot_crm_user_profile" "managed" {
   account_membership_id = %q
+}
+`, providerSource, baseURL, membershipID)
+}
+
+func hermeticCRMUserProfileResolvedNullConfig(baseURL, providerSource, membershipID string) string {
+	return fmt.Sprintf(`
+terraform {
+  required_providers {
+    hubspot = {
+      source = %q
+    }
+  }
+}
+
+provider "hubspot" {
+  api_base_url = %q
+}
+
+resource "terraform_data" "resolved" {
+  input = null
+}
+
+resource "hubspot_crm_user_profile" "managed" {
+  account_membership_id = %q
+  job_title             = terraform_data.resolved.output
 }
 `, providerSource, baseURL, membershipID)
 }
