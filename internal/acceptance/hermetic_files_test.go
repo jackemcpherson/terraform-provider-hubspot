@@ -153,6 +153,9 @@ func runHermeticFilesConfigurationLifecycle(t *testing.T, engine acceptance.Engi
 		session.Apply(fileUpdated)
 		session.RequireEmptyPlan(fileUpdated)
 		session.Apply(updated)
+		if patches, asyncUpdates := fake.FileFolderWriteCounts(rootID); patches != 0 || asyncUpdates != 1 {
+			t.Fatalf("root folder rename writes = PATCH %d, async update %d", patches, asyncUpdates)
+		}
 		if session.OpaqueStateString("hubspot_file_folder.root", "id") != rootID || session.OpaqueStateString("hubspot_file_folder.child", "id") != childID || session.OpaqueStateString("hubspot_file.managed", "id") != fileID {
 			t.Fatal("in-place Files updates changed a generated identity")
 		}

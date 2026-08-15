@@ -192,6 +192,7 @@ func (r *FileFolderResource) Update(ctx context.Context, request resource.Update
 	if response.Diagnostics.HasError() {
 		return
 	}
+	renameHasChildFolders := false
 	if state.Name.ValueString() != plan.Name.ValueString() {
 		id := state.ID.ValueString()
 		childFiles, err := r.files.Search(ctx, &id, "")
@@ -203,6 +204,12 @@ func (r *FileFolderResource) Update(ctx context.Context, request resource.Update
 			response.Diagnostics.AddError("File folder rename requires no direct files", "HubSpot reports success but reverts a rename when the folder contains direct Managed files. Move or remove those files first, then rename the folder and move the files back in a later apply.")
 			return
 		}
+		childFolders, err := r.folders.Search(ctx, &id, "")
+		if err != nil {
+			appendHubSpotDiagnostic(&response.Diagnostics, "File folder rename preflight failed", err)
+			return
+		}
+		renameHasChildFolders = hasActiveFolderChildren(childFolders, id)
 	}
 	parent := nullableStringPointer(plan.ParentFolderID)
 	collision, err := r.folderCollision(ctx, parent, plan.Name.ValueString(), state.ID.ValueString())
@@ -215,8 +222,14 @@ func (r *FileFolderResource) Update(ctx context.Context, request resource.Update
 		return
 	}
 	parentChanged := !nullableStringsEqual(nullableStringPointer(state.ParentFolderID), parent)
+	if !parentChanged {
+		if err := r.waitForCurrentParentPath(ctx, state.ID.ValueString(), parent); err != nil {
+			response.Diagnostics.AddError("File folder update was not verified", "The current child folder path did not converge with its exact parent before rename. Prior identity and state were retained for a safe retry.")
+			return
+		}
+	}
 	var updateErr error
-	if parentChanged {
+	if parentChanged || renameHasChildFolders {
 		task, err := r.folders.Update(ctx, state.ID.ValueString(), hubspot.FileFolderWrite{Name: plan.Name.ValueString(), ParentFolderID: parent})
 		if err != nil {
 			appendHubSpotDiagnostic(&response.Diagnostics, "File folder update did not complete", err)
@@ -227,10 +240,6 @@ func (r *FileFolderResource) Update(ctx context.Context, request resource.Update
 			return
 		}
 	} else {
-		if err := r.waitForCurrentParentPath(ctx, state.ID.ValueString(), parent); err != nil {
-			response.Diagnostics.AddError("File folder update was not verified", "The current child folder path did not converge with its exact parent before rename. Prior identity and state were retained for a safe retry.")
-			return
-		}
 		_, updateErr = r.folders.Rename(ctx, state.ID.ValueString(), plan.Name.ValueString())
 	}
 	verified, err := r.waitForFolderPlan(ctx, state.ID.ValueString(), plan, state.CreatedAt.ValueString())

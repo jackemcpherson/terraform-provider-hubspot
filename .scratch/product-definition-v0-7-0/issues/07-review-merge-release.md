@@ -46,3 +46,13 @@ Blocked by: 01, 02, 03, 04, 05, 06
   private file was moved home. The follow-up retains the two-apply sequence and
   extends only bounded descendant-path convergence beyond the observed
   32-second delay.
+- 2026-08-15: Provider PR 85 merged the bounded descendant-path convergence as
+  `bd3631d9587ae0fc2daa4ac24c2858367b24c6ed`. Exact-main Required run
+  31877336609 passed. Protected maintenance run 31877434853 passed guarded
+  cleanup, Product creation and drift repair, Product external archival, and
+  OpenTofu refresh-only state removal. The targeted parent-folder repair then
+  completed, but the Downloads child-folder path remained stale for the full
+  87-second bound. HubSpot documents that the asynchronous folder-update API
+  updates all children. The provider follow-up therefore uses that endpoint for
+  an ancestor rename with direct child folders, waits for terminal task
+  completion, and retains exact descendant-path verification.

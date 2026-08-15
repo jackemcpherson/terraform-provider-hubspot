@@ -26,6 +26,9 @@ All notable changes to this project are documented here.
 
 - Never identify, recover, or adopt a Product by SKU or name. Ambiguous creates
   without a returned ID now stop with exact-ID import guidance.
+- Route ancestor File folder renames through HubSpot's asynchronous hierarchy
+  update when direct child folders exist, then verify descendant path
+  propagation before later file changes.
 
 ## [0.6.0] - 2026-08-15
 

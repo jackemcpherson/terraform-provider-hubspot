@@ -63,8 +63,10 @@ type FakeHubSpot struct {
 
 	fileFolders                  map[string]*hubspot.FileFolder
 	managedFiles                 map[string]*fakeManagedFile
+	fileFolderPatchCounts        map[string]int
+	fileFolderAsyncUpdateCounts  map[string]int
 	folderTasks                  map[string]hubspot.FolderUpdateTask
-	pendingFolderTasks           map[string]bool
+	pendingFolderUpdates         map[string]fakePendingFolderUpdate
 	nextFileFolderID             int
 	nextManagedFileID            int
 	nextFolderTaskID             int
@@ -130,8 +132,10 @@ func NewFakeHubSpot(token string, portalID int64) *FakeHubSpot {
 		forms:                       make(map[string]*fakeFormDefinition),
 		fileFolders:                 make(map[string]*hubspot.FileFolder),
 		managedFiles:                make(map[string]*fakeManagedFile),
+		fileFolderPatchCounts:       make(map[string]int),
+		fileFolderAsyncUpdateCounts: make(map[string]int),
 		folderTasks:                 make(map[string]hubspot.FolderUpdateTask),
-		pendingFolderTasks:          make(map[string]bool),
+		pendingFolderUpdates:        make(map[string]fakePendingFolderUpdate),
 		accountMemberships:          make(map[string]*fakeAccountMembership),
 		accountMembershipIDsByEmail: make(map[string]string),
 		crmUserProfiles:             make(map[string]*fakeCRMUserProfile),

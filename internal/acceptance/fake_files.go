@@ -58,6 +58,12 @@ const (
 	FilesFaultStalePagination     FilesFault = "stale_pagination"
 )
 
+type fakePendingFolderUpdate struct {
+	folderID string
+	input    hubspot.FileFolderWrite
+	polled   bool
+}
+
 func (f *FakeHubSpot) handleFiles(response http.ResponseWriter, request *http.Request, rest []string) {
 	switch {
 	case len(rest) == 1 && rest[0] == "folders":
@@ -198,9 +204,18 @@ func (f *FakeHubSpot) handleFileFolderItem(response http.ResponseWriter, request
 				return
 			}
 		}
+		f.fileFolderPatchCounts[id]++
 		folder.Name = payload.Name
 		folder.UpdatedAt = f.advanceFilesTimestamp()
-		f.refreshDerivedFilePaths()
+		folder.Path = f.deriveFolderPath(folder)
+		for _, file := range f.managedFiles {
+			if file.file.FolderID != id {
+				continue
+			}
+			file.file.Path = f.deriveFilePath(id, file.file.Name)
+			file.file.URL = fakeFileURL(file.file.Path)
+			file.file.DefaultHostingURL = fakeDefaultFileURL(file.file.Path)
+		}
 		if f.nextFilesFault == FilesFaultFolderTaskMalformed {
 			f.nextFilesFault = ""
 			response.WriteHeader(http.StatusOK)
@@ -255,6 +270,7 @@ func (f *FakeHubSpot) handleFileFolderUpdate(response http.ResponseWriter, reque
 			return
 		}
 	}
+	f.fileFolderAsyncUpdateCounts[payload.ID]++
 	f.nextFolderTaskID++
 	task := hubspot.FolderUpdateTask{ID: "folder-task-" + strconv.Itoa(f.nextFolderTaskID), Status: "PENDING", Errors: []json.RawMessage{}}
 	switch f.nextFilesFault {
@@ -283,12 +299,11 @@ func (f *FakeHubSpot) handleFileFolderUpdate(response http.ResponseWriter, reque
 		writeFakeJSON(response, http.StatusAccepted, task)
 		return
 	}
-	folder.Name = input.Name
-	folder.ParentFolderID = copyFakeString(input.ParentFolderID)
-	folder.UpdatedAt = f.advanceFilesTimestamp()
-	f.refreshDerivedFilePaths()
 	f.folderTasks[task.ID] = task
-	f.pendingFolderTasks[task.ID] = true
+	f.pendingFolderUpdates[task.ID] = fakePendingFolderUpdate{
+		folderID: payload.ID,
+		input:    hubspot.FileFolderWrite{Name: input.Name, ParentFolderID: copyFakeString(input.ParentFolderID)},
+	}
 	writeFakeJSON(response, http.StatusAccepted, task)
 }
 
@@ -304,14 +319,26 @@ func (f *FakeHubSpot) handleFileFolderTask(response http.ResponseWriter, request
 		writeFakeError(response, http.StatusNotFound, "OBJECT_NOT_FOUND", "", "No folder task matched this identity.")
 		return
 	}
-	if f.pendingFolderTasks[id] {
-		delete(f.pendingFolderTasks, id)
+	if pending, ok := f.pendingFolderUpdates[id]; ok && !pending.polled {
+		pending.polled = true
+		f.pendingFolderUpdates[id] = pending
+		status := task
+		status.ID = ""
+		writeFakeJSON(response, http.StatusOK, status)
+		return
+	} else if ok {
+		delete(f.pendingFolderUpdates, id)
+		folder := f.fileFolders[pending.folderID]
+		folder.Name = pending.input.Name
+		folder.ParentFolderID = copyFakeString(pending.input.ParentFolderID)
+		folder.UpdatedAt = f.advanceFilesTimestamp()
+		f.refreshDerivedFilePaths()
 		task.Status = "COMPLETE"
 		f.folderTasks[id] = task
-		writeFakeJSON(response, http.StatusOK, hubspot.FolderUpdateTask{ID: task.ID, Status: "PENDING", Errors: task.Errors})
-		return
 	}
-	writeFakeJSON(response, http.StatusOK, task)
+	status := task
+	status.ID = ""
+	writeFakeJSON(response, http.StatusOK, status)
 }
 
 func (f *FakeHubSpot) handleManagedFileCollection(response http.ResponseWriter, request *http.Request) {
@@ -676,6 +703,12 @@ func (f *FakeHubSpot) ManagedFileWriteCounts(id string) (patches, replacements i
 		return file.patches, file.replaces
 	}
 	return 0, 0
+}
+
+func (f *FakeHubSpot) FileFolderWriteCounts(id string) (patches, asyncUpdates int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.fileFolderPatchCounts[id], f.fileFolderAsyncUpdateCounts[id]
 }
 
 func (f *FakeHubSpot) DisappearManagedFile(id string) bool {
