@@ -100,7 +100,7 @@ func TestAcc_product_definitions_ContractPreflight(t *testing.T) {
 	if err != nil || tombstone.ID != created.ID || !tombstone.Archived {
 		t.Fatal("Product archive probe did not verify the same archived identity")
 	}
-	if err := clients.Products.Archive(ctx, created.ID); !productPreflightNotFound(err) {
+	if err := clients.Products.Archive(ctx, created.ID); !acceptance.ProductArchiveReplayAccepted(err) {
 		t.Fatal("Product duplicate archive probe returned an unexpected result")
 	}
 }
