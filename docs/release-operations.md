@@ -75,7 +75,9 @@ CRM profile. Set
 `HUBSPOT_ACCEPTANCE_PORTAL_ID` to the expected disposable portal. Set the
 `HUBSPOT_NORTHSTAR_MEMBERSHIP_EMAIL` environment variable to a dedicated,
 disposable member in that portal. Do not use an ordinary account member or a
-Super Admin. A normal workflow failure identifies a maintenance problem and
+Super Admin. Guarded interrupted-run cleanup accepts only the exact approved
+reserved fixture `tfhs-probe-16-20260802024807@example.com`. It never sends a
+welcome email. A normal workflow failure identifies a maintenance problem and
 blocks publication for that exact commit. The workflow does not create custom
 evidence bundles.
 

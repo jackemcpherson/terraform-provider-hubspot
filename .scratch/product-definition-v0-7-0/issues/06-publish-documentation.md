@@ -21,6 +21,10 @@ Blocked by: 03, 04, 05
 - 2026-08-15: Demo PR 24 merged as
   `cbec2d72dcfd2bd316c1b213f91a5fc728a4e469`; provider maintenance now pins
   that exact commit.
+- 2026-08-15: Protected maintenance exposed a nullable Product-output defect
+  during refresh-only reconciliation. Demo PR 25 fixed the defect and merged as
+  `3daa63da44464c971ab1ca55ac91345ed1279dd7`. Maintenance now pins that exact
+  reviewed commit.
 
 ## Answer
 

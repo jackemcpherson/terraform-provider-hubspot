@@ -41,6 +41,7 @@ check-go:
 	@test -x "$(STATICCHECK_BIN)" || { echo "staticcheck $(STATICCHECK_VERSION) required; run make tools"; exit 1; }
 	@"$(STATICCHECK_BIN)" ./...
 	@go test ./...
+	@go test -tags=acceptance ./cmd/northstar-lifecycle
 	@go mod tidy -diff
 	@go mod verify
 

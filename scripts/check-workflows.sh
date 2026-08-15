@@ -41,6 +41,11 @@ grep -Fq "TestAcc_product_definitions_ContractPreflight" Makefile || {
   exit 1
 }
 
+grep -Eq '^[[:space:]]+ref: [0-9a-f]{40}$' .github/workflows/provider-maintenance.yml || {
+  echo 'provider maintenance must pin the Northstar demo to one exact commit' >&2
+  exit 1
+}
+
 for action in .github/actions/*/action.yml; do
   if grep -E 'uses: [^.]' "$action" | grep -Ev 'uses: [^@]+@[0-9a-f]{40}([[:space:]]+#.*)?$' >/dev/null; then
     echo "external action is not pinned to a full commit in $action" >&2

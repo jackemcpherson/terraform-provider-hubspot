@@ -4,8 +4,8 @@ This map tracks the append-only work needed to publish v0.7.0.
 
 ## Frontier
 
-- None. The release ticket is claimed while protected Northstar configuration
-  and publication remain.
+- None. The release ticket is claimed while interrupted Northstar recovery,
+  hosted reruns, and publication remain.
 
 ## Decisions So Far
 
