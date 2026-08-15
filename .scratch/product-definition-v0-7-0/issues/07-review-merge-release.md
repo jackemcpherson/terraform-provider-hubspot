@@ -56,3 +56,11 @@ Blocked by: 01, 02, 03, 04, 05, 06
   updates all children. The provider follow-up therefore uses that endpoint for
   an ancestor rename with direct child folders, waits for terminal task
   completion, and retains exact descendant-path verification.
+- 2026-08-16: Provider PR 86 merged the asynchronous hierarchy update as
+  `7429126b83edd79030b732b8f9b3b17476f9666f`, and exact-main Required run
+  31878843313 passed. Protected maintenance run 31878944027 passed the Product
+  preflight and the earlier OpenTofu lifecycle seams, but the exact descendant
+  path read remained stale for the full 87-second post-task window. The next
+  follow-up changes no resource semantics: it extends only the exact descendant
+  GET convergence boundary beyond the live-observed window and gives the two
+  affected helper actions enough enclosing time to complete or fail closed.
