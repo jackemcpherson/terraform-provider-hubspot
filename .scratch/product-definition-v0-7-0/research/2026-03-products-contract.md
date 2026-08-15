@@ -31,21 +31,29 @@ surface.
 
 ## Runtime Evidence
 
-No local HubSpot credential was available on 2026-08-15. The runtime property
-schema and disposable-product probe remain guarded acceptance preflight work.
-The probe must confirm:
+Protected [maintenance run 31871546257](https://github.com/jackemcpherson/terraform-provider-hubspot/actions/runs/31871546257)
+validated the runtime schema and disposable Product probe on exact main commit
+`c96b591ad714ec7d5d163d8b3268b29e0c1754d3`. It confirmed:
 
 - An omitted `hs_folder` creates a root Product.
 - Required property behavior matches the frozen interface.
-- HubSpot normalises decimal strings without changing their numeric meaning.
+- Decimal values retain their numeric meaning across HubSpot normalization.
 - `P#M` recurrence values round-trip and empty strings clear them.
 - Duplicate active SKUs receive an API rejection.
 - Exact archived reads return the same generated ID.
 - Repeated archival and cleanup are idempotent.
+
+The recurrence property uses a compatible text-backed runtime schema. Repeated
+archival returns success on the protected portal. The probe accepts success or
+`404` only after it proves active absence and the same archived identity.
+
+The later cumulative Northstar step did not run because the protected
+`HUBSPOT_NORTHSTAR_MEMBERSHIP_EMAIL` variable is unset. This configuration gap
+does not invalidate the completed disposable Product probe, but it blocks
+publication until cumulative maintenance passes.
 
 ## References
 
 - [HubSpot Products API guide](https://developers.hubspot.com/docs/api-reference/latest/crm/objects/products/guide)
 - [HubSpot object API guide](https://developers.hubspot.com/docs/api-reference/latest/crm/using-object-apis)
 - [HubSpot app scopes](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/scopes)
-
