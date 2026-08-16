@@ -29,10 +29,10 @@ type fakeManagedFileMoveVisibility struct {
 }
 
 type fakeManagedFile struct {
-	file     hubspot.ManagedFile
-	contents []byte
-	patches  int
-	replaces int
+	file         hubspot.ManagedFile
+	contents     []byte
+	patchHistory []hubspot.FilePatch
+	replaces     int
 }
 
 // FilesFault selects deterministic one-shot outcomes for fail-closed Files
@@ -271,6 +271,9 @@ func (f *FakeHubSpot) handleFileFolderUpdate(response http.ResponseWriter, reque
 		}
 	}
 	f.fileFolderAsyncUpdateCounts[payload.ID]++
+	f.fileFolderAsyncUpdateHistory[payload.ID] = append(f.fileFolderAsyncUpdateHistory[payload.ID], hubspot.FileFolderWrite{
+		Name: input.Name, ParentFolderID: copyFakeString(input.ParentFolderID),
+	})
 	f.nextFolderTaskID++
 	task := hubspot.FolderUpdateTask{ID: "folder-task-" + strconv.Itoa(f.nextFolderTaskID), Status: "PENDING", Errors: []json.RawMessage{}}
 	switch f.nextFilesFault {
@@ -509,7 +512,9 @@ func (f *FakeHubSpot) handleManagedFileItem(response http.ResponseWriter, reques
 		file.file.URL = fakeFileURL(file.file.Path)
 		file.file.DefaultHostingURL = fakeDefaultFileURL(file.file.Path)
 		file.file.UpdatedAt = f.advanceFilesTimestamp()
-		file.patches++
+		file.patchHistory = append(file.patchHistory, hubspot.FilePatch{
+			Name: copyFakeString(patch.Name), FolderID: copyFakeString(patch.FolderID), Access: copyFakeString(patch.Access),
+		})
 		if f.nextFilesFault == FilesFaultPatchApplied {
 			f.nextFilesFault = ""
 			dropFakeConnection(response)
@@ -700,15 +705,42 @@ func (f *FakeHubSpot) ManagedFileWriteCounts(id string) (patches, replacements i
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if file := f.managedFiles[id]; file != nil {
-		return file.patches, file.replaces
+		return len(file.patchHistory), file.replaces
 	}
 	return 0, 0
+}
+
+func (f *FakeHubSpot) ManagedFilePatchHistory(id string) []hubspot.FilePatch {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	file := f.managedFiles[id]
+	if file == nil {
+		return nil
+	}
+	history := make([]hubspot.FilePatch, len(file.patchHistory))
+	for index, patch := range file.patchHistory {
+		history[index] = hubspot.FilePatch{
+			Name: copyFakeString(patch.Name), FolderID: copyFakeString(patch.FolderID), Access: copyFakeString(patch.Access),
+		}
+	}
+	return history
 }
 
 func (f *FakeHubSpot) FileFolderWriteCounts(id string) (patches, asyncUpdates int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.fileFolderPatchCounts[id], f.fileFolderAsyncUpdateCounts[id]
+}
+
+func (f *FakeHubSpot) FileFolderAsyncUpdateHistory(id string) []hubspot.FileFolderWrite {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	updates := f.fileFolderAsyncUpdateHistory[id]
+	history := make([]hubspot.FileFolderWrite, len(updates))
+	for index, update := range updates {
+		history[index] = hubspot.FileFolderWrite{Name: update.Name, ParentFolderID: copyFakeString(update.ParentFolderID)}
+	}
+	return history
 }
 
 func (f *FakeHubSpot) DisappearManagedFile(id string) bool {

@@ -65,6 +65,7 @@ type FakeHubSpot struct {
 	managedFiles                 map[string]*fakeManagedFile
 	fileFolderPatchCounts        map[string]int
 	fileFolderAsyncUpdateCounts  map[string]int
+	fileFolderAsyncUpdateHistory map[string][]hubspot.FileFolderWrite
 	folderTasks                  map[string]hubspot.FolderUpdateTask
 	pendingFolderUpdates         map[string]fakePendingFolderUpdate
 	nextFileFolderID             int
@@ -124,23 +125,24 @@ const (
 // endpoint.
 func NewFakeHubSpot(token string, portalID int64) *FakeHubSpot {
 	return &FakeHubSpot{
-		token:                       token,
-		portalID:                    portalID,
-		groups:                      make(map[string]map[string]*hubspot.PropertyGroup),
-		properties:                  make(map[string]map[string]*fakePropertyVersions),
-		pipelines:                   make(map[string]map[string]*hubspot.Pipeline),
-		forms:                       make(map[string]*fakeFormDefinition),
-		fileFolders:                 make(map[string]*hubspot.FileFolder),
-		managedFiles:                make(map[string]*fakeManagedFile),
-		fileFolderPatchCounts:       make(map[string]int),
-		fileFolderAsyncUpdateCounts: make(map[string]int),
-		folderTasks:                 make(map[string]hubspot.FolderUpdateTask),
-		pendingFolderUpdates:        make(map[string]fakePendingFolderUpdate),
-		accountMemberships:          make(map[string]*fakeAccountMembership),
-		accountMembershipIDsByEmail: make(map[string]string),
-		crmUserProfiles:             make(map[string]*fakeCRMUserProfile),
-		crmProfileReadiness:         make(map[string]int),
-		products:                    make(map[string]*fakeProduct),
+		token:                        token,
+		portalID:                     portalID,
+		groups:                       make(map[string]map[string]*hubspot.PropertyGroup),
+		properties:                   make(map[string]map[string]*fakePropertyVersions),
+		pipelines:                    make(map[string]map[string]*hubspot.Pipeline),
+		forms:                        make(map[string]*fakeFormDefinition),
+		fileFolders:                  make(map[string]*hubspot.FileFolder),
+		managedFiles:                 make(map[string]*fakeManagedFile),
+		fileFolderPatchCounts:        make(map[string]int),
+		fileFolderAsyncUpdateCounts:  make(map[string]int),
+		fileFolderAsyncUpdateHistory: make(map[string][]hubspot.FileFolderWrite),
+		folderTasks:                  make(map[string]hubspot.FolderUpdateTask),
+		pendingFolderUpdates:         make(map[string]fakePendingFolderUpdate),
+		accountMemberships:           make(map[string]*fakeAccountMembership),
+		accountMembershipIDsByEmail:  make(map[string]string),
+		crmUserProfiles:              make(map[string]*fakeCRMUserProfile),
+		crmProfileReadiness:          make(map[string]int),
+		products:                     make(map[string]*fakeProduct),
 	}
 }
 

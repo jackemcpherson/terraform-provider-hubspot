@@ -51,13 +51,14 @@ type northstarFilesIDs struct {
 }
 
 type northstarFilesNames struct {
-	Prefix             string
-	BrandFolder        string
-	BrandFolderRefresh string
-	DownloadsFolder    string
-	PrivateFile        string
-	PublicFile         string
-	PublicFileDrift    string
+	Prefix                string
+	BrandFolder           string
+	BrandFolderRefresh    string
+	DownloadsFolder       string
+	DownloadsFolderRepair string
+	PrivateFile           string
+	PublicFile            string
+	PublicFileDrift       string
 }
 
 func northstarFilesNamesFromEnvironment() (northstarFilesNames, error) {
@@ -74,18 +75,20 @@ func northstarFilesNamesFromEnvironment() (northstarFilesNames, error) {
 		}
 	}
 	names := northstarFilesNames{
-		Prefix:             prefix,
-		BrandFolder:        prefix + "brand",
-		BrandFolderRefresh: prefix + "brand_refresh",
-		DownloadsFolder:    prefix + "downloads",
-		PrivateFile:        prefix + "private_readme.txt",
-		PublicFile:         prefix + "public_logo.svg",
-		PublicFileDrift:    prefix + "public_logo_drift.svg",
+		Prefix:                prefix,
+		BrandFolder:           prefix + "brand",
+		BrandFolderRefresh:    prefix + "brand_refresh",
+		DownloadsFolder:       prefix + "downloads",
+		DownloadsFolderRepair: prefix + "downloads_repair",
+		PrivateFile:           prefix + "private_readme.txt",
+		PublicFile:            prefix + "public_logo.svg",
+		PublicFileDrift:       prefix + "public_logo_drift.svg",
 	}
 	if prefix != "ns_" {
 		names.BrandFolder = prefix + "b"
 		names.BrandFolderRefresh = prefix + "br"
 		names.DownloadsFolder = prefix + "d"
+		names.DownloadsFolderRepair = prefix + "r"
 		names.PrivateFile = prefix + "p.txt"
 		names.PublicFile = prefix + "l.svg"
 		names.PublicFileDrift = prefix + "x.svg"
@@ -125,8 +128,10 @@ func main() {
 
 func northstarActionTimeout(action string) time.Duration {
 	switch action {
-	case "drift-folder-path", "repair-folder-path":
+	case "drift-folder-path":
 		return 4 * time.Minute
+	case "repair-folder-path":
+		return 10 * time.Minute
 	case "verify-files":
 		return 3 * time.Minute
 	default:
@@ -255,14 +260,14 @@ func execute(ctx context.Context, action string, ids []string, clients *hubspot.
 		}
 		return "", driftNorthstarFolderPath(ctx, clients, ids[0], ids[1], names)
 	case "repair-folder-path":
-		if len(ids) != 2 {
-			return "", errors.New("northstar parent and child folder IDs are required for path repair")
+		if len(ids) != 4 {
+			return "", errors.New("northstar parent folder, child folder, and two Managed file IDs are required for path repair")
 		}
 		names, err := northstarFilesNamesFromEnvironment()
 		if err != nil {
 			return "", err
 		}
-		return "", repairNorthstarDescendantPath(ctx, clients, ids[0], ids[1], names)
+		return "", repairNorthstarDescendantPath(ctx, clients, newNorthstarFilesIDs(ids), names)
 	case "verify-files-terminal":
 		if len(ids) != 4 {
 			return "", errors.New("four Northstar Files generated IDs are required for terminal verification")
@@ -490,7 +495,7 @@ func inspectNorthstarCleanup(ctx context.Context, clients *hubspot.ClientSet, na
 	if err != nil {
 		return plan, fmt.Errorf("list Northstar File folders: %s", acceptance.SanitizedHubSpotError(err))
 	}
-	expectedFolderNames := stringSet(names.BrandFolder, names.BrandFolderRefresh, names.DownloadsFolder)
+	expectedFolderNames := stringSet(names.BrandFolder, names.BrandFolderRefresh, names.DownloadsFolder, names.DownloadsFolderRepair)
 	expectedFileNames := stringSet(names.PrivateFile, names.PublicFile, names.PublicFileDrift)
 	ownedFolderNames := map[string]string{}
 	for _, folder := range folders {
@@ -509,7 +514,7 @@ func inspectNorthstarCleanup(ctx context.Context, clients *hubspot.ClientSet, na
 			if folder.ParentFolderID != nil || folder.Path != "/"+folder.Name {
 				return plan, errors.New("refusing Northstar brand folder with unexpected placement")
 			}
-		case names.DownloadsFolder:
+		case names.DownloadsFolder, names.DownloadsFolderRepair:
 			if folder.ParentFolderID == nil {
 				return plan, errors.New("refusing Northstar downloads folder without its owned parent")
 			}
@@ -534,17 +539,8 @@ func inspectNorthstarCleanup(ctx context.Context, clients *hubspot.ClientSet, na
 		if _, ok := expectedFileNames[file.Name]; !ok {
 			return plan, fmt.Errorf("refusing unexpected Northstar Managed file %q", file.Name)
 		}
-		expectedFolderName := names.DownloadsFolder
-		if file.Name == names.PrivateFile {
-			expectedFolderName = names.BrandFolder
-			if folderName == names.BrandFolderRefresh {
-				expectedFolderName = names.BrandFolderRefresh
-			}
-			if folderName == names.DownloadsFolder {
-				expectedFolderName = names.DownloadsFolder
-			}
-		}
-		if !inOwnedFolder || folderName != expectedFolderName || !strings.HasSuffix(file.Path, "/"+file.Name) {
+		validFolder := folderName == names.BrandFolder || folderName == names.BrandFolderRefresh || folderName == names.DownloadsFolder
+		if !inOwnedFolder || !validFolder || !strings.HasSuffix(file.Path, "/"+file.Name) {
 			return plan, errors.New("refusing Northstar Managed file with unexpected placement")
 		}
 		plan.files = append(plan.files, file.ID)
@@ -879,51 +875,164 @@ func driftNorthstarFolderPath(ctx context.Context, clients *hubspot.ClientSet, p
 	return nil
 }
 
-func repairNorthstarDescendantPath(ctx context.Context, clients *hubspot.ClientSet, parentID, childID string, names northstarFilesNames) error {
-	parent, err := clients.FileFolders.Get(ctx, parentID)
+func repairNorthstarDescendantPath(ctx context.Context, clients *hubspot.ClientSet, ids northstarFilesIDs, names northstarFilesNames) error {
+	parent, err := clients.FileFolders.Get(ctx, ids.BrandFolder)
 	if err != nil {
 		return fmt.Errorf("read Northstar folder-repair parent: %s", acceptance.SanitizedHubSpotError(err))
 	}
-	child, err := clients.FileFolders.Get(ctx, childID)
+	child, err := clients.FileFolders.Get(ctx, ids.DownloadsFolder)
 	if err != nil {
 		return fmt.Errorf("read Northstar folder-repair child: %s", acceptance.SanitizedHubSpotError(err))
 	}
-	if parent.ID != parentID || parent.Name != names.BrandFolder || parent.ParentFolderID != nil || child.ID != childID || child.Name != names.DownloadsFolder || child.ParentFolderID == nil || *child.ParentFolderID != parentID {
+	privateFile, err := clients.Files.Get(ctx, ids.PrivateFile)
+	if err != nil {
+		return fmt.Errorf("read Northstar folder-repair private file: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	publicFile, err := clients.Files.Get(ctx, ids.PublicFile)
+	if err != nil {
+		return fmt.Errorf("read Northstar folder-repair public file: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	if parent.ID != ids.BrandFolder || parent.Name != names.BrandFolder || parent.ParentFolderID != nil || child.ID != ids.DownloadsFolder || child.Name != names.DownloadsFolder || child.ParentFolderID == nil || *child.ParentFolderID != ids.BrandFolder ||
+		privateFile.ID != ids.PrivateFile || privateFile.Name != names.PrivateFile || privateFile.FolderID != ids.DownloadsFolder || privateFile.Access != "PRIVATE" || privateFile.FileMD5 != "6062568b21ab5f9deb2a2c2f25cfbc37" || privateFile.Size != 23 ||
+		publicFile.ID != ids.PublicFile || publicFile.Name != names.PublicFile || publicFile.FolderID != ids.DownloadsFolder || publicFile.Access != "PUBLIC_NOT_INDEXABLE" || publicFile.FileMD5 != "21ebff031bb7f11ce0a0ab78c4347832" || publicFile.Size != 88 {
 		return errors.New("northstar folder-repair identities did not match the exact owned configuration")
 	}
-	children, err := clients.FileFolders.Search(ctx, &parentID, "")
+	children, err := clients.FileFolders.Search(ctx, &ids.BrandFolder, "")
 	if err != nil {
 		return fmt.Errorf("search Northstar folder-repair parent: %s", acceptance.SanitizedHubSpotError(err))
 	}
-	found := false
-	for _, candidate := range children {
-		if candidate.ID == childID && candidate.Name == names.DownloadsFolder && candidate.ParentFolderID != nil && *candidate.ParentFolderID == parentID {
-			found = true
-			break
-		}
-	}
-	if !found {
+	if len(children) != 1 || children[0].ID != ids.DownloadsFolder || children[0].Name != names.DownloadsFolder || children[0].ParentFolderID == nil || *children[0].ParentFolderID != ids.BrandFolder {
 		return errors.New("northstar folder-repair identities did not match the exact owned configuration")
 	}
-	task, err := clients.FileFolders.Update(ctx, childID, hubspot.FileFolderWrite{Name: names.DownloadsFolder, ParentFolderID: &parentID})
+	descendants, err := clients.FileFolders.Search(ctx, &ids.DownloadsFolder, "")
+	if err != nil {
+		return fmt.Errorf("search Northstar folder-repair child: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	if len(descendants) != 0 {
+		return errors.New("northstar folder-repair child contained unexpected folders")
+	}
+	childFiles, err := clients.Files.Search(ctx, &ids.DownloadsFolder, "")
+	if err != nil {
+		return fmt.Errorf("search Northstar folder-repair child files: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	parentFiles, err := clients.Files.Search(ctx, &ids.BrandFolder, "")
+	if err != nil {
+		return fmt.Errorf("search Northstar folder-repair parent files: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	files := []hubspot.ManagedFile{privateFile, publicFile}
+	if len(parentFiles) != 0 || !northstarRepairFilesMatch(childFiles, files, ids.DownloadsFolder) {
+		return errors.New("northstar folder-repair file placement did not match the exact owned configuration")
+	}
+	for _, file := range files {
+		if err := moveNorthstarRepairFile(ctx, clients, file, ids.BrandFolder); err != nil {
+			return err
+		}
+	}
+	if err := waitForNorthstarRepairFilePlacement(ctx, clients, files, ids.BrandFolder, ids.DownloadsFolder); err != nil {
+		return err
+	}
+	if err := updateNorthstarRepairFolderName(ctx, clients, ids.BrandFolder, ids.DownloadsFolder, names.BrandFolder, names.DownloadsFolderRepair); err != nil {
+		return err
+	}
+	if err := updateNorthstarRepairFolderName(ctx, clients, ids.BrandFolder, ids.DownloadsFolder, names.BrandFolder, names.DownloadsFolder); err != nil {
+		return err
+	}
+	for _, file := range files {
+		if err := moveNorthstarRepairFile(ctx, clients, file, ids.DownloadsFolder); err != nil {
+			return err
+		}
+	}
+	if err := waitForNorthstarRepairFilePlacement(ctx, clients, files, ids.DownloadsFolder, ids.BrandFolder); err != nil {
+		return err
+	}
+	return nil
+}
+
+func moveNorthstarRepairFile(ctx context.Context, clients *hubspot.ClientSet, file hubspot.ManagedFile, folderID string) error {
+	updated, err := clients.Files.Update(ctx, file.ID, hubspot.FilePatch{FolderID: &folderID})
+	if err != nil {
+		return fmt.Errorf("move Northstar folder-repair file: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	if !northstarRepairFileMatches(updated, file, folderID) {
+		return errors.New("northstar folder-repair file move did not preserve the exact identity")
+	}
+	return nil
+}
+
+func waitForNorthstarRepairFilePlacement(ctx context.Context, clients *hubspot.ClientSet, files []hubspot.ManagedFile, destinationID, emptiedID string) error {
+	for _, delay := range northstarFilesConvergenceDelays {
+		if delay > 0 {
+			timer := time.NewTimer(delay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return errors.New("northstar folder-repair file placement timed out")
+			case <-timer.C:
+			}
+		}
+		matched := true
+		for _, file := range files {
+			current, err := clients.Files.Get(ctx, file.ID)
+			if err != nil {
+				return fmt.Errorf("read Northstar folder-repair file: %s", acceptance.SanitizedHubSpotError(err))
+			}
+			if !northstarRepairFileMatches(current, file, destinationID) {
+				matched = false
+			}
+		}
+		destinationFiles, err := clients.Files.Search(ctx, &destinationID, "")
+		if err != nil {
+			return fmt.Errorf("search Northstar folder-repair destination: %s", acceptance.SanitizedHubSpotError(err))
+		}
+		emptiedFiles, err := clients.Files.Search(ctx, &emptiedID, "")
+		if err != nil {
+			return fmt.Errorf("search Northstar folder-repair source: %s", acceptance.SanitizedHubSpotError(err))
+		}
+		if matched && len(emptiedFiles) == 0 && northstarRepairFilesMatch(destinationFiles, files, destinationID) {
+			return nil
+		}
+	}
+	return errors.New("northstar folder-repair file placement did not converge")
+}
+
+func northstarRepairFilesMatch(observed, expected []hubspot.ManagedFile, folderID string) bool {
+	if len(observed) != len(expected) {
+		return false
+	}
+	byID := make(map[string]hubspot.ManagedFile, len(expected))
+	for _, file := range expected {
+		byID[file.ID] = file
+	}
+	for _, file := range observed {
+		expectedFile, ok := byID[file.ID]
+		if !ok || !northstarRepairFileMatches(file, expectedFile, folderID) {
+			return false
+		}
+	}
+	return true
+}
+
+func northstarRepairFileMatches(observed, expected hubspot.ManagedFile, folderID string) bool {
+	return observed.ID == expected.ID && observed.Name == expected.Name && observed.FolderID == folderID && observed.Access == expected.Access && observed.FileMD5 == expected.FileMD5 && observed.Size == expected.Size && observed.CreatedAt == expected.CreatedAt && !observed.Archived
+}
+
+func updateNorthstarRepairFolderName(ctx context.Context, clients *hubspot.ClientSet, parentID, childID, parentName, name string) error {
+	task, err := clients.FileFolders.Update(ctx, childID, hubspot.FileFolderWrite{Name: name, ParentFolderID: &parentID})
 	if err != nil {
 		return fmt.Errorf("repair Northstar descendant folder path: %s", acceptance.SanitizedHubSpotError(err))
 	}
 	if err := waitForNorthstarFolderTask(ctx, clients.FileFolders.GetUpdateTask, task.ID, northstarFolderTaskConvergenceDelays); err != nil {
 		return fmt.Errorf("repair Northstar descendant folder path: %s", acceptance.SanitizedHubSpotError(err))
 	}
-	expectedPath := "/" + names.BrandFolder + "/" + names.DownloadsFolder
-	repaired, err := waitForNorthstarDescendantPath(ctx, clients.FileFolders.Get, clients.FileFolders.Search, parentID, childID, func(folder hubspot.FileFolder) bool {
-		return folder.ID == childID && folder.Name == names.DownloadsFolder && folder.ParentFolderID != nil && *folder.ParentFolderID == parentID && folder.Path == expectedPath
+	expectedPath := "/" + parentName + "/" + name
+	_, err = waitForNorthstarDescendantPath(ctx, clients.FileFolders.Get, clients.FileFolders.Search, parentID, childID, func(folder hubspot.FileFolder) bool {
+		return folder.ID == childID && folder.Name == name && folder.ParentFolderID != nil && *folder.ParentFolderID == parentID && folder.Path == expectedPath
 	})
 	if err != nil {
 		if errors.Is(err, errNorthstarFolderReadBack) {
 			return errors.New("northstar repaired child folder descendant path did not converge")
 		}
 		return fmt.Errorf("read Northstar repaired child folder: %s", acceptance.SanitizedHubSpotError(err))
-	}
-	if repaired.ID != childID || repaired.Path != expectedPath {
-		return errors.New("northstar repaired child folder did not match canonical exact-ID state")
 	}
 	return nil
 }
