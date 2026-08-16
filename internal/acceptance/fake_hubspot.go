@@ -75,6 +75,8 @@ type FakeHubSpot struct {
 	nextFilesFault               FilesFault
 	malformedNextManagedFileRead bool
 	staleFilesSearchCursor       bool
+	nextFileFolderUpdateReadLag  int
+	fileFolderUpdateVisibility   *fakeFileFolderUpdateVisibility
 	nextManagedFileMoveReadLag   int
 	nextManagedFileMoveSearchLag int
 	managedFileMoveVisibility    *fakeManagedFileMoveVisibility

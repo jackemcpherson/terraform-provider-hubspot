@@ -152,6 +152,7 @@ func runHermeticFilesConfigurationLifecycle(t *testing.T, engine acceptance.Engi
 		fileUpdated := strings.Replace(updated, "Hermetic Files root updated", "Hermetic Files root", 1)
 		session.Apply(fileUpdated)
 		session.RequireEmptyPlan(fileUpdated)
+		fake.LagNextFileFolderUpdateVisibility(8)
 		session.Apply(updated)
 		if patches, asyncUpdates := fake.FileFolderWriteCounts(rootID); patches != 0 || asyncUpdates != 1 {
 			t.Fatalf("root folder rename writes = PATCH %d, async update %d", patches, asyncUpdates)

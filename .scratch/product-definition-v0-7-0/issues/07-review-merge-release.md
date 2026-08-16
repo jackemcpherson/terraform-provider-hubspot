@@ -115,3 +115,13 @@ Blocked by: 01, 02, 03, 04, 05, 06
   terminal assertions. Demo PR 29 now accepts only those two enumerated
   terminal outcomes, tests both, passed hosted run 31921173435, and merged as
   `793256402c5e1e811cd374f0815a83c66f092616`.
+- 2026-08-16: Provider PR 93 pinned that exact demo merge and merged as
+  `1c73fcc0bf494ce5fba4d2d0a344084e79e89d47`; exact-main Required run
+  31921499705 passed. Protected maintenance run 31921593549 completed the
+  OpenTofu journey and reached Terraform refresh repair. HubSpot reported the
+  asynchronous root-folder restore complete, but exact-ID GET returned the
+  preceding name for the provider's full bounded read-back window. The
+  follow-up types and verifies the documented terminal task `result`, accepts
+  it only for the same generated ID and complete planned state, and treats a
+  later GET as stale only when its `updatedAt` is older than that verified
+  revision. Dual-engine hermetic tests reproduce the stale read window.

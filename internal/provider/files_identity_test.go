@@ -74,6 +74,27 @@ func TestFileFolderUpdateReadBackRetriesUntilExactValuesConverge(t *testing.T) {
 	}
 }
 
+func TestFileFolderSnapshotRecognizesOnlyAnOlderSameIdentityRevision(t *testing.T) {
+	state := fileFolderResourceModel{
+		ID:        types.StringValue("10001"),
+		UpdatedAt: types.StringValue("2026-08-01T00:00:02Z"),
+	}
+	older := hubspot.FileFolder{ID: "10001", UpdatedAt: "2026-08-01T00:00:01Z"}
+	if !folderSnapshotOlderThanState(older, state) {
+		t.Fatal("older same-identity revision was not recognized as stale")
+	}
+	for _, folder := range []hubspot.FileFolder{
+		{ID: "10001", UpdatedAt: "2026-08-01T00:00:02Z"},
+		{ID: "10001", UpdatedAt: "2026-08-01T00:00:03Z"},
+		{ID: "10002", UpdatedAt: "2026-08-01T00:00:01Z"},
+		{ID: "10001", UpdatedAt: "invalid"},
+	} {
+		if folderSnapshotOlderThanState(folder, state) {
+			t.Fatalf("non-stale folder was classified as stale: %#v", folder)
+		}
+	}
+}
+
 func TestManagedFileUpdateReadBackRetriesUntilExactValuesConverge(t *testing.T) {
 	reads := 0
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

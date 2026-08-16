@@ -54,7 +54,24 @@ type FolderUpdateTask struct {
 	ID         string            `json:"id"`
 	Status     string            `json:"status"`
 	Errors     []json.RawMessage `json:"errors"`
+	Result     *FileFolder       `json:"result"`
 	RetryAfter time.Duration     `json:"-"`
+}
+
+func (t *FolderUpdateTask) UnmarshalJSON(data []byte) error {
+	type folderUpdateTaskWire FolderUpdateTask
+	var decoded struct {
+		folderUpdateTaskWire
+		TaskID string `json:"taskId"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*t = FolderUpdateTask(decoded.folderUpdateTaskWire)
+	if t.ID == "" {
+		t.ID = decoded.TaskID
+	}
+	return nil
 }
 
 type ManagedFile struct {
