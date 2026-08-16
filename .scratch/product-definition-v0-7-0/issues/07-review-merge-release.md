@@ -64,3 +64,12 @@ Blocked by: 01, 02, 03, 04, 05, 06
   follow-up changes no resource semantics: it extends only the exact descendant
   GET convergence boundary beyond the live-observed window and gives the two
   affected helper actions enough enclosing time to complete or fail closed.
+- 2026-08-16: Provider PR 87 merged the 142-second exact descendant GET window
+  as `0b364529b5eb330bae0f841898c6876e974d8c27`. Exact-main Required run
+  31915598967 passed. Protected maintenance run 31915696685 crossed the prior
+  87-second boundary and again received terminal completion for the documented
+  asynchronous hierarchy update, but the exact child-folder GET remained stale
+  through the full 142-second repair verification. Further delay is no longer
+  justified. The follow-up keeps generated ID as the sole identity and adds a
+  parent-scoped folder search as an independent read-back surface, accepting
+  only the result whose generated ID exactly matches the known child ID.

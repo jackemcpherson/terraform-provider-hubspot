@@ -835,6 +835,7 @@ func TestWaitForNorthstarDescendantPathConvergence(t *testing.T) {
 	t.Cleanup(func() { northstarDescendantPathConvergenceDelays = originalDelays })
 
 	attempts := 0
+	searches := 0
 	folder, err := waitForNorthstarDescendantPath(context.Background(), func(context.Context, string) (hubspot.FileFolder, error) {
 		attempts++
 		path := "/old/child"
@@ -842,22 +843,60 @@ func TestWaitForNorthstarDescendantPathConvergence(t *testing.T) {
 			path = "/current/child"
 		}
 		return hubspot.FileFolder{ID: "11", Path: path}, nil
-	}, "11", func(folder hubspot.FileFolder) bool {
+	}, func(context.Context, *string, string) ([]hubspot.FileFolder, error) {
+		searches++
+		return nil, nil
+	}, "10", "11", func(folder hubspot.FileFolder) bool {
 		return folder.Path == "/current/child"
 	})
-	if err != nil || attempts != len(northstarDescendantPathConvergenceDelays) || folder.Path != "/current/child" {
-		t.Fatalf("folder convergence = %#v after %d attempts, %v", folder, attempts, err)
+	if err != nil || attempts != len(northstarDescendantPathConvergenceDelays) || searches != attempts-1 || folder.Path != "/current/child" {
+		t.Fatalf("folder convergence = %#v after %d reads and %d searches, %v", folder, attempts, searches, err)
 	}
 
 	attempts = 0
+	searches = 0
 	_, err = waitForNorthstarDescendantPath(context.Background(), func(context.Context, string) (hubspot.FileFolder, error) {
 		attempts++
 		return hubspot.FileFolder{ID: "11", Path: "/old/child"}, nil
-	}, "11", func(folder hubspot.FileFolder) bool {
+	}, func(_ context.Context, parentID *string, _ string) ([]hubspot.FileFolder, error) {
+		searches++
+		if parentID == nil || *parentID != "10" {
+			t.Fatalf("search parent = %v", parentID)
+		}
+		return []hubspot.FileFolder{{ID: "12", Path: "/current/child"}, {ID: "11", Path: "/old/child"}}, nil
+	}, "10", "11", func(folder hubspot.FileFolder) bool {
 		return folder.Path == "/current/child"
 	})
-	if !errors.Is(err, errNorthstarFolderReadBack) || attempts != len(northstarDescendantPathConvergenceDelays) {
-		t.Fatalf("folder exhaustion after %d attempts = %v", attempts, err)
+	if !errors.Is(err, errNorthstarFolderReadBack) || attempts != len(northstarDescendantPathConvergenceDelays) || searches != attempts {
+		t.Fatalf("folder exhaustion after %d reads and %d searches = %v", attempts, searches, err)
+	}
+
+	attempts = 0
+	searches = 0
+	folder, err = waitForNorthstarDescendantPath(context.Background(), func(context.Context, string) (hubspot.FileFolder, error) {
+		attempts++
+		return hubspot.FileFolder{ID: "11", Path: "/old/child"}, nil
+	}, func(context.Context, *string, string) ([]hubspot.FileFolder, error) {
+		searches++
+		return []hubspot.FileFolder{{ID: "11", Path: "/current/child"}}, nil
+	}, "10", "11", func(folder hubspot.FileFolder) bool {
+		return folder.Path == "/current/child"
+	})
+	if err != nil || attempts != 1 || searches != 1 || folder.ID != "11" || folder.Path != "/current/child" {
+		t.Fatalf("search read-back = %#v after %d reads and %d searches, %v", folder, attempts, searches, err)
+	}
+
+	searches = 0
+	_, err = waitForNorthstarDescendantPath(context.Background(), func(context.Context, string) (hubspot.FileFolder, error) {
+		return hubspot.FileFolder{ID: "12", Path: "/old/child"}, nil
+	}, func(context.Context, *string, string) ([]hubspot.FileFolder, error) {
+		searches++
+		return []hubspot.FileFolder{{ID: "11", Path: "/current/child"}}, nil
+	}, "10", "11", func(folder hubspot.FileFolder) bool {
+		return folder.Path == "/current/child"
+	})
+	if err == nil || !strings.Contains(err.Error(), "identity") || searches != 0 {
+		t.Fatalf("mismatched GET identity with %d searches = %v", searches, err)
 	}
 }
 

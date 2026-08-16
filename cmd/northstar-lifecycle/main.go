@@ -654,7 +654,7 @@ func verifyNorthstarFiles(ctx context.Context, clients *hubspot.ClientSet, ids n
 		return fmt.Errorf("read Northstar brand folder: %s", acceptance.SanitizedHubSpotError(err))
 	}
 	expectedDownloadsPath := "/" + names.BrandFolder + "/" + names.DownloadsFolder
-	downloads, err := waitForNorthstarDescendantPath(ctx, clients.FileFolders.Get, ids.DownloadsFolder, func(folder hubspot.FileFolder) bool {
+	downloads, err := waitForNorthstarDescendantPath(ctx, clients.FileFolders.Get, clients.FileFolders.Search, ids.BrandFolder, ids.DownloadsFolder, func(folder hubspot.FileFolder) bool {
 		return folder.ID == ids.DownloadsFolder && folder.Name == names.DownloadsFolder && folder.ParentFolderID != nil && *folder.ParentFolderID == ids.BrandFolder && folder.Path == expectedDownloadsPath
 	})
 	if err != nil {
@@ -690,9 +690,16 @@ func verifyNorthstarFiles(ctx context.Context, clients *hubspot.ClientSet, ids n
 	return nil
 }
 
-func waitForNorthstarFolder(ctx context.Context, read func(context.Context, string) (hubspot.FileFolder, error), id string, matches func(hubspot.FileFolder) bool, delays []time.Duration) (hubspot.FileFolder, error) {
+func waitForNorthstarDescendantPath(
+	ctx context.Context,
+	read func(context.Context, string) (hubspot.FileFolder, error),
+	search func(context.Context, *string, string) ([]hubspot.FileFolder, error),
+	parentID string,
+	id string,
+	matches func(hubspot.FileFolder) bool,
+) (hubspot.FileFolder, error) {
 	var observed hubspot.FileFolder
-	for _, delay := range delays {
+	for _, delay := range northstarDescendantPathConvergenceDelays {
 		if delay > 0 {
 			timer := time.NewTimer(delay)
 			select {
@@ -706,16 +713,28 @@ func waitForNorthstarFolder(ctx context.Context, read func(context.Context, stri
 		if err != nil {
 			return folder, err
 		}
+		if folder.ID != id {
+			return folder, errors.New("northstar folder read-back identity mismatch")
+		}
 		observed = folder
 		if matches(folder) {
 			return folder, nil
 		}
+		folders, err := search(ctx, &parentID, "")
+		if err != nil {
+			return observed, err
+		}
+		for _, candidate := range folders {
+			if candidate.ID != id {
+				continue
+			}
+			observed = candidate
+			if matches(candidate) {
+				return candidate, nil
+			}
+		}
 	}
 	return observed, errNorthstarFolderReadBack
-}
-
-func waitForNorthstarDescendantPath(ctx context.Context, read func(context.Context, string) (hubspot.FileFolder, error), id string, matches func(hubspot.FileFolder) bool) (hubspot.FileFolder, error) {
-	return waitForNorthstarFolder(ctx, read, id, matches, northstarDescendantPathConvergenceDelays)
 }
 
 func waitForNorthstarFolderTask(ctx context.Context, read func(context.Context, string) (hubspot.FolderUpdateTask, error), id string, delays []time.Duration) error {
@@ -836,7 +855,7 @@ func driftNorthstarFolderPath(ctx context.Context, clients *hubspot.ClientSet, p
 		return fmt.Errorf("author Northstar folder path drift: %s", acceptance.SanitizedHubSpotError(err))
 	}
 	expectedPath := "/" + names.BrandFolderRefresh + "/" + names.DownloadsFolder
-	child, err := waitForNorthstarDescendantPath(ctx, clients.FileFolders.Get, childID, func(folder hubspot.FileFolder) bool {
+	child, err := waitForNorthstarDescendantPath(ctx, clients.FileFolders.Get, clients.FileFolders.Search, parentID, childID, func(folder hubspot.FileFolder) bool {
 		return folder.ID == childID && folder.ParentFolderID != nil && *folder.ParentFolderID == parentID && folder.Path == expectedPath
 	})
 	if err != nil {
