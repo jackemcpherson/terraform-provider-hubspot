@@ -4,8 +4,9 @@ This map tracks the append-only work needed to publish v0.7.0.
 
 ## Frontier
 
-- None. The release ticket is claimed while interrupted Northstar recovery,
-  hosted reruns, and publication remain.
+- None. Every implementation ticket is resolved. Immutable publication runs
+  from the final reviewed main commit after its Required and protected
+  maintenance checks pass.
 
 ## Decisions So Far
 
@@ -22,3 +23,9 @@ This map tracks the append-only work needed to publish v0.7.0.
   proves both engines, guarded archival, and cumulative helpers.
 - The [cumulative demo](issues/05-extend-cumulative-demo.md) composes the
   stable-keyed module without touching the existing dirty worktree.
+- The [documentation ticket](issues/06-publish-documentation.md) publishes the
+  resource, operational, portal, and v0.7.0 release surfaces and pins the exact
+  merged demo.
+- The [release ticket](issues/07-review-merge-release.md) records the fixed-point
+  reviews, hosted checks, live lifecycle evidence, and immutable publication
+  decision.
