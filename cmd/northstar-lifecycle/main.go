@@ -125,7 +125,7 @@ func main() {
 
 func northstarActionTimeout(action string) time.Duration {
 	switch action {
-	case "drift-folder-path":
+	case "drift-folder-path", "repair-folder-path":
 		return 4 * time.Minute
 	case "verify-files":
 		return 3 * time.Minute
@@ -254,6 +254,15 @@ func execute(ctx context.Context, action string, ids []string, clients *hubspot.
 			return "", verifyNorthstarStagedFileDrift(ctx, clients, ids[0], ids[1], fileID, names)
 		}
 		return "", driftNorthstarFolderPath(ctx, clients, ids[0], ids[1], names)
+	case "repair-folder-path":
+		if len(ids) != 2 {
+			return "", errors.New("northstar parent and child folder IDs are required for path repair")
+		}
+		names, err := northstarFilesNamesFromEnvironment()
+		if err != nil {
+			return "", err
+		}
+		return "", repairNorthstarDescendantPath(ctx, clients, ids[0], ids[1], names)
 	case "verify-files-terminal":
 		if len(ids) != 4 {
 			return "", errors.New("four Northstar Files generated IDs are required for terminal verification")
@@ -866,6 +875,55 @@ func driftNorthstarFolderPath(ctx context.Context, clients *hubspot.ClientSet, p
 	}
 	if child.ID != childID || child.ParentFolderID == nil || *child.ParentFolderID != parentID || child.Path != expectedPath {
 		return errors.New("northstar child folder path drift was not observable with preserved identity")
+	}
+	return nil
+}
+
+func repairNorthstarDescendantPath(ctx context.Context, clients *hubspot.ClientSet, parentID, childID string, names northstarFilesNames) error {
+	parent, err := clients.FileFolders.Get(ctx, parentID)
+	if err != nil {
+		return fmt.Errorf("read Northstar folder-repair parent: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	child, err := clients.FileFolders.Get(ctx, childID)
+	if err != nil {
+		return fmt.Errorf("read Northstar folder-repair child: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	if parent.ID != parentID || parent.Name != names.BrandFolder || parent.ParentFolderID != nil || child.ID != childID || child.Name != names.DownloadsFolder || child.ParentFolderID == nil || *child.ParentFolderID != parentID {
+		return errors.New("northstar folder-repair identities did not match the exact owned configuration")
+	}
+	children, err := clients.FileFolders.Search(ctx, &parentID, "")
+	if err != nil {
+		return fmt.Errorf("search Northstar folder-repair parent: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	found := false
+	for _, candidate := range children {
+		if candidate.ID == childID && candidate.Name == names.DownloadsFolder && candidate.ParentFolderID != nil && *candidate.ParentFolderID == parentID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return errors.New("northstar folder-repair identities did not match the exact owned configuration")
+	}
+	task, err := clients.FileFolders.Update(ctx, childID, hubspot.FileFolderWrite{Name: names.DownloadsFolder, ParentFolderID: &parentID})
+	if err != nil {
+		return fmt.Errorf("repair Northstar descendant folder path: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	if err := waitForNorthstarFolderTask(ctx, clients.FileFolders.GetUpdateTask, task.ID, northstarFolderTaskConvergenceDelays); err != nil {
+		return fmt.Errorf("repair Northstar descendant folder path: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	expectedPath := "/" + names.BrandFolder + "/" + names.DownloadsFolder
+	repaired, err := waitForNorthstarDescendantPath(ctx, clients.FileFolders.Get, clients.FileFolders.Search, parentID, childID, func(folder hubspot.FileFolder) bool {
+		return folder.ID == childID && folder.Name == names.DownloadsFolder && folder.ParentFolderID != nil && *folder.ParentFolderID == parentID && folder.Path == expectedPath
+	})
+	if err != nil {
+		if errors.Is(err, errNorthstarFolderReadBack) {
+			return errors.New("northstar repaired child folder descendant path did not converge")
+		}
+		return fmt.Errorf("read Northstar repaired child folder: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	if repaired.ID != childID || repaired.Path != expectedPath {
+		return errors.New("northstar repaired child folder did not match canonical exact-ID state")
 	}
 	return nil
 }
