@@ -82,3 +82,13 @@ Blocked by: 01, 02, 03, 04, 05, 06
   `1dac3295f66ebe35d3aeeee32ef6843366989016`.
   The provider follow-up pins that exact demo merge and implements the helper
   action with exact parent, child, placement, and owned-name preconditions.
+- 2026-08-16: Provider PR 89 merged child-update repair as
+  `52af98d9c23fc24d4079eaae109ec691e78a7878`. Exact-main Required run
+  31917402328 passed. Protected run 31917496856 showed a terminal same-value
+  child update did not recompute its path. The follow-up moves only two exact
+  owned files, renames the empty child away and back, restores both files, and
+  verifies every identity.
+- 2026-08-16: Demo PR 28 passed hosted run 31918561660 and merged as
+  `c3921ae7a86bdaabdd2524127212a2c58d640f4d`. Provider maintenance pins that
+  exact merge. Fixed-point specification, standards, test-quality, and Actions
+  reviews found no remaining hard issues.

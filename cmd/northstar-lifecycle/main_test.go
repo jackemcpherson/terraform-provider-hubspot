@@ -31,7 +31,7 @@ func TestNorthstarActionTimeoutPreservesFolderDriftMargin(t *testing.T) {
 	if timeout := northstarActionTimeout("verify-files"); timeout != 3*time.Minute {
 		t.Fatalf("file verification timeout = %s", timeout)
 	}
-	if timeout := northstarActionTimeout("repair-folder-path"); timeout != 4*time.Minute {
+	if timeout := northstarActionTimeout("repair-folder-path"); timeout != 10*time.Minute {
 		t.Fatalf("folder repair timeout = %s", timeout)
 	}
 	if timeout := northstarActionTimeout("cleanup"); timeout != 2*time.Minute {
@@ -45,14 +45,18 @@ func TestNorthstarActionTimeoutPreservesFolderDriftMargin(t *testing.T) {
 	for _, delay := range northstarDescendantPathConvergenceDelays {
 		descendantDelay += delay
 	}
+	var filesDelay time.Duration
+	for _, delay := range northstarFilesConvergenceDelays {
+		filesDelay += delay
+	}
 	if timeout := northstarActionTimeout("verify-files"); timeout <= descendantDelay+minimumMargin {
 		t.Fatalf("file verification timeout = %s, convergence = %s", timeout, descendantDelay)
 	}
 	if timeout := northstarActionTimeout("drift-folder-path"); timeout <= taskDelay+descendantDelay+minimumMargin {
 		t.Fatalf("folder drift timeout = %s, convergence = %s", timeout, taskDelay+descendantDelay)
 	}
-	if timeout := northstarActionTimeout("repair-folder-path"); timeout <= taskDelay+descendantDelay+minimumMargin {
-		t.Fatalf("folder repair timeout = %s, convergence = %s", timeout, taskDelay+descendantDelay)
+	if timeout := northstarActionTimeout("repair-folder-path"); timeout <= 2*(taskDelay+descendantDelay+filesDelay)+minimumMargin {
+		t.Fatalf("folder repair timeout = %s, convergence = %s", timeout, 2*(taskDelay+descendantDelay+filesDelay))
 	}
 }
 
@@ -427,6 +431,119 @@ func TestExecuteCleanupRejectsUnexpectedProductBeforeMutation(t *testing.T) {
 	}
 }
 
+func TestExecuteCleanupRejectsFileInsideTemporaryRepairFolder(t *testing.T) {
+	t.Setenv("HUBSPOT_NORTHSTAR_MEMBERSHIP_EMAIL", northstarTestMembershipEmail)
+	t.Setenv("HUBSPOT_NORTHSTAR_FILES_PREFIX", "ns_1a2b3c4d_o_")
+	names, err := northstarFilesNamesFromEnvironment()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake := acceptance.NewFakeHubSpot("token", 123)
+	server := httptest.NewServer(fake)
+	defer server.Close()
+	origin, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clients, err := hubspot.NewClientSet(hubspot.TransportConfig{BaseURL: origin, AccessToken: "token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	brand, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: names.BrandFolder})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repair, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: names.DownloadsFolderRepair, ParentFolderID: &brand.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := clients.Files.Upload(ctx, hubspot.FileUpload{Name: names.PrivateFile, FolderID: repair.ID, Access: "PRIVATE", Bytes: []byte("Northstar private file\n")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(ctx, "cleanup", nil, clients); err == nil || !strings.Contains(err.Error(), "unexpected placement") {
+		t.Fatalf("cleanup error = %v", err)
+	}
+	if current, err := clients.Files.Get(ctx, file.ID); err != nil || current.FolderID != repair.ID {
+		t.Fatalf("failed preflight mutated repair-folder file = %#v, %v", current, err)
+	}
+	if _, err := clients.FileFolders.Get(ctx, repair.ID); err != nil {
+		t.Fatal("failed preflight mutated the temporary repair folder")
+	}
+	if _, err := clients.FileFolders.Get(ctx, brand.ID); err != nil {
+		t.Fatal("failed preflight mutated the parent folder")
+	}
+}
+
+func TestExecuteCleansReachableFolderRepairCheckpoints(t *testing.T) {
+	testCases := map[string]struct {
+		childRepairName bool
+		privateInParent bool
+		publicInParent  bool
+	}{
+		"files staged under parent": {privateInParent: true, publicInParent: true},
+		"temporary empty child":     {childRepairName: true, privateInParent: true, publicInParent: true},
+		"split outbound move":       {privateInParent: true},
+		"split restore move":        {publicInParent: true},
+	}
+	for name, checkpoint := range testCases {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("HUBSPOT_NORTHSTAR_MEMBERSHIP_EMAIL", northstarTestMembershipEmail)
+			t.Setenv("HUBSPOT_NORTHSTAR_FILES_PREFIX", "ns_1a2b3c4d_o_")
+			names, err := northstarFilesNamesFromEnvironment()
+			if err != nil {
+				t.Fatal(err)
+			}
+			fake := acceptance.NewFakeHubSpot("token", 123)
+			server := httptest.NewServer(fake)
+			defer server.Close()
+			origin, err := url.Parse(server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			clients, err := hubspot.NewClientSet(hubspot.TransportConfig{BaseURL: origin, AccessToken: "token"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx := context.Background()
+			brand, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: names.BrandFolder})
+			if err != nil {
+				t.Fatal(err)
+			}
+			childName := names.DownloadsFolder
+			if checkpoint.childRepairName {
+				childName = names.DownloadsFolderRepair
+			}
+			downloads, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: childName, ParentFolderID: &brand.ID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			privateFolderID := downloads.ID
+			if checkpoint.privateInParent {
+				privateFolderID = brand.ID
+			}
+			publicFolderID := downloads.ID
+			if checkpoint.publicInParent {
+				publicFolderID = brand.ID
+			}
+			if _, err := clients.Files.Upload(ctx, hubspot.FileUpload{Name: names.PrivateFile, FolderID: privateFolderID, Access: "PRIVATE", Bytes: []byte("Northstar private file\n")}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := clients.Files.Upload(ctx, hubspot.FileUpload{Name: names.PublicFile, FolderID: publicFolderID, Access: "PUBLIC_NOT_INDEXABLE", Bytes: []byte("Northstar public file\n")}); err != nil {
+				t.Fatal(err)
+			}
+			result, err := execute(ctx, "cleanup", nil, clients)
+			if err != nil || result != "Northstar cleanup verified zero active owned configuration" {
+				t.Fatalf("cleanup result = %q, %v", result, err)
+			}
+			if files, folders := fake.ActiveManagedFileIDs(), fake.ActiveFileFolderIDs(); len(files) != 0 || len(folders) != 0 {
+				t.Fatalf("cleanup left files %v or folders %v", files, folders)
+			}
+		})
+	}
+}
+
 func TestExecuteCleanupRejectsUnsafeMembershipBeforeMutation(t *testing.T) {
 	testCases := map[string]func(*acceptance.FakeHubSpot, string){
 		"Super Admin": func(fake *acceptance.FakeHubSpot, id string) {
@@ -736,6 +853,14 @@ func TestExecuteManagesNorthstarFilesLifecycle(t *testing.T) {
 	if err != nil || drifted.Name != names.PublicFileDrift || drifted.Access != "PRIVATE" || drifted.FileMD5 == publicFile.FileMD5 {
 		t.Fatalf("drifted file = %#v, %v", drifted, err)
 	}
+	publicName, publicAccess := names.PublicFile, "PUBLIC_NOT_INDEXABLE"
+	repairedPublic, err := clients.Files.Update(ctx, publicFile.ID, hubspot.FilePatch{Name: &publicName, Access: &publicAccess})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := clients.Files.Replace(ctx, publicFile.ID, hubspot.FileReplacement{Name: repairedPublic.Name, Access: repairedPublic.Access, Bytes: []byte("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1 1\"><path d=\"M0 0h1v1H0z\"/></svg>\n")}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := execute(ctx, "drift-folder-path", []string{brand.ID, downloads.ID}, clients); err != nil {
 		t.Fatal(err)
 	}
@@ -753,10 +878,14 @@ func TestExecuteManagesNorthstarFilesLifecycle(t *testing.T) {
 	if err != nil || staleDownloads.Path != "/"+names.BrandFolderRefresh+"/"+names.DownloadsFolder {
 		t.Fatalf("stale repaired descendant = %#v, %v", staleDownloads, err)
 	}
-	if _, err := execute(ctx, "repair-folder-path", []string{brand.ID, downloads.ID}, clients); err != nil {
+	privatePatches, privateReplacements := fake.ManagedFileWriteCounts(privateFile.ID)
+	publicPatches, publicReplacements := fake.ManagedFileWriteCounts(publicFile.ID)
+	privatePatchHistory := fake.ManagedFilePatchHistory(privateFile.ID)
+	publicPatchHistory := fake.ManagedFilePatchHistory(publicFile.ID)
+	if _, err := execute(ctx, "repair-folder-path", []string{brand.ID, downloads.ID, privateFile.ID, publicFile.ID}, clients); err != nil {
 		t.Fatal(err)
 	}
-	if patches, asyncUpdates := fake.FileFolderWriteCounts(downloads.ID); patches != 0 || asyncUpdates != 1 {
+	if patches, asyncUpdates := fake.FileFolderWriteCounts(downloads.ID); patches != 0 || asyncUpdates != 2 {
 		t.Fatalf("Northstar child folder repair writes = PATCH %d, async update %d", patches, asyncUpdates)
 	}
 	if patches, asyncUpdates := fake.FileFolderWriteCounts(brand.ID); patches != 1 || asyncUpdates != 1 {
@@ -766,13 +895,42 @@ func TestExecuteManagesNorthstarFilesLifecycle(t *testing.T) {
 	if err != nil || repairedDownloads.Path != "/"+names.BrandFolder+"/"+names.DownloadsFolder {
 		t.Fatalf("repaired descendant = %#v, %v", repairedDownloads, err)
 	}
+	if patches, replacements := fake.ManagedFileWriteCounts(privateFile.ID); patches != privatePatches+2 || replacements != privateReplacements {
+		t.Fatalf("Northstar private file repair writes = PATCH %d, replacement %d", patches, replacements)
+	}
+	if patches, replacements := fake.ManagedFileWriteCounts(publicFile.ID); patches != publicPatches+2 || replacements != publicReplacements {
+		t.Fatalf("Northstar public file repair writes = PATCH %d, replacement %d", patches, replacements)
+	}
+	brandID, downloadsID := brand.ID, downloads.ID
+	wantFileMoves := []hubspot.FilePatch{{FolderID: &brandID}, {FolderID: &downloadsID}}
+	if history := fake.ManagedFilePatchHistory(privateFile.ID); !reflect.DeepEqual(history[len(privatePatchHistory):], wantFileMoves) {
+		t.Fatalf("Northstar private file repair PATCHes = %#v", history[len(privatePatchHistory):])
+	}
+	if history := fake.ManagedFilePatchHistory(publicFile.ID); !reflect.DeepEqual(history[len(publicPatchHistory):], wantFileMoves) {
+		t.Fatalf("Northstar public file repair PATCHes = %#v", history[len(publicPatchHistory):])
+	}
+	wantFolderUpdates := []hubspot.FileFolderWrite{
+		{Name: names.DownloadsFolderRepair, ParentFolderID: &brandID},
+		{Name: names.DownloadsFolder, ParentFolderID: &brandID},
+	}
+	if history := fake.FileFolderAsyncUpdateHistory(downloads.ID); !reflect.DeepEqual(history, wantFolderUpdates) {
+		t.Fatalf("Northstar child folder repair updates = %#v", history)
+	}
+	currentPrivate, err := clients.Files.Get(ctx, privateFile.ID)
+	if err != nil || !northstarRepairFileMatches(currentPrivate, privateFile, downloads.ID) {
+		t.Fatalf("repaired private file = %#v, %v", currentPrivate, err)
+	}
+	currentPublic, err := clients.Files.Get(ctx, publicFile.ID)
+	if err != nil || !northstarRepairFileMatches(currentPublic, publicFile, downloads.ID) {
+		t.Fatalf("repaired public file = %#v, %v", currentPublic, err)
+	}
 	repairedBrand, err := clients.FileFolders.Get(ctx, brand.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	brandPatches, brandAsyncUpdates := fake.FileFolderWriteCounts(brand.ID)
 	childPatches, childAsyncUpdates := fake.FileFolderWriteCounts(downloads.ID)
-	if _, err := execute(ctx, "repair-folder-path", []string{downloads.ID, brand.ID}, clients); err == nil || !strings.Contains(err.Error(), "identities") {
+	if _, err := execute(ctx, "repair-folder-path", []string{downloads.ID, brand.ID, privateFile.ID, publicFile.ID}, clients); err == nil || !strings.Contains(err.Error(), "identities") {
 		t.Fatalf("unsafe folder repair = %v", err)
 	}
 	afterBrand, err := clients.FileFolders.Get(ctx, brand.ID)
@@ -840,6 +998,14 @@ func TestExecuteRejectsFolderRepairWhenParentSearchOmitsExactChild(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
+	privateFile, err := clients.Files.Upload(ctx, hubspot.FileUpload{Name: names.PrivateFile, FolderID: downloads.ID, Access: "PRIVATE", Bytes: []byte("Northstar private file\n")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicFile, err := clients.Files.Upload(ctx, hubspot.FileUpload{Name: names.PublicFile, FolderID: downloads.ID, Access: "PUBLIC_NOT_INDEXABLE", Bytes: []byte("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1 1\"><path d=\"M0 0h1v1H0z\"/></svg>\n")})
+	if err != nil {
+		t.Fatal(err)
+	}
 	blockedParentID = brand.ID
 	before, err := clients.FileFolders.Get(ctx, downloads.ID)
 	if err != nil {
@@ -851,7 +1017,17 @@ func TestExecuteRejectsFolderRepairWhenParentSearchOmitsExactChild(t *testing.T)
 	}
 	parentPatches, parentAsyncUpdates := fake.FileFolderWriteCounts(brand.ID)
 	childPatches, childAsyncUpdates := fake.FileFolderWriteCounts(downloads.ID)
-	if _, err := execute(ctx, "repair-folder-path", []string{brand.ID, downloads.ID}, clients); err == nil || !strings.Contains(err.Error(), "identities") {
+	privateBefore, err := clients.Files.Get(ctx, privateFile.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicBefore, err := clients.Files.Get(ctx, publicFile.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privatePatches, privateReplacements := fake.ManagedFileWriteCounts(privateFile.ID)
+	publicPatches, publicReplacements := fake.ManagedFileWriteCounts(publicFile.ID)
+	if _, err := execute(ctx, "repair-folder-path", []string{brand.ID, downloads.ID, privateFile.ID, publicFile.ID}, clients); err == nil || !strings.Contains(err.Error(), "identities") {
 		t.Fatalf("folder repair without searched identity = %v", err)
 	}
 	after, err := clients.FileFolders.Get(ctx, downloads.ID)
@@ -864,7 +1040,17 @@ func TestExecuteRejectsFolderRepairWhenParentSearchOmitsExactChild(t *testing.T)
 	}
 	afterParentPatches, afterParentAsyncUpdates := fake.FileFolderWriteCounts(brand.ID)
 	afterChildPatches, afterChildAsyncUpdates := fake.FileFolderWriteCounts(downloads.ID)
-	if !reflect.DeepEqual(after, before) || !reflect.DeepEqual(afterParent, beforeParent) || afterParentPatches != parentPatches || afterParentAsyncUpdates != parentAsyncUpdates || afterChildPatches != childPatches || afterChildAsyncUpdates != childAsyncUpdates {
+	privateAfter, err := clients.Files.Get(ctx, privateFile.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicAfter, err := clients.Files.Get(ctx, publicFile.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterPrivatePatches, afterPrivateReplacements := fake.ManagedFileWriteCounts(privateFile.ID)
+	afterPublicPatches, afterPublicReplacements := fake.ManagedFileWriteCounts(publicFile.ID)
+	if !reflect.DeepEqual(after, before) || !reflect.DeepEqual(afterParent, beforeParent) || !reflect.DeepEqual(privateAfter, privateBefore) || !reflect.DeepEqual(publicAfter, publicBefore) || afterParentPatches != parentPatches || afterParentAsyncUpdates != parentAsyncUpdates || afterChildPatches != childPatches || afterChildAsyncUpdates != childAsyncUpdates || afterPrivatePatches != privatePatches || afterPrivateReplacements != privateReplacements || afterPublicPatches != publicPatches || afterPublicReplacements != publicReplacements {
 		t.Fatalf("rejected folder repair changed state or writes: parent=%#v child=%#v writes=%d/%d %d/%d", afterParent, after, afterParentPatches, afterParentAsyncUpdates, afterChildPatches, afterChildAsyncUpdates)
 	}
 }
@@ -921,6 +1107,179 @@ func TestNorthstarFilesPrefixRejectsUnboundedNames(t *testing.T) {
 	}
 }
 
+func TestExecuteRejectsInvalidFolderRepairIdentitiesBeforeMutation(t *testing.T) {
+	testCases := map[string]func(northstarFilesIDs, string) []string{
+		"invalid parent": func(ids northstarFilesIDs, _ string) []string {
+			return []string{"99999", ids.DownloadsFolder, ids.PrivateFile, ids.PublicFile}
+		},
+		"invalid child": func(ids northstarFilesIDs, _ string) []string {
+			return []string{ids.BrandFolder, "99999", ids.PrivateFile, ids.PublicFile}
+		},
+		"invalid private file": func(ids northstarFilesIDs, foreign string) []string {
+			return []string{ids.BrandFolder, ids.DownloadsFolder, foreign, ids.PublicFile}
+		},
+		"invalid public file": func(ids northstarFilesIDs, foreign string) []string {
+			return []string{ids.BrandFolder, ids.DownloadsFolder, ids.PrivateFile, foreign}
+		},
+		"swapped folders": func(ids northstarFilesIDs, _ string) []string {
+			return []string{ids.DownloadsFolder, ids.BrandFolder, ids.PrivateFile, ids.PublicFile}
+		},
+		"swapped files": func(ids northstarFilesIDs, _ string) []string {
+			return []string{ids.BrandFolder, ids.DownloadsFolder, ids.PublicFile, ids.PrivateFile}
+		},
+		"wrong arity": func(ids northstarFilesIDs, _ string) []string {
+			return []string{ids.BrandFolder, ids.DownloadsFolder, ids.PrivateFile}
+		},
+		"excess arity": func(ids northstarFilesIDs, foreign string) []string {
+			return []string{ids.BrandFolder, ids.DownloadsFolder, ids.PrivateFile, ids.PublicFile, foreign}
+		},
+	}
+	for name, inputs := range testCases {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("HUBSPOT_NORTHSTAR_FILES_PREFIX", "ns_1a2b3c4d_o_")
+			names, err := northstarFilesNamesFromEnvironment()
+			if err != nil {
+				t.Fatal(err)
+			}
+			fake := acceptance.NewFakeHubSpot("token", 123)
+			server := httptest.NewServer(fake)
+			defer server.Close()
+			origin, err := url.Parse(server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			clients, err := hubspot.NewClientSet(hubspot.TransportConfig{BaseURL: origin, AccessToken: "token"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx := context.Background()
+			brand, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: names.BrandFolder})
+			if err != nil {
+				t.Fatal(err)
+			}
+			downloads, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: names.DownloadsFolder, ParentFolderID: &brand.ID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			privateFile, err := clients.Files.Upload(ctx, hubspot.FileUpload{Name: names.PrivateFile, FolderID: downloads.ID, Access: "PRIVATE", Bytes: []byte("Northstar private file\n")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			publicFile, err := clients.Files.Upload(ctx, hubspot.FileUpload{Name: names.PublicFile, FolderID: downloads.ID, Access: "PUBLIC_NOT_INDEXABLE", Bytes: []byte("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1 1\"><path d=\"M0 0h1v1H0z\"/></svg>\n")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			foreign, err := clients.Files.Upload(ctx, hubspot.FileUpload{Name: "foreign.txt", FolderID: downloads.ID, Access: "PRIVATE", Bytes: []byte("foreign\n")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ids := northstarFilesIDs{BrandFolder: brand.ID, DownloadsFolder: downloads.ID, PrivateFile: privateFile.ID, PublicFile: publicFile.ID}
+			before := []any{brand, downloads, privateFile, publicFile, foreign}
+			parentPatches, parentAsync := fake.FileFolderWriteCounts(brand.ID)
+			childPatches, childAsync := fake.FileFolderWriteCounts(downloads.ID)
+			privatePatches, privateReplacements := fake.ManagedFileWriteCounts(privateFile.ID)
+			publicPatches, publicReplacements := fake.ManagedFileWriteCounts(publicFile.ID)
+			foreignPatches, foreignReplacements := fake.ManagedFileWriteCounts(foreign.ID)
+			if _, err := execute(ctx, "repair-folder-path", inputs(ids, foreign.ID), clients); err == nil {
+				t.Fatal("invalid folder-repair identities were accepted")
+			}
+			afterBrand, brandErr := clients.FileFolders.Get(ctx, brand.ID)
+			afterDownloads, downloadsErr := clients.FileFolders.Get(ctx, downloads.ID)
+			afterPrivate, privateErr := clients.Files.Get(ctx, privateFile.ID)
+			afterPublic, publicErr := clients.Files.Get(ctx, publicFile.ID)
+			afterForeign, foreignErr := clients.Files.Get(ctx, foreign.ID)
+			if brandErr != nil || downloadsErr != nil || privateErr != nil || publicErr != nil || foreignErr != nil || !reflect.DeepEqual([]any{afterBrand, afterDownloads, afterPrivate, afterPublic, afterForeign}, before) {
+				t.Fatalf("rejected repair changed objects: %#v %#v %#v %#v %#v", afterBrand, afterDownloads, afterPrivate, afterPublic, afterForeign)
+			}
+			afterParentPatches, afterParentAsync := fake.FileFolderWriteCounts(brand.ID)
+			afterChildPatches, afterChildAsync := fake.FileFolderWriteCounts(downloads.ID)
+			afterPrivatePatches, afterPrivateReplacements := fake.ManagedFileWriteCounts(privateFile.ID)
+			afterPublicPatches, afterPublicReplacements := fake.ManagedFileWriteCounts(publicFile.ID)
+			afterForeignPatches, afterForeignReplacements := fake.ManagedFileWriteCounts(foreign.ID)
+			if afterParentPatches != parentPatches || afterParentAsync != parentAsync || afterChildPatches != childPatches || afterChildAsync != childAsync || afterPrivatePatches != privatePatches || afterPrivateReplacements != privateReplacements || afterPublicPatches != publicPatches || afterPublicReplacements != publicReplacements || afterForeignPatches != foreignPatches || afterForeignReplacements != foreignReplacements {
+				t.Fatal("rejected repair sent a write")
+			}
+		})
+	}
+}
+
+func TestExecuteRejectsUnexpectedFolderRepairTopologyBeforeMutation(t *testing.T) {
+	testCases := map[string]func(context.Context, *hubspot.ClientSet, hubspot.FileFolder, hubspot.FileFolder, northstarFilesNames) (hubspot.FileFolder, error){
+		"sibling": func(ctx context.Context, clients *hubspot.ClientSet, brand, _ hubspot.FileFolder, names northstarFilesNames) (hubspot.FileFolder, error) {
+			return clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: names.DownloadsFolderRepair, ParentFolderID: &brand.ID})
+		},
+		"descendant": func(ctx context.Context, clients *hubspot.ClientSet, _, downloads hubspot.FileFolder, _ northstarFilesNames) (hubspot.FileFolder, error) {
+			return clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: "unowned", ParentFolderID: &downloads.ID})
+		},
+	}
+	for name, addUnexpected := range testCases {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("HUBSPOT_NORTHSTAR_FILES_PREFIX", "ns_1a2b3c4d_o_")
+			names, err := northstarFilesNamesFromEnvironment()
+			if err != nil {
+				t.Fatal(err)
+			}
+			fake := acceptance.NewFakeHubSpot("token", 123)
+			server := httptest.NewServer(fake)
+			defer server.Close()
+			origin, err := url.Parse(server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			clients, err := hubspot.NewClientSet(hubspot.TransportConfig{BaseURL: origin, AccessToken: "token"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx := context.Background()
+			brand, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: names.BrandFolder})
+			if err != nil {
+				t.Fatal(err)
+			}
+			downloads, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: names.DownloadsFolder, ParentFolderID: &brand.ID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			privateFile, err := clients.Files.Upload(ctx, hubspot.FileUpload{Name: names.PrivateFile, FolderID: downloads.ID, Access: "PRIVATE", Bytes: []byte("Northstar private file\n")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			publicFile, err := clients.Files.Upload(ctx, hubspot.FileUpload{Name: names.PublicFile, FolderID: downloads.ID, Access: "PUBLIC_NOT_INDEXABLE", Bytes: []byte("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1 1\"><path d=\"M0 0h1v1H0z\"/></svg>\n")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			unexpected, err := addUnexpected(ctx, clients, brand, downloads, names)
+			if err != nil {
+				t.Fatal(err)
+			}
+			beforeUnexpected := unexpected
+			beforeBrand, beforeDownloads := brand, downloads
+			parentPatches, parentAsync := fake.FileFolderWriteCounts(brand.ID)
+			childPatches, childAsync := fake.FileFolderWriteCounts(downloads.ID)
+			privatePatches, privateReplacements := fake.ManagedFileWriteCounts(privateFile.ID)
+			publicPatches, publicReplacements := fake.ManagedFileWriteCounts(publicFile.ID)
+			if _, err := execute(ctx, "repair-folder-path", []string{brand.ID, downloads.ID, privateFile.ID, publicFile.ID}, clients); err == nil {
+				t.Fatal("unexpected folder-repair topology was accepted")
+			}
+			afterUnexpected, err := clients.FileFolders.Get(ctx, unexpected.ID)
+			if err != nil || !reflect.DeepEqual(afterUnexpected, beforeUnexpected) {
+				t.Fatalf("rejected repair changed unexpected folder = %#v, %v", afterUnexpected, err)
+			}
+			afterBrand, brandErr := clients.FileFolders.Get(ctx, brand.ID)
+			afterDownloads, downloadsErr := clients.FileFolders.Get(ctx, downloads.ID)
+			if brandErr != nil || downloadsErr != nil || !reflect.DeepEqual(afterBrand, beforeBrand) || !reflect.DeepEqual(afterDownloads, beforeDownloads) {
+				t.Fatalf("rejected repair changed owned folders = %#v %#v", afterBrand, afterDownloads)
+			}
+			afterParentPatches, afterParentAsync := fake.FileFolderWriteCounts(brand.ID)
+			afterChildPatches, afterChildAsync := fake.FileFolderWriteCounts(downloads.ID)
+			afterPrivatePatches, afterPrivateReplacements := fake.ManagedFileWriteCounts(privateFile.ID)
+			afterPublicPatches, afterPublicReplacements := fake.ManagedFileWriteCounts(publicFile.ID)
+			if afterParentPatches != parentPatches || afterParentAsync != parentAsync || afterChildPatches != childPatches || afterChildAsync != childAsync || afterPrivatePatches != privatePatches || afterPrivateReplacements != privateReplacements || afterPublicPatches != publicPatches || afterPublicReplacements != publicReplacements {
+				t.Fatal("rejected topology sent a write")
+			}
+		})
+	}
+}
+
 func TestNorthstarFilesRunNamesFitSearchLimit(t *testing.T) {
 	t.Setenv("HUBSPOT_NORTHSTAR_FILES_PREFIX", "ns_1a2b3c4d_o_")
 	names, err := northstarFilesNamesFromEnvironment()
@@ -928,7 +1287,7 @@ func TestNorthstarFilesRunNamesFitSearchLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	for label, name := range map[string]string{
-		"brand": names.BrandFolder, "brand refresh": names.BrandFolderRefresh, "downloads": names.DownloadsFolder,
+		"brand": names.BrandFolder, "brand refresh": names.BrandFolderRefresh, "downloads": names.DownloadsFolder, "downloads repair": names.DownloadsFolderRepair,
 		"private file": names.PrivateFile, "public file": names.PublicFile, "drifted public file": names.PublicFileDrift,
 	} {
 		if len(name) > 19 {
