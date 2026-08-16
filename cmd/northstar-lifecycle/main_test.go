@@ -225,6 +225,32 @@ func TestExecuteManagesNorthstarCRMUserProfileLifecycle(t *testing.T) {
 	}
 }
 
+func TestExecuteAcceptsMissingCRMUserProfileAfterMembershipTeardown(t *testing.T) {
+	fake := acceptance.NewFakeHubSpot("token", 123)
+	crmID := fake.SeedCRMUserProfile("101")
+	server := httptest.NewServer(fake)
+	defer server.Close()
+	origin, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clients, err := hubspot.NewClientSet(hubspot.TransportConfig{BaseURL: origin, AccessToken: "token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := clients.AccountMemberships.Delete(context.Background(), "101"); err != nil {
+		t.Fatal(err)
+	}
+	if !fake.DisappearCRMUserProfile(crmID) {
+		t.Fatal("could not remove the membership-scoped CRM projection")
+	}
+	record, err := execute(context.Background(), "verify-profile-terminal", []string{crmID, "101"}, clients)
+	if err != nil || strings.Contains(record, crmID) || strings.Contains(record, "101") ||
+		!strings.Contains(record, `"residual":"profile_projection_absent"`) || !strings.Contains(record, `"remote_write":"none"`) {
+		t.Fatalf("missing CRM profile terminal record = %q, %v", record, err)
+	}
+}
+
 func TestExecuteManagesNorthstarProductLifecycle(t *testing.T) {
 	fake := acceptance.NewFakeHubSpot("token", 123)
 	server := httptest.NewServer(fake)

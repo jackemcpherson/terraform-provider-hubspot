@@ -50,7 +50,9 @@ and global identity deletion.
 The sibling demo's `crm-user-profile` module uses stable local map keys and
 consumes the account-membership module's canonical Settings ID. The reference
 creates the lifecycle dependency. Teardown stops profile management before it
-removes account membership and verifies the retained profile residual.
+removes account membership. Terminal verification accepts either the retained
+profile residual or exact profile-projection absence caused by that separate
+membership removal; the profile resource itself sends no destroy request.
 
 ## References
 

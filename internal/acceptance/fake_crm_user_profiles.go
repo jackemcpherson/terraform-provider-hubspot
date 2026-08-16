@@ -259,3 +259,14 @@ func (f *FakeHubSpot) CRMUserProfileSnapshot(id string) (hubspot.CRMUserProfile,
 	}
 	return profile.profile, true
 }
+
+func (f *FakeHubSpot) DisappearCRMUserProfile(id string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.crmUserProfiles[id] == nil {
+		return false
+	}
+	delete(f.crmUserProfiles, id)
+	delete(f.crmProfileReadiness, id)
+	return true
+}
