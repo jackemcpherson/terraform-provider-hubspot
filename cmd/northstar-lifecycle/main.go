@@ -1140,20 +1140,45 @@ func verifyNorthstarCRMProfileTerminal(ctx context.Context, clients *hubspot.Cli
 			return "", fmt.Errorf("verify Northstar membership terminal identity: %s", acceptance.SanitizedHubSpotError(err))
 		}
 	}
-	profile, err := exactNorthstarCRMProfile(ctx, clients, crmID, membershipID, false)
+	profile, err := clients.CRMUserProfiles.Get(ctx, crmID)
 	if err != nil {
-		return "", err
+		if !northstarNotFound(err) {
+			return "", fmt.Errorf("read Northstar CRM profile: %s", acceptance.SanitizedHubSpotError(err))
+		}
+		if _, joinErr := clients.CRMUserProfiles.FindBySettingsID(ctx, membershipID); joinErr == nil {
+			return "", errors.New("northstar CRM profile remained in the active collection after its exact identity disappeared")
+		} else {
+			var notMaterialized *hubspot.CRMUserProfileNotMaterializedError
+			if !errors.As(joinErr, &notMaterialized) {
+				return "", fmt.Errorf("verify Northstar CRM profile collection absence: %s", acceptance.SanitizedHubSpotError(joinErr))
+			}
+		}
+		return northstarCRMProfileTerminalRecord(crmID, membershipID, "profile_projection_absent")
+	}
+	if profile.ID != crmID || profile.SettingsID != membershipID {
+		return "", errors.New("northstar CRM profile did not match its exact CRM and Settings identities")
+	}
+	joined, err := clients.CRMUserProfiles.FindBySettingsID(ctx, membershipID)
+	if err != nil {
+		return "", fmt.Errorf("join Northstar CRM profile: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	if joined.ID != crmID || joined.SettingsID != membershipID {
+		return "", errors.New("northstar CRM profile join returned a different identity")
 	}
 	if !northstarCRMProfileMatches(profile) {
 		return "", errors.New("northstar teardown did not retain the managed CRM profile values")
 	}
+	return northstarCRMProfileTerminalRecord(crmID, membershipID, "retained_profile_values")
+}
+
+func northstarCRMProfileTerminalRecord(crmID, membershipID, residual string) (string, error) {
 	digest := sha256.Sum256([]byte("northstar-crm-profile-identity\x00" + crmID + "\x00" + membershipID))
 	record, err := json.Marshal(struct {
 		GeneratedIdentityHash string `json:"generated_identity_hash"`
 		Residual              string `json:"residual"`
 		RemoteWrite           string `json:"remote_write"`
 		Cleanup               string `json:"cleanup"`
-	}{hex.EncodeToString(digest[:]), "retained_profile_values", "none", "passed"})
+	}{hex.EncodeToString(digest[:]), residual, "none", "passed"})
 	if err != nil {
 		return "", errors.New("encode Northstar CRM profile terminal record")
 	}

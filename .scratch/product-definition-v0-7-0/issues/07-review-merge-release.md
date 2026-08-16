@@ -99,3 +99,11 @@ Blocked by: 01, 02, 03, 04, 05, 06
   computed membership names as unknown. The follow-up preserves observed state
   and changes only the planned local guard. Real OpenTofu and Terraform
   regression tests cover the fix.
+- 2026-08-16: Provider PR 91 merged the local membership-state fix as
+  `01518e6830fdc142ab386b47757e7c1c3da62d40`; exact-main Required run
+  31919639422 passed. Protected maintenance run 31919990382 then completed the
+  Product and cumulative lifecycle teardown, but terminal verification rejected
+  the exact CRM profile `404` caused by separately removing its account
+  membership. The follow-up keeps CRM-profile destroy write-free and accepts
+  projection absence only after exact membership absence and aggregate CRM
+  collection absence are both proven.

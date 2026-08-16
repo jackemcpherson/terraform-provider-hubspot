@@ -28,6 +28,9 @@ All notable changes to this project are documented here.
   without a returned ID now stop with exact-ID import guidance.
 - Preserve observed optional account membership names when only the local
   `allow_removal` guard changes.
+- Accept an absent CRM user projection during cumulative teardown when the
+  separately managed account membership has already been removed, while
+  preserving the CRM profile resource's zero-write destroy contract.
 - Route ancestor File folder renames through HubSpot's asynchronous hierarchy
   update when direct child folders exist, then verify descendant path
   propagation before later file changes.
