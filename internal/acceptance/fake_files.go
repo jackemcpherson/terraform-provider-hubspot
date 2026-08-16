@@ -64,6 +64,12 @@ type fakePendingFolderUpdate struct {
 	polled   bool
 }
 
+type fakeFileFolderUpdateVisibility struct {
+	folderID string
+	stale    hubspot.FileFolder
+	readLag  int
+}
+
 func (f *FakeHubSpot) handleFiles(response http.ResponseWriter, request *http.Request, rest []string) {
 	switch {
 	case len(rest) == 1 && rest[0] == "folders":
@@ -179,6 +185,14 @@ func (f *FakeHubSpot) handleFileFolderItem(response http.ResponseWriter, request
 	case http.MethodGet:
 		if folder == nil {
 			writeFakeError(response, http.StatusNotFound, "OBJECT_NOT_FOUND", "", "No active File folder matched this identity.")
+			return
+		}
+		if visibility := f.fileFolderUpdateVisibility; visibility != nil && visibility.folderID == id && visibility.readLag > 0 {
+			visibility.readLag--
+			writeFakeJSON(response, http.StatusOK, visibility.stale)
+			if visibility.readLag == 0 {
+				f.fileFolderUpdateVisibility = nil
+			}
 			return
 		}
 		writeFakeJSON(response, http.StatusOK, *folder)
@@ -332,11 +346,20 @@ func (f *FakeHubSpot) handleFileFolderTask(response http.ResponseWriter, request
 	} else if ok {
 		delete(f.pendingFolderUpdates, id)
 		folder := f.fileFolders[pending.folderID]
+		stale := *folder
+		stale.ParentFolderID = copyFakeString(folder.ParentFolderID)
 		folder.Name = pending.input.Name
 		folder.ParentFolderID = copyFakeString(pending.input.ParentFolderID)
 		folder.UpdatedAt = f.advanceFilesTimestamp()
 		f.refreshDerivedFilePaths()
 		task.Status = "COMPLETE"
+		result := *folder
+		result.ParentFolderID = copyFakeString(folder.ParentFolderID)
+		task.Result = &result
+		if f.nextFileFolderUpdateReadLag > 0 {
+			f.fileFolderUpdateVisibility = &fakeFileFolderUpdateVisibility{folderID: pending.folderID, stale: stale, readLag: f.nextFileFolderUpdateReadLag}
+			f.nextFileFolderUpdateReadLag = 0
+		}
 		f.folderTasks[id] = task
 	}
 	status := task
@@ -831,6 +854,12 @@ func (f *FakeHubSpot) LagNextManagedFileMoveVisibility(reads, searches int) {
 	defer f.mu.Unlock()
 	f.nextManagedFileMoveReadLag = reads
 	f.nextManagedFileMoveSearchLag = searches
+}
+
+func (f *FakeHubSpot) LagNextFileFolderUpdateVisibility(reads int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.nextFileFolderUpdateReadLag = reads
 }
 
 func (f *FakeHubSpot) ManagedFileMoveVisibilityLag() (reads, searches int) {

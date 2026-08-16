@@ -32,8 +32,8 @@ All notable changes to this project are documented here.
   separately managed account membership has already been removed, while
   preserving the CRM profile resource's zero-write destroy contract.
 - Route ancestor File folder renames through HubSpot's asynchronous hierarchy
-  update when direct child folders exist, then verify descendant path
-  propagation before later file changes.
+  update when direct child folders exist, verify the terminal exact-ID result,
+  and reject older read snapshots while descendant paths converge.
 
 ## [0.6.0] - 2026-08-15
 

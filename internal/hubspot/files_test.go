@@ -58,7 +58,7 @@ func TestFileFolderClientPinsGeneratedIDLifecycleAndPagination(t *testing.T) {
 			io.WriteString(writer, `{"id":"task-1"}`)
 		case request.Method == http.MethodGet && request.URL.Path == "/files/2026-03/folders/update/async/tasks/task-1/status":
 			writer.Header().Set("Retry-After", "7")
-			io.WriteString(writer, `{"status":"COMPLETE","errors":[]}`)
+			io.WriteString(writer, `{"taskId":"task-1","status":"COMPLETE","errors":[],"result":{"id":"11","name":"renamed","parentFolderId":"7","path":"/root/renamed","createdAt":"2026-08-01T00:00:00Z","updatedAt":"2026-08-01T00:00:01Z"}}`)
 		case request.Method == http.MethodDelete && request.URL.Path == "/files/2026-03/folders/11":
 			writer.WriteHeader(http.StatusNoContent)
 		default:
@@ -89,7 +89,7 @@ func TestFileFolderClientPinsGeneratedIDLifecycleAndPagination(t *testing.T) {
 		t.Fatalf("folder update task = %#v, %v", task, err)
 	}
 	status, err := client.GetUpdateTask(context.Background(), task.ID)
-	if err != nil || status.Status != "COMPLETE" || status.RetryAfter != 7*time.Second {
+	if err != nil || status.ID != "task-1" || status.Status != "COMPLETE" || status.Result == nil || status.Result.ID != "11" || status.RetryAfter != 7*time.Second {
 		t.Fatalf("folder task status = %#v, %v", status, err)
 	}
 	if err := client.Delete(context.Background(), "11"); err != nil {

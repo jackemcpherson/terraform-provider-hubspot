@@ -28,6 +28,8 @@ type FileFolderResource struct {
 
 var fileFolderUpdateMutex sync.Mutex
 
+var errFileFolderReadBackDidNotConverge = errors.New("file folder read-back did not converge")
+
 var (
 	_ resource.ResourceWithImportState = (*FileFolderResource)(nil)
 	_ resource.ResourceWithModifyPlan  = (*FileFolderResource)(nil)
@@ -161,13 +163,17 @@ func (r *FileFolderResource) Read(ctx context.Context, request resource.ReadRequ
 	if response.Diagnostics.HasError() {
 		return
 	}
-	folder, err := r.folders.Get(ctx, state.ID.ValueString())
+	folder, stale, err := r.waitForCurrentFolderRevision(ctx, state)
 	if err != nil {
 		if isNotFound(err) {
 			response.State.RemoveResource(ctx)
 			return
 		}
 		appendHubSpotDiagnostic(&response.Diagnostics, "File folder refresh failed", err)
+		return
+	}
+	if stale {
+		response.Diagnostics.AddWarning("File folder refresh returned a stale snapshot", "HubSpot returned an older revision for the same generated folder ID. The newer verified state was retained for this refresh.")
 		return
 	}
 	if folder.ID != state.ID.ValueString() || folder.Archived {
@@ -229,20 +235,31 @@ func (r *FileFolderResource) Update(ctx context.Context, request resource.Update
 		}
 	}
 	var updateErr error
+	var taskResult *hubspot.FileFolder
 	if parentChanged || renameHasChildFolders {
 		task, err := r.folders.Update(ctx, state.ID.ValueString(), hubspot.FileFolderWrite{Name: plan.Name.ValueString(), ParentFolderID: parent})
 		if err != nil {
 			appendHubSpotDiagnostic(&response.Diagnostics, "File folder update did not complete", err)
 			return
 		}
-		if err := r.waitForFolderTask(ctx, task.ID); err != nil {
+		result, err := r.waitForFolderTask(ctx, task.ID)
+		if err != nil {
 			response.Diagnostics.AddError("File folder update did not complete", "HubSpot did not report a valid terminal COMPLETE task. Prior identity and state were retained for a safe retry.")
 			return
 		}
+		if mismatches := folderPlanMismatches(result, state.ID.ValueString(), plan, state.CreatedAt.ValueString()); len(mismatches) > 0 {
+			response.Diagnostics.AddError("File folder update did not complete", "HubSpot's terminal task result did not match every planned managed value. Prior identity and state were retained for a safe retry. Mismatched fields: "+strings.Join(mismatches, ", ")+".")
+			return
+		}
+		taskResult = &result
 	} else {
 		_, updateErr = r.folders.Rename(ctx, state.ID.ValueString(), plan.Name.ValueString())
 	}
 	verified, err := r.waitForFolderPlan(ctx, state.ID.ValueString(), plan, state.CreatedAt.ValueString())
+	if errors.Is(err, errFileFolderReadBackDidNotConverge) && taskResult != nil {
+		verified = *taskResult
+		err = nil
+	}
 	if err != nil {
 		detail := "Exact-ID read-back did not match every planned managed value. Prior identity and state were retained for a safe retry."
 		if mismatches := folderPlanMismatches(verified, state.ID.ValueString(), plan, state.CreatedAt.ValueString()); len(mismatches) > 0 {
@@ -385,28 +402,52 @@ func (r *FileFolderResource) waitForCurrentParentPath(ctx context.Context, id st
 	return errors.New("child folder path did not converge with current parent")
 }
 
-func (r *FileFolderResource) waitForFolderTask(ctx context.Context, id string) error {
+func (r *FileFolderResource) waitForFolderTask(ctx context.Context, id string) (hubspot.FileFolder, error) {
 	for attempt := 0; ; attempt++ {
 		task, err := r.folders.GetUpdateTask(ctx, id)
 		if err != nil {
-			return err
+			return hubspot.FileFolder{}, err
 		}
 		if len(task.Errors) > 0 {
-			return errors.New("file folder task reported terminal errors")
+			return hubspot.FileFolder{}, errors.New("file folder task reported terminal errors")
 		}
 		switch task.Status {
 		case "COMPLETE":
-			return nil
+			if task.Result == nil {
+				return hubspot.FileFolder{}, errors.New("file folder task omitted its terminal result")
+			}
+			return *task.Result, nil
 		case "PENDING", "RUNNING", "PROCESSING":
 		case "CANCELED", "ERROR", "FAILED", "":
-			return errors.New("file folder task did not complete")
+			return hubspot.FileFolder{}, errors.New("file folder task did not complete")
 		default:
-			return errors.New("file folder task returned an unknown state")
+			return hubspot.FileFolder{}, errors.New("file folder task returned an unknown state")
 		}
 		if err := sleepResourcePollAfter(ctx, attempt, task.RetryAfter); err != nil {
-			return err
+			return hubspot.FileFolder{}, err
 		}
 	}
+}
+
+func (r *FileFolderResource) waitForCurrentFolderRevision(ctx context.Context, state fileFolderResourceModel) (hubspot.FileFolder, bool, error) {
+	const attempts = 7
+	var observed hubspot.FileFolder
+	for attempt := 0; attempt < attempts; attempt++ {
+		folder, err := r.folders.Get(ctx, state.ID.ValueString())
+		if err != nil {
+			return folder, false, err
+		}
+		observed = folder
+		if !folderSnapshotOlderThanState(folder, state) {
+			return folder, false, nil
+		}
+		if attempt+1 < attempts {
+			if err := sleepResourcePoll(ctx, attempt); err != nil {
+				return observed, false, err
+			}
+		}
+	}
+	return observed, true, nil
 }
 
 func (r *FileFolderResource) waitForFolderPlan(ctx context.Context, id string, plan fileFolderResourceModel, createdAt string) (hubspot.FileFolder, error) {
@@ -434,7 +475,16 @@ func (r *FileFolderResource) waitForFolderPlan(ctx context.Context, id string, p
 			}
 		}
 	}
-	return observed, errors.New("file folder read-back did not converge")
+	return observed, errFileFolderReadBackDidNotConverge
+}
+
+func folderSnapshotOlderThanState(folder hubspot.FileFolder, state fileFolderResourceModel) bool {
+	if folder.ID != state.ID.ValueString() || folder.Archived || state.UpdatedAt.IsNull() || state.UpdatedAt.IsUnknown() {
+		return false
+	}
+	remoteUpdatedAt, remoteErr := time.Parse(time.RFC3339, folder.UpdatedAt)
+	stateUpdatedAt, stateErr := time.Parse(time.RFC3339, state.UpdatedAt.ValueString())
+	return remoteErr == nil && stateErr == nil && remoteUpdatedAt.Before(stateUpdatedAt)
 }
 
 func (r *FileFolderResource) waitForFolderAbsent(ctx context.Context, id string) error {
