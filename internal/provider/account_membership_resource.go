@@ -189,9 +189,8 @@ func (r *AccountMembershipResource) Update(ctx context.Context, request resource
 	firstChanged := configuredNameChanged(config.FirstName, state.FirstName, plan.FirstName)
 	lastChanged := configuredNameChanged(config.LastName, state.LastName, plan.LastName)
 	if !firstChanged && !lastChanged {
-		plan.ID = state.ID
-		plan.SuperAdmin = state.SuperAdmin
-		response.Diagnostics.Append(response.State.Set(ctx, &plan)...)
+		state.AllowRemoval = plan.AllowRemoval
+		response.Diagnostics.Append(response.State.Set(ctx, &state)...)
 		return
 	}
 	current, err := r.client.GetByID(ctx, state.ID.ValueString())

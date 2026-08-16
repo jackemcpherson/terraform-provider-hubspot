@@ -92,3 +92,10 @@ Blocked by: 01, 02, 03, 04, 05, 06
   `c3921ae7a86bdaabdd2524127212a2c58d640f4d`. Provider maintenance pins that
   exact merge. Fixed-point specification, standards, test-quality, and Actions
   reviews found no remaining hard issues.
+- 2026-08-16: Provider PR 90 merged the guarded rename cycle as
+  `769c25b178635d45451c84d24b82e7cda712db1b`. Exact-main Required run
+  31918918820 passed. Protected run 31919037400 then failed earlier during
+  OpenTofu drift repair. A local removal-guard update returned unconfigured
+  computed membership names as unknown. The follow-up preserves observed state
+  and changes only the planned local guard. Real OpenTofu and Terraform
+  regression tests cover the fix.

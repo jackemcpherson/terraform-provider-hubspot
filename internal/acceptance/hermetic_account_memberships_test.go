@@ -23,6 +23,60 @@ func TestHermeticAccountMembershipLifecycleTerraformParity(t *testing.T) {
 	runHermeticAccountMembershipLifecycle(t, acceptance.Terraform, "registry.terraform.io/jackemcpherson/hubspot")
 }
 
+func TestHermeticAccountMembershipLocalGuardUpdatePreservesObservedNames(t *testing.T) {
+	runHermeticAccountMembershipLocalGuardUpdate(t, acceptance.OpenTofu, "registry.opentofu.org/jackemcpherson/hubspot")
+}
+
+func TestHermeticAccountMembershipLocalGuardUpdatePreservesObservedNamesTerraformParity(t *testing.T) {
+	runHermeticAccountMembershipLocalGuardUpdate(t, acceptance.Terraform, "registry.terraform.io/jackemcpherson/hubspot")
+}
+
+func runHermeticAccountMembershipLocalGuardUpdate(t *testing.T, engine acceptance.Engine, providerSource string) {
+	t.Helper()
+	if _, err := exec.LookPath(string(engine)); err != nil {
+		t.Skipf("pinned %s executable is not installed", engine)
+	}
+	fake := acceptance.NewFakeHubSpot(hermeticToken, 666000668)
+	server := httptest.NewServer(fake)
+	t.Cleanup(server.Close)
+	t.Setenv("HUBSPOT_ACCESS_TOKEN", hermeticToken)
+	const email = "local-guard@example.com"
+	retained := hermeticAccountMembershipWithoutNamesConfig(server.URL, providerSource, email, false, false)
+	removable := hermeticAccountMembershipWithoutNamesConfig(server.URL, providerSource, email, false, true)
+	updated := hermeticAccountMembershipConfig(server.URL, providerSource, email, "Updated", "Member", false, true)
+
+	acceptance.Run(t, acceptance.Options{
+		Engine: engine, Shard: acceptance.AccountMemberships,
+		Prefix: "tf_acc_hermetic_membership_guard_", LedgerPath: t.TempDir() + "/cleanup.jsonl", ProbeBaseURL: server.URL,
+	}, func(session *acceptance.Session) {
+		session.Apply(retained)
+		id := session.OpaqueStateString("hubspot_account_membership.managed", "id")
+		if !fake.DriftAccountMembershipNames(id, "Observed", "Identity") {
+			t.Fatal("could not seed observed account membership names")
+		}
+		session.Refresh(retained)
+		updatesBefore := fake.AccountMembershipUpdateAttempts(id)
+		session.Apply(removable)
+		session.RequireStateString("hubspot_account_membership.managed", "first_name", "Observed")
+		session.RequireStateString("hubspot_account_membership.managed", "last_name", "Identity")
+		session.RequireStateBool("hubspot_account_membership.managed", "allow_removal", true)
+		if fake.AccountMembershipUpdateAttempts(id) != updatesBefore {
+			t.Fatal("local removal-guard update sent a remote name PUT")
+		}
+		session.ApplyWithWarning(updated, acceptance.AccountMembershipGlobalName)
+		if fake.AccountMembershipUpdateAttempts(id) != updatesBefore+1 {
+			t.Fatal("configured name update did not send exactly one remote PUT")
+		}
+		session.RequireStateString("hubspot_account_membership.managed", "first_name", "Updated")
+		session.RequireStateString("hubspot_account_membership.managed", "last_name", "Member")
+		remote, ok := fake.AccountMembershipSnapshot(id)
+		if !ok || remote.FirstName != "Updated" || remote.LastName != "Member" {
+			t.Fatalf("configured name update remote state = %#v", remote)
+		}
+		session.Destroy(updated)
+	})
+}
+
 func runHermeticAccountMembershipLifecycle(t *testing.T, engine acceptance.Engine, providerSource string) {
 	t.Helper()
 	if _, err := exec.LookPath(string(engine)); err != nil {
