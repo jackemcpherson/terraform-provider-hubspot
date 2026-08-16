@@ -73,3 +73,12 @@ Blocked by: 01, 02, 03, 04, 05, 06
   justified. The follow-up keeps generated ID as the sole identity and adds a
   parent-scoped folder search as an independent read-back surface, accepting
   only the result whose generated ID exactly matches the known child ID.
+- 2026-08-16: Provider PR 88 merged exact-ID parent-scoped Search read-back as
+  `bd84f5baf13ac3e6831df06fe0ed651702aed5b6`. Exact-main Required run
+  31916371791 passed. Protected maintenance run 31916459611 proved Search
+  retained the stale child path for 142 seconds. HubSpot had reported the parent
+  update task complete. Demo PR 27 added an explicit guarded child-path repair
+  after the targeted parent apply. The PR merged as
+  `1dac3295f66ebe35d3aeeee32ef6843366989016`.
+  The provider follow-up pins that exact demo merge and implements the helper
+  action with exact parent, child, placement, and owned-name preconditions.

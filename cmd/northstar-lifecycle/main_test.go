@@ -8,8 +8,10 @@ package main
 import (
 	"context"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -29,6 +31,9 @@ func TestNorthstarActionTimeoutPreservesFolderDriftMargin(t *testing.T) {
 	if timeout := northstarActionTimeout("verify-files"); timeout != 3*time.Minute {
 		t.Fatalf("file verification timeout = %s", timeout)
 	}
+	if timeout := northstarActionTimeout("repair-folder-path"); timeout != 4*time.Minute {
+		t.Fatalf("folder repair timeout = %s", timeout)
+	}
 	if timeout := northstarActionTimeout("cleanup"); timeout != 2*time.Minute {
 		t.Fatalf("default timeout = %s", timeout)
 	}
@@ -45,6 +50,9 @@ func TestNorthstarActionTimeoutPreservesFolderDriftMargin(t *testing.T) {
 	}
 	if timeout := northstarActionTimeout("drift-folder-path"); timeout <= taskDelay+descendantDelay+minimumMargin {
 		t.Fatalf("folder drift timeout = %s, convergence = %s", timeout, taskDelay+descendantDelay)
+	}
+	if timeout := northstarActionTimeout("repair-folder-path"); timeout <= taskDelay+descendantDelay+minimumMargin {
+		t.Fatalf("folder repair timeout = %s, convergence = %s", timeout, taskDelay+descendantDelay)
 	}
 }
 
@@ -738,6 +746,48 @@ func TestExecuteManagesNorthstarFilesLifecycle(t *testing.T) {
 	if err != nil || driftedDownloads.Path != "/"+names.BrandFolderRefresh+"/"+names.DownloadsFolder {
 		t.Fatalf("drifted folder = %#v, %v", driftedDownloads, err)
 	}
+	if _, err := clients.FileFolders.Rename(ctx, brand.ID, names.BrandFolder); err != nil {
+		t.Fatal(err)
+	}
+	staleDownloads, err := clients.FileFolders.Get(ctx, downloads.ID)
+	if err != nil || staleDownloads.Path != "/"+names.BrandFolderRefresh+"/"+names.DownloadsFolder {
+		t.Fatalf("stale repaired descendant = %#v, %v", staleDownloads, err)
+	}
+	if _, err := execute(ctx, "repair-folder-path", []string{brand.ID, downloads.ID}, clients); err != nil {
+		t.Fatal(err)
+	}
+	if patches, asyncUpdates := fake.FileFolderWriteCounts(downloads.ID); patches != 0 || asyncUpdates != 1 {
+		t.Fatalf("Northstar child folder repair writes = PATCH %d, async update %d", patches, asyncUpdates)
+	}
+	if patches, asyncUpdates := fake.FileFolderWriteCounts(brand.ID); patches != 1 || asyncUpdates != 1 {
+		t.Fatalf("Northstar parent folder writes after child repair = PATCH %d, async update %d", patches, asyncUpdates)
+	}
+	repairedDownloads, err := clients.FileFolders.Get(ctx, downloads.ID)
+	if err != nil || repairedDownloads.Path != "/"+names.BrandFolder+"/"+names.DownloadsFolder {
+		t.Fatalf("repaired descendant = %#v, %v", repairedDownloads, err)
+	}
+	repairedBrand, err := clients.FileFolders.Get(ctx, brand.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	brandPatches, brandAsyncUpdates := fake.FileFolderWriteCounts(brand.ID)
+	childPatches, childAsyncUpdates := fake.FileFolderWriteCounts(downloads.ID)
+	if _, err := execute(ctx, "repair-folder-path", []string{downloads.ID, brand.ID}, clients); err == nil || !strings.Contains(err.Error(), "identities") {
+		t.Fatalf("unsafe folder repair = %v", err)
+	}
+	afterBrand, err := clients.FileFolders.Get(ctx, brand.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterDownloads, err := clients.FileFolders.Get(ctx, downloads.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterBrandPatches, afterBrandAsyncUpdates := fake.FileFolderWriteCounts(brand.ID)
+	afterChildPatches, afterChildAsyncUpdates := fake.FileFolderWriteCounts(downloads.ID)
+	if !reflect.DeepEqual(afterBrand, repairedBrand) || !reflect.DeepEqual(afterDownloads, repairedDownloads) || afterBrandPatches != brandPatches || afterBrandAsyncUpdates != brandAsyncUpdates || afterChildPatches != childPatches || afterChildAsyncUpdates != childAsyncUpdates {
+		t.Fatalf("unsafe folder repair changed state or writes: parent=%#v child=%#v writes=%d/%d %d/%d", afterBrand, afterDownloads, afterBrandPatches, afterBrandAsyncUpdates, afterChildPatches, afterChildAsyncUpdates)
+	}
 	for _, id := range []string{privateFile.ID, publicFile.ID} {
 		if err := clients.Files.Delete(ctx, id); err != nil {
 			t.Fatal(err)
@@ -751,6 +801,71 @@ func TestExecuteManagesNorthstarFilesLifecycle(t *testing.T) {
 	record, err := execute(ctx, "verify-files-terminal", ids, clients)
 	if err != nil || strings.Contains(record, brand.ID) || strings.Contains(record, publicFile.ID) || !strings.Contains(record, `"active_owned_files":0`) || !strings.Contains(record, `"active_owned_folders":0`) {
 		t.Fatalf("terminal record = %q, %v", record, err)
+	}
+}
+
+func TestExecuteRejectsFolderRepairWhenParentSearchOmitsExactChild(t *testing.T) {
+	t.Setenv("HUBSPOT_NORTHSTAR_FILES_PREFIX", "ns_1a2b3c4d_o_")
+	names, err := northstarFilesNamesFromEnvironment()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake := acceptance.NewFakeHubSpot("token", 123)
+	blockedParentID := ""
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if blockedParentID != "" && request.Method == http.MethodGet && request.URL.Path == "/files/2026-03/folders/search" && request.URL.Query().Get("parentFolderId") == blockedParentID {
+			writer.Header().Set("Content-Type", "application/json")
+			if _, err := writer.Write([]byte(`{"results":[]}`)); err != nil {
+				t.Error(err)
+			}
+			return
+		}
+		fake.ServeHTTP(writer, request)
+	}))
+	defer server.Close()
+	origin, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clients, err := hubspot.NewClientSet(hubspot.TransportConfig{BaseURL: origin, AccessToken: "token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	brand, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: names.BrandFolder})
+	if err != nil {
+		t.Fatal(err)
+	}
+	downloads, err := clients.FileFolders.Create(ctx, hubspot.FileFolderWrite{Name: names.DownloadsFolder, ParentFolderID: &brand.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	blockedParentID = brand.ID
+	before, err := clients.FileFolders.Get(ctx, downloads.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeParent, err := clients.FileFolders.Get(ctx, brand.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentPatches, parentAsyncUpdates := fake.FileFolderWriteCounts(brand.ID)
+	childPatches, childAsyncUpdates := fake.FileFolderWriteCounts(downloads.ID)
+	if _, err := execute(ctx, "repair-folder-path", []string{brand.ID, downloads.ID}, clients); err == nil || !strings.Contains(err.Error(), "identities") {
+		t.Fatalf("folder repair without searched identity = %v", err)
+	}
+	after, err := clients.FileFolders.Get(ctx, downloads.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterParent, err := clients.FileFolders.Get(ctx, brand.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterParentPatches, afterParentAsyncUpdates := fake.FileFolderWriteCounts(brand.ID)
+	afterChildPatches, afterChildAsyncUpdates := fake.FileFolderWriteCounts(downloads.ID)
+	if !reflect.DeepEqual(after, before) || !reflect.DeepEqual(afterParent, beforeParent) || afterParentPatches != parentPatches || afterParentAsyncUpdates != parentAsyncUpdates || afterChildPatches != childPatches || afterChildAsyncUpdates != childAsyncUpdates {
+		t.Fatalf("rejected folder repair changed state or writes: parent=%#v child=%#v writes=%d/%d %d/%d", afterParent, after, afterParentPatches, afterParentAsyncUpdates, afterChildPatches, afterChildAsyncUpdates)
 	}
 }
 
