@@ -21,6 +21,10 @@ Blocked by: None
   disposable Product contract on exact main commit
   `c96b591ad714ec7d5d163d8b3268b29e0c1754d3`. The later cumulative Northstar
   step stopped because its membership-email environment variable is unset.
+- 2026-08-16: Protected maintenance run 31922736244 passed the same guarded
+  Product preflight and the complete cumulative OpenTofu and Terraform journey
+  on exact main `d003c31ca02beaaff28b72d3f928689c9ff5c4a5` after the reserved
+  membership fixture was configured.
 
 ## Answer
 

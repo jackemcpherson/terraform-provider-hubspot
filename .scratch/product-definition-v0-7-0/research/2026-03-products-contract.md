@@ -47,10 +47,11 @@ The recurrence property uses a compatible text-backed runtime schema. Repeated
 archival returns success on the protected portal. The probe accepts success or
 `404` only after it proves active absence and the same archived identity.
 
-The later cumulative Northstar step did not run because the protected
-`HUBSPOT_NORTHSTAR_MEMBERSHIP_EMAIL` variable is unset. This configuration gap
-does not invalidate the completed disposable Product probe, but it blocks
-publication until cumulative maintenance passes.
+The protected membership fixture was subsequently configured. Protected
+[maintenance run 31922736244](https://github.com/jackemcpherson/terraform-provider-hubspot/actions/runs/31922736244)
+passed on exact main commit
+`d003c31ca02beaaff28b72d3f928689c9ff5c4a5`, including the guarded Product
+probe, cumulative OpenTofu and Terraform journeys, and terminal owned cleanup.
 
 ## References
 
