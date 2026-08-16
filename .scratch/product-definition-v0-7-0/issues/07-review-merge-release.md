@@ -107,3 +107,11 @@ Blocked by: 01, 02, 03, 04, 05, 06
   membership. The follow-up keeps CRM-profile destroy write-free and accepts
   projection absence only after exact membership absence and aggregate CRM
   collection absence are both proven.
+- 2026-08-16: Provider PR 92 merged the guarded profile-terminal verifier as
+  `81ddb2b09d816cacfef6d245a44b4025cecc3aaf`; exact-main Required run
+  31920665393 passed. Protected maintenance run 31920769235 crossed the prior
+  profile `404` failure and emitted the new exact-absence record. The pinned
+  demo still required only the retained-values record and stopped before later
+  terminal assertions. Demo PR 29 now accepts only those two enumerated
+  terminal outcomes, tests both, passed hosted run 31921173435, and merged as
+  `793256402c5e1e811cd374f0815a83c66f092616`.
