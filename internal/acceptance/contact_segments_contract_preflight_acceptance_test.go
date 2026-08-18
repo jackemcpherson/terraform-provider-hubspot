@@ -177,7 +177,7 @@ func TestAcc_contact_segments_ContractPreflight(t *testing.T) {
 	probe.mustConverge(t, ctx, dynamic.ListID, "DYNAMIC", &updatedDynamicFilters, true)
 	t.Logf("Contact segment delete/restore transitions: active=v%d tombstone=%s/v%d restored=%s/v%d repeated-delete=%s repeated-restore=%s", dynamic.ListVersion, tombstone.ProcessingStatus, tombstone.ListVersion, restored.ProcessingStatus, restored.ListVersion, repeatedDelete, repeatedRestore)
 
-	probe.mustVerifyPermanentAbsence(t, ctx, "9223372036854775807")
+	probe.mustClassifyUnknownID(t, ctx, "9223372036854775807")
 	t.Log("Contact segment contract preflight proved MANUAL, DYNAMIC, and SNAPSHOT creation; text/select/presence round-trip; dynamic replacement; snapshot/manual immutability; and exact-ID delete/read/restore on the protected Free portal")
 }
 
@@ -217,6 +217,18 @@ func TestContactSegmentProbeNormalizesSupportedValueShapes(t *testing.T) {
 	}
 	if contactSegmentPublicOperator("IS_UNKNOWN") != "is_not_known" || contactSegmentPublicOperator("CONTAINS") != "" {
 		t.Fatal("Contact segment operator normalization accepted an unsupported mapping")
+	}
+}
+
+func TestContactSegmentProbeClassifiesUnknownIDOutcomes(t *testing.T) {
+	if got := contactSegmentProbeOutcome(nil); got != "complete" {
+		t.Fatalf("nil outcome = %q", got)
+	}
+	if got := contactSegmentProbeOutcome(&hubspot.Error{Status: http.StatusBadRequest}); got != "http-400" {
+		t.Fatalf("API outcome = %q", got)
+	}
+	if got := contactSegmentProbeOutcome(errors.New("connection reset")); got != "transport-error" {
+		t.Fatalf("transport outcome = %q", got)
 	}
 }
 
@@ -458,7 +470,7 @@ func (p contactSegmentProbe) mustClassifyRepeatedRestore(t *testing.T, ctx conte
 	return "rejected"
 }
 
-func (p contactSegmentProbe) mustVerifyPermanentAbsence(t *testing.T, ctx context.Context, id string) {
+func (p contactSegmentProbe) mustClassifyUnknownID(t *testing.T, ctx context.Context, id string) {
 	t.Helper()
 	_, readErr := p.read(ctx, id)
 	deleteErr := p.transport.Do(ctx, hubspot.Operation{
@@ -470,9 +482,10 @@ func (p contactSegmentProbe) mustVerifyPermanentAbsence(t *testing.T, ctx contex
 		Path: contactSegmentPath + "/" + url.PathEscape(id) + "/restore", Replay: hubspot.ReplayNever,
 	}, nil, nil)
 	deleteClassified := deleteErr == nil || contactSegmentProbeRejected(deleteErr)
-	if !contactSegmentProbeNotFound(readErr) || !deleteClassified || !contactSegmentProbeRejected(restoreErr) {
-		t.Fatal("Permanently absent Contact segment did not return the expected exact-ID classifications")
+	if !contactSegmentProbeRejected(readErr) || !deleteClassified || !contactSegmentProbeRejected(restoreErr) {
+		t.Fatal("Unknown Contact segment ID did not return authoritative exact-ID classifications")
 	}
+	t.Logf("Contact segment unknown-ID transitions: read=%s delete=%s restore=%s", contactSegmentProbeOutcome(readErr), contactSegmentProbeOutcome(deleteErr), contactSegmentProbeOutcome(restoreErr))
 }
 
 func (p contactSegmentProbe) ensureDeleted(ctx context.Context, id string) error {
@@ -691,4 +704,15 @@ func contactSegmentProbeRejected(err error) bool {
 func contactSegmentProbeNotFound(err error) bool {
 	var apiError *hubspot.Error
 	return errors.As(err, &apiError) && apiError.Status == http.StatusNotFound
+}
+
+func contactSegmentProbeOutcome(err error) string {
+	if err == nil {
+		return "complete"
+	}
+	var apiError *hubspot.Error
+	if errors.As(err, &apiError) {
+		return fmt.Sprintf("http-%d", apiError.Status)
+	}
+	return "transport-error"
 }

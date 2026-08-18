@@ -61,6 +61,13 @@ Blocked by: 01, 02, 03, 04, 05, 06
   review. ADR 0004 retains v0.8.0 and Lists-only permissions, specifies
   conditional `property_kind`, and freezes deterministic text, select, and
   presence wire mappings. The full protected contract probe is the next gate.
+- 2026-08-18: Provider PR 103 froze that decision and merged as `7eb7e36`.
+  Provider PR 104 added the amended probe to maintenance and merged as
+  `1ed0f2d`. Protected run 32101261970 proved all three Free variants,
+  text/select/presence round-trip, dynamic replacement, a readable exact-ID
+  tombstone, and same-ID restore from list version 2 to 3. It then failed
+  because the synthetic maximum-integer unknown ID returned a different 4xx
+  classification than the probe required. Exact-ID cleanup completed.
 
 ## Failure Ledger
 
@@ -70,3 +77,4 @@ Blocked by: 01, 02, 03, 04, 05, 06
 | Contact segment probe | 32095048270 | `686c176` | `2ef32f7` | Guide operator `IS_NOT_KNOWN` rejected | Use dated `IS_UNKNOWN` wire enum |
 | Contact segment probe | 32095515566 | `f01fcc5` | `2ef32f7` | Select property rejected `MULTISTRING` | Test universal operation matrix |
 | Contact segment probe | 32096106495 | `874d0ea` | `2ef32f7` | No universal text/select operation type | User contract decision required |
+| Contact segment probe | 32101261970 | `1ed0f2d` | `2ef32f7` | Unknown-ID sentinel had a different 4xx class | Record any authoritative 4xx outcome |
