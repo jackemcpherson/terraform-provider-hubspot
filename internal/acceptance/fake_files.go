@@ -43,6 +43,7 @@ const (
 	FilesFaultFolderTaskCanceled  FilesFault = "folder_task_canceled"
 	FilesFaultFolderTaskError     FilesFault = "folder_task_error"
 	FilesFaultFolderTaskMalformed FilesFault = "folder_task_malformed"
+	FilesFaultFolderTaskStale     FilesFault = "folder_task_stale_result"
 	FilesFaultFolderTaskTimeout   FilesFault = "folder_task_timeout"
 	FilesFaultFolderCreateUnknown FilesFault = "folder_create_unknown"
 	FilesFaultFolderCreateKnown   FilesFault = "folder_create_known"
@@ -59,9 +60,10 @@ const (
 )
 
 type fakePendingFolderUpdate struct {
-	folderID string
-	input    hubspot.FileFolderWrite
-	polled   bool
+	folderID        string
+	input           hubspot.FileFolderWrite
+	polled          bool
+	staleTaskResult bool
 }
 
 type fakeFileFolderUpdateVisibility struct {
@@ -316,10 +318,15 @@ func (f *FakeHubSpot) handleFileFolderUpdate(response http.ResponseWriter, reque
 		writeFakeJSON(response, http.StatusAccepted, task)
 		return
 	}
+	staleTaskResult := f.nextFilesFault == FilesFaultFolderTaskStale
+	if staleTaskResult {
+		f.nextFilesFault = ""
+	}
 	f.folderTasks[task.ID] = task
 	f.pendingFolderUpdates[task.ID] = fakePendingFolderUpdate{
-		folderID: payload.ID,
-		input:    hubspot.FileFolderWrite{Name: input.Name, ParentFolderID: copyFakeString(input.ParentFolderID)},
+		folderID:        payload.ID,
+		input:           hubspot.FileFolderWrite{Name: input.Name, ParentFolderID: copyFakeString(input.ParentFolderID)},
+		staleTaskResult: staleTaskResult,
 	}
 	writeFakeJSON(response, http.StatusAccepted, task)
 }
@@ -355,7 +362,11 @@ func (f *FakeHubSpot) handleFileFolderTask(response http.ResponseWriter, request
 		task.Status = "COMPLETE"
 		result := *folder
 		result.ParentFolderID = copyFakeString(folder.ParentFolderID)
-		task.Result = &result
+		if pending.staleTaskResult {
+			task.Result = &stale
+		} else {
+			task.Result = &result
+		}
 		if f.nextFileFolderUpdateReadLag > 0 {
 			f.fileFolderUpdateVisibility = &fakeFileFolderUpdateVisibility{folderID: pending.folderID, stale: stale, readLag: f.nextFileFolderUpdateReadLag}
 			f.nextFileFolderUpdateReadLag = 0
