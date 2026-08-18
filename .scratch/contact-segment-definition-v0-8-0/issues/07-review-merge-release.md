@@ -42,9 +42,14 @@ Blocked by: 01, 02, 03, 04, 05, 06
   as free and unlimited for public repositories, so hosted runner minute
   budget is not a release constraint. The authenticated billing endpoint was
   not used because the CLI token deliberately lacks `user` scope.
+- 2026-08-18: Probe prerequisite PR 99 merged as `686c176`. Protected run
+  32095048270 stopped before implementation and demo execution when the guide's
+  `IS_NOT_KNOWN` filter operator produced `ListError.ENUM_CONVERSION`. Deferred
+  cleanup verified the exact manual-definition tombstone.
 
 ## Failure Ledger
 
 | Phase | Run | Provider | Demo | Cause | Fix |
 | --- | --- | --- | --- | --- | --- |
 | Terraform refresh | 32090906501 | `f6fc450` | `2ef32f7` | Stale terminal folder task result | Provider PR 98, `5aaf330` |
+| Contact segment probe | 32095048270 | `686c176` | `2ef32f7` | Guide operator `IS_NOT_KNOWN` rejected | Use dated `IS_UNKNOWN` wire enum |

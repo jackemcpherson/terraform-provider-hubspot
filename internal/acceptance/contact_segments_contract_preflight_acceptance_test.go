@@ -111,7 +111,7 @@ func TestAcc_contact_segments_ContractPreflight(t *testing.T) {
 			contactSegmentValueFilter("firstname", "IS_EQUAL_TO", "contract-probe"),
 			contactSegmentValueFilter("lastname", "IS_NOT_EQUAL_TO", "contract-probe"),
 			contactSegmentPresenceFilter("email", "IS_KNOWN"),
-			contactSegmentPresenceFilter("phone", "IS_NOT_KNOWN"),
+			contactSegmentPresenceFilter("phone", "IS_UNKNOWN"),
 		),
 	)
 	dynamic := probe.mustCreate(t, ctx, contactSegmentCreate{
@@ -504,7 +504,7 @@ func assertContactSegmentFilters(t *testing.T, expected contactSegmentFilterBran
 				if filter.Operation.OperationType != "MULTISTRING" || len(filter.Operation.Values) != 1 || len(filter.Operation.Value) != 0 {
 					t.Fatal("Contact segment text/select equality did not round-trip as one MULTISTRING value")
 				}
-			case "IS_KNOWN", "IS_NOT_KNOWN":
+			case "IS_KNOWN", "IS_UNKNOWN":
 				if filter.Operation.OperationType != "ALL_PROPERTY" || len(filter.Operation.Values) != 0 || len(filter.Operation.Value) != 0 {
 					t.Fatal("Contact segment presence predicate did not round-trip as ALL_PROPERTY without a value")
 				}
