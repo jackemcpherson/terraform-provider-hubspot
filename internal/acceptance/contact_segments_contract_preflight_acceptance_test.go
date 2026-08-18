@@ -30,6 +30,13 @@ type contactSegmentProbe struct {
 	ownedIDs  *[]string
 }
 
+type contactSegmentValueOperation struct {
+	operationType    string
+	equalOperator    string
+	notEqualOperator string
+	usesSingleValue  bool
+}
+
 type contactSegmentEnvelope struct {
 	List contactSegmentWire `json:"list"`
 }
@@ -100,6 +107,7 @@ func TestAcc_contact_segments_ContractPreflight(t *testing.T) {
 			}
 		}
 	}()
+	valueOperation := probe.mustFindUniversalValueOperation(t, ctx, prefix, suffix)
 
 	manual := probe.mustCreate(t, ctx, contactSegmentCreate{
 		Name: prefix + "manual_" + suffix, ObjectTypeID: "0-1", ProcessingType: "MANUAL",
@@ -108,8 +116,8 @@ func TestAcc_contact_segments_ContractPreflight(t *testing.T) {
 
 	dynamicFilters := contactSegmentOR(
 		contactSegmentAND(
-			contactSegmentValueFilter("firstname", "IS_EQUAL_TO", "contract-probe"),
-			contactSegmentValueFilter("lastname", "IS_NOT_EQUAL_TO", "contract-probe"),
+			contactSegmentValueFilter(valueOperation, "firstname", true, "contract-probe"),
+			contactSegmentValueFilter(valueOperation, "lastname", false, "contract-probe"),
 			contactSegmentPresenceFilter("email", "IS_KNOWN"),
 			contactSegmentPresenceFilter("phone", "IS_UNKNOWN"),
 		),
@@ -121,7 +129,7 @@ func TestAcc_contact_segments_ContractPreflight(t *testing.T) {
 	dynamic = probe.mustConverge(t, ctx, dynamic.ListID, "DYNAMIC", &dynamicFilters, false)
 
 	snapshotFilters := contactSegmentOR(
-		contactSegmentAND(contactSegmentValueFilter("lifecyclestage", "IS_EQUAL_TO", "lead")),
+		contactSegmentAND(contactSegmentValueFilter(valueOperation, "lifecyclestage", true, "lead")),
 	)
 	snapshot := probe.mustCreate(t, ctx, contactSegmentCreate{
 		Name: prefix + "snapshot_" + suffix, ObjectTypeID: "0-1", ProcessingType: "SNAPSHOT",
@@ -137,7 +145,7 @@ func TestAcc_contact_segments_ContractPreflight(t *testing.T) {
 
 	updatedDynamicFilters := contactSegmentOR(
 		contactSegmentAND(
-			contactSegmentValueFilter("hs_lead_status", "IS_EQUAL_TO", "NEW"),
+			contactSegmentValueFilter(valueOperation, "hs_lead_status", true, "NEW"),
 			contactSegmentPresenceFilter("firstname", "IS_KNOWN"),
 		),
 	)
@@ -166,6 +174,34 @@ func TestAcc_contact_segments_ContractPreflight(t *testing.T) {
 	t.Log("Contact segment contract preflight proved MANUAL, DYNAMIC, and SNAPSHOT creation; text/select/presence round-trip; dynamic replacement; snapshot/manual immutability; and exact-ID delete/read/restore on the protected Free portal")
 }
 
+func TestContactSegmentProbeNormalizesSupportedValueShapes(t *testing.T) {
+	includeUnset := false
+	stringValue, err := json.Marshal("lead")
+	if err != nil {
+		t.Fatal("encode test value")
+	}
+	stringBranch := contactSegmentOR(contactSegmentAND(contactSegmentFilter{
+		FilterType: "PROPERTY", Property: "lifecyclestage",
+		Operation: contactSegmentFilterOperation{
+			OperationType: "STRING", Operator: "IS_EQUAL_TO", Value: stringValue,
+			IncludeObjectsWithNoValueSet: &includeUnset,
+		},
+	}))
+	enumerationBranch := contactSegmentOR(contactSegmentAND(contactSegmentFilter{
+		FilterType: "PROPERTY", Property: "lifecyclestage",
+		Operation: contactSegmentFilterOperation{
+			OperationType: "ENUMERATION", Operator: "IS_ANY_OF", Values: []string{"lead"},
+			IncludeObjectsWithNoValueSet: &includeUnset,
+		},
+	}))
+	if strings.Join(contactSegmentFilterFingerprint(stringBranch), "\n") != strings.Join(contactSegmentFilterFingerprint(enumerationBranch), "\n") {
+		t.Fatal("supported string and enumeration equality shapes did not normalize to one public predicate")
+	}
+	if contactSegmentPublicOperator("IS_UNKNOWN") != "is_not_known" || contactSegmentPublicOperator("CONTAINS") != "" {
+		t.Fatal("Contact segment operator normalization accepted an unsupported mapping")
+	}
+}
+
 func newContactSegmentProbe(t *testing.T, ctx context.Context, token string, ownedIDs *[]string) contactSegmentProbe {
 	t.Helper()
 	if _, err := acceptance.NewRealPortalClientSet(ctx, token, "terraform-provider-hubspot/contact-segments-contract-preflight"); err != nil {
@@ -187,9 +223,20 @@ func newContactSegmentProbe(t *testing.T, ctx context.Context, token string, own
 
 func (p contactSegmentProbe) mustCreate(t *testing.T, ctx context.Context, input contactSegmentCreate) contactSegmentWire {
 	t.Helper()
+	response, err := p.create(ctx, input)
+	if err != nil || response.ListID == "" {
+		t.Fatalf("Contact segment create probe failed: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	if response.ObjectTypeID != input.ObjectTypeID || response.ProcessingType != input.ProcessingType || response.Name != input.Name {
+		t.Fatal("Contact segment create probe returned a different supported definition")
+	}
+	return response
+}
+
+func (p contactSegmentProbe) create(ctx context.Context, input contactSegmentCreate) (contactSegmentWire, error) {
 	body, err := json.Marshal(input)
 	if err != nil {
-		t.Fatal("encode Contact segment contract create")
+		return contactSegmentWire{}, fmt.Errorf("encode Contact segment contract create: %w", err)
 	}
 	var response contactSegmentEnvelope
 	err = p.transport.Do(ctx, hubspot.Operation{
@@ -199,16 +246,54 @@ func (p contactSegmentProbe) mustCreate(t *testing.T, ctx context.Context, input
 	if response.List.ListID != "" {
 		*p.ownedIDs = append(*p.ownedIDs, response.List.ListID)
 		if idErr := validateContactSegmentProbeID(response.List.ListID); idErr != nil {
-			t.Fatal(idErr)
+			return response.List, idErr
 		}
 	}
-	if err != nil || response.List.ListID == "" {
-		t.Fatalf("Contact segment create probe failed: %s", acceptance.SanitizedHubSpotError(err))
+	if err != nil {
+		return response.List, err
 	}
-	if response.List.ObjectTypeID != input.ObjectTypeID || response.List.ProcessingType != input.ProcessingType || response.List.Name != input.Name {
-		t.Fatal("Contact segment create probe returned a different supported definition")
+	if response.List.ListID == "" {
+		return response.List, errors.New("HubSpot Contact segment create response omitted listId")
 	}
-	return response.List
+	return response.List, nil
+}
+
+func (p contactSegmentProbe) mustFindUniversalValueOperation(t *testing.T, ctx context.Context, prefix, suffix string) contactSegmentValueOperation {
+	t.Helper()
+	candidates := []contactSegmentValueOperation{
+		{operationType: "MULTISTRING", equalOperator: "IS_EQUAL_TO", notEqualOperator: "IS_NOT_EQUAL_TO"},
+		{operationType: "STRING", equalOperator: "IS_EQUAL_TO", notEqualOperator: "IS_NOT_EQUAL_TO", usesSingleValue: true},
+		{operationType: "ENUMERATION", equalOperator: "IS_ANY_OF", notEqualOperator: "IS_NONE_OF"},
+	}
+	for _, candidate := range candidates {
+		textAccepted := p.tryValueOperation(t, ctx, prefix+"matrix_"+strings.ToLower(candidate.operationType)+"_text_"+suffix, "firstname", "contract-probe", candidate)
+		selectAccepted := p.tryValueOperation(t, ctx, prefix+"matrix_"+strings.ToLower(candidate.operationType)+"_select_"+suffix, "lifecyclestage", "lead", candidate)
+		t.Logf("Contact segment operation matrix: %s text=%t select=%t", candidate.operationType, textAccepted, selectAccepted)
+		if textAccepted && selectAccepted {
+			return candidate
+		}
+	}
+	t.Fatal("Contact segment text and select equality require different wire operation types; the three-field filter and lists-only scope contracts are incompatible")
+	return contactSegmentValueOperation{}
+}
+
+func (p contactSegmentProbe) tryValueOperation(t *testing.T, ctx context.Context, name, property, value string, candidate contactSegmentValueOperation) bool {
+	t.Helper()
+	filters := contactSegmentOR(contactSegmentAND(contactSegmentValueFilter(candidate, property, true, value)))
+	created, err := p.create(ctx, contactSegmentCreate{
+		Name: name, ObjectTypeID: "0-1", ProcessingType: "DYNAMIC", FilterBranch: &filters,
+	})
+	if err != nil {
+		if contactSegmentProbeRejected(err) && created.ListID == "" {
+			return false
+		}
+		t.Fatalf("Contact segment operation-matrix create could not be classified: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	p.mustConverge(t, ctx, created.ListID, "DYNAMIC", &filters, false)
+	if err := p.ensureDeleted(ctx, created.ListID); err != nil {
+		t.Fatalf("Contact segment operation-matrix cleanup failed: %s", acceptance.SanitizedHubSpotError(err))
+	}
+	return true
 }
 
 func (p contactSegmentProbe) mustRead(t *testing.T, ctx context.Context, id string) contactSegmentWire {
@@ -458,14 +543,28 @@ func contactSegmentAND(filters ...contactSegmentFilter) contactSegmentFilterBran
 	}
 }
 
-func contactSegmentValueFilter(property, operator, value string) contactSegmentFilter {
+func contactSegmentValueFilter(candidate contactSegmentValueOperation, property string, equal bool, value string) contactSegmentFilter {
 	includeUnset := false
+	operator := candidate.notEqualOperator
+	if equal {
+		operator = candidate.equalOperator
+	}
+	operation := contactSegmentFilterOperation{
+		OperationType: candidate.operationType, Operator: operator,
+		IncludeObjectsWithNoValueSet: &includeUnset,
+	}
+	if candidate.usesSingleValue {
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			panic("encode static Contact segment filter value")
+		}
+		operation.Value = encoded
+	} else {
+		operation.Values = []string{value}
+	}
 	return contactSegmentFilter{
 		FilterType: "PROPERTY", Property: property,
-		Operation: contactSegmentFilterOperation{
-			OperationType: "MULTISTRING", Operator: operator, Values: []string{value},
-			IncludeObjectsWithNoValueSet: &includeUnset,
-		},
+		Operation: operation,
 	}
 }
 
@@ -499,17 +598,28 @@ func assertContactSegmentFilters(t *testing.T, expected contactSegmentFilterBran
 			if *filter.Operation.IncludeObjectsWithNoValueSet {
 				t.Fatal("Contact segment equality or presence filter unexpectedly included unset properties")
 			}
-			switch filter.Operation.Operator {
-			case "IS_EQUAL_TO", "IS_NOT_EQUAL_TO":
-				if filter.Operation.OperationType != "MULTISTRING" || len(filter.Operation.Values) != 1 || len(filter.Operation.Value) != 0 {
-					t.Fatal("Contact segment text/select equality did not round-trip as one MULTISTRING value")
+			if contactSegmentPublicOperator(filter.Operation.Operator) == "" {
+				t.Fatal("Contact segment read-back returned an unsupported property operator")
+			}
+			switch filter.Operation.OperationType {
+			case "STRING":
+				var value string
+				if len(filter.Operation.Values) != 0 || json.Unmarshal(filter.Operation.Value, &value) != nil || strings.TrimSpace(value) == "" {
+					t.Fatal("Contact segment STRING predicate did not round-trip with one value")
 				}
-			case "IS_KNOWN", "IS_UNKNOWN":
+			case "MULTISTRING", "ENUMERATION":
+				if len(filter.Operation.Values) != 1 || len(filter.Operation.Value) != 0 {
+					t.Fatal("Contact segment multi-value predicate did not round-trip with exactly one value")
+				}
+			case "ALL_PROPERTY":
+				if filter.Operation.Operator != "IS_KNOWN" && filter.Operation.Operator != "IS_UNKNOWN" {
+					t.Fatal("Contact segment presence predicate returned an unsupported operator")
+				}
 				if filter.Operation.OperationType != "ALL_PROPERTY" || len(filter.Operation.Values) != 0 || len(filter.Operation.Value) != 0 {
 					t.Fatal("Contact segment presence predicate did not round-trip as ALL_PROPERTY without a value")
 				}
 			default:
-				t.Fatal("Contact segment read-back returned an unsupported property operator")
+				t.Fatal("Contact segment read-back returned an unsupported property operation type")
 			}
 		}
 	}
@@ -528,14 +638,31 @@ func contactSegmentFilterFingerprint(branch contactSegmentFilterBranch) []string
 			value := ""
 			if len(filter.Operation.Values) == 1 {
 				value = filter.Operation.Values[0]
+			} else if len(filter.Operation.Value) != 0 {
+				_ = json.Unmarshal(filter.Operation.Value, &value)
 			}
-			filters = append(filters, fmt.Sprintf("%s|%s|%s|%s", filter.Property, filter.Operation.OperationType, filter.Operation.Operator, value))
+			filters = append(filters, fmt.Sprintf("%s|%s|%s", filter.Property, contactSegmentPublicOperator(filter.Operation.Operator), value))
 		}
 		sort.Strings(filters)
 		result = append(result, fmt.Sprintf("%d:%s", groupIndex, strings.Join(filters, ",")))
 	}
 	sort.Strings(result)
 	return result
+}
+
+func contactSegmentPublicOperator(operator string) string {
+	switch operator {
+	case "IS_EQUAL_TO", "IS_ANY_OF":
+		return "is_equal_to"
+	case "IS_NOT_EQUAL_TO", "IS_NONE_OF":
+		return "is_not_equal_to"
+	case "IS_KNOWN":
+		return "is_known"
+	case "IS_UNKNOWN":
+		return "is_not_known"
+	default:
+		return ""
+	}
 }
 
 func validateContactSegmentProbeID(id string) error {

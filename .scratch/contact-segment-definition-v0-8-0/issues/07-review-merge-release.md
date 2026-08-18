@@ -46,6 +46,11 @@ Blocked by: 01, 02, 03, 04, 05, 06
   32095048270 stopped before implementation and demo execution when the guide's
   `IS_NOT_KNOWN` filter operator produced `ListError.ENUM_CONVERSION`. Deferred
   cleanup verified the exact manual-definition tombstone.
+- 2026-08-18: Probe correction PR 100 merged as `f01fcc5`. Protected run
+  32095515566 proved `IS_UNKNOWN` and dynamic text/presence round-trip, then a
+  select predicate rejected `MULTISTRING` with
+  `ListError.INVALID_OPERATION_FOR_PROPERTY_TYPE`. Deferred cleanup verified
+  both created tombstones.
 
 ## Failure Ledger
 
@@ -53,3 +58,4 @@ Blocked by: 01, 02, 03, 04, 05, 06
 | --- | --- | --- | --- | --- | --- |
 | Terraform refresh | 32090906501 | `f6fc450` | `2ef32f7` | Stale terminal folder task result | Provider PR 98, `5aaf330` |
 | Contact segment probe | 32095048270 | `686c176` | `2ef32f7` | Guide operator `IS_NOT_KNOWN` rejected | Use dated `IS_UNKNOWN` wire enum |
+| Contact segment probe | 32095515566 | `f01fcc5` | `2ef32f7` | Select property rejected `MULTISTRING` | Test universal operation matrix |
