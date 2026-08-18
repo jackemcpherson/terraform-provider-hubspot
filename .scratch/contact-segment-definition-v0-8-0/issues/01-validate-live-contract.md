@@ -33,3 +33,9 @@ Blocked by: None
   cleanup verified the created manual definition's tombstone. The rejected
   request used the filter guide's `IS_NOT_KNOWN`; the next probe uses the exact
   dated schema's `IS_UNKNOWN` while retaining public `is_not_known` semantics.
+- 2026-08-18: Protected run 32095515566 proved that `IS_UNKNOWN` works and a
+  text/presence `DYNAMIC` definition round-trips. `SNAPSHOT` creation then
+  rejected `MULTISTRING` for the `lifecyclestage` select property with
+  `ListError.INVALID_OPERATION_FOR_PROPERTY_TYPE`. Deferred cleanup verified
+  both created tombstones. A final matrix tests whether `STRING` or
+  `ENUMERATION` is universal across text and select without a schema read.
