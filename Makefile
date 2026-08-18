@@ -59,7 +59,7 @@ check-workflows:
 engine-smoke:
 	@./scripts/engine-smoke.sh
 
-maintenance: check-security check-release product-contract-preflight contact-segment-contract-preflight northstar-maintenance
+maintenance: check-security check-release product-contract-preflight northstar-maintenance
 
 check-security:
 	@test -x "$(TOOLS_BIN)/zizmor" || { echo "zizmor $(ZIZMOR_VERSION) is required; run make maintenance-tools"; exit 1; }

@@ -2,7 +2,7 @@
 
 Type: research
 
-Status: in progress
+Status: claimed
 
 Blocked by: None
 
@@ -39,3 +39,17 @@ Blocked by: None
   `ListError.INVALID_OPERATION_FOR_PROPERTY_TYPE`. Deferred cleanup verified
   both created tombstones. A final matrix tests whether `STRING` or
   `ENUMERATION` is universal across text and select without a schema read.
+- 2026-08-18: Protected run 32096106495 completed the operation matrix:
+  `MULTISTRING` and `STRING` accepted text but rejected select, while
+  `ENUMERATION` rejected text but accepted select. Every accepted candidate
+  was deleted and verified through the same exact-ID tombstone. The run stopped
+  before resource implementation and demo execution as required.
+
+## Findings
+
+The agreed three-field filter cannot choose the required dated wire operation
+for both text and select properties using only the Lists API. A frozen contract
+now requires one user decision: expose property type in each value filter,
+require contact-property schema read permission and infer it, narrow v0.8.0 to
+one property kind, or defer the release. Until then this ticket remains claimed
+and all implementation tickets remain blocked.

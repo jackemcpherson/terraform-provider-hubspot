@@ -51,6 +51,12 @@ Blocked by: 01, 02, 03, 04, 05, 06
   select predicate rejected `MULTISTRING` with
   `ListError.INVALID_OPERATION_FOR_PROPERTY_TYPE`. Deferred cleanup verified
   both created tombstones.
+- 2026-08-18: Operation-matrix PR 101 merged as `874d0ea`. Protected run
+  32096106495 proved `MULTISTRING` text=true/select=false, `STRING`
+  text=true/select=false, and `ENUMERATION` text=false/select=true. Every
+  accepted candidate was deleted and verified by exact-ID tombstone read. The
+  release stopped before implementation because the agreed public filter and
+  lists-only scope contract cannot select the required operation type.
 
 ## Failure Ledger
 
@@ -59,3 +65,4 @@ Blocked by: 01, 02, 03, 04, 05, 06
 | Terraform refresh | 32090906501 | `f6fc450` | `2ef32f7` | Stale terminal folder task result | Provider PR 98, `5aaf330` |
 | Contact segment probe | 32095048270 | `686c176` | `2ef32f7` | Guide operator `IS_NOT_KNOWN` rejected | Use dated `IS_UNKNOWN` wire enum |
 | Contact segment probe | 32095515566 | `f01fcc5` | `2ef32f7` | Select property rejected `MULTISTRING` | Test universal operation matrix |
+| Contact segment probe | 32096106495 | `874d0ea` | `2ef32f7` | No universal text/select operation type | User contract decision required |

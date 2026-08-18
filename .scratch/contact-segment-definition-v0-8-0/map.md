@@ -4,7 +4,8 @@ This map tracks the append-only work needed to publish v0.8.0.
 
 ## Frontier
 
-- [01 Validate the Live Contract](issues/01-validate-live-contract.md)
+No implementation ticket is on the frontier. The protected live contract is
+blocked on a public filter and permission decision.
 
 ## Decisions So Far
 
@@ -15,5 +16,9 @@ This map tracks the append-only work needed to publish v0.8.0.
 - ADR 0003 remains authoritative. Qualification uses exact merged `main`
   commits and does not add a candidate workflow or release branch.
 - The qualified baseline uses provider `5aaf330` and demo `2ef32f7`.
-- The frozen contract will be recorded in `spec.md` after the protected live
-  probe resolves the documentation-only unknowns.
+- Protected run 32096106495 proved that text filters require `MULTISTRING` or
+  `STRING`, while select filters require `ENUMERATION`. No universal Lists API
+  wire shape exists for the agreed filter fields.
+- The frozen `spec.md` must not be created until the public contract either
+  exposes property kind, authorizes schema lookup and its additional scope,
+  narrows to one property kind, or defers v0.8.0.
