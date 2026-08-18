@@ -12,7 +12,7 @@ STATICCHECK_VERSION := v0.6.1
 ZIZMOR_VERSION := 1.27.0
 STATICCHECK_BIN := $(TOOLS_BIN)/staticcheck
 
-.PHONY: tools maintenance-tools check check-go check-docs check-workflows engine-smoke maintenance check-security check-release product-contract-preflight northstar-maintenance docs docs-portal docs-portal-update docs-portal-serve test test-race test-hermetic fuzz-seeds fmt
+.PHONY: tools maintenance-tools check check-go check-docs check-workflows engine-smoke maintenance check-security check-release product-contract-preflight contact-segment-contract-preflight northstar-maintenance docs docs-portal docs-portal-update docs-portal-serve test test-race test-hermetic fuzz-seeds fmt
 
 tools:
 	@command -v go >/dev/null || { echo "go $(GO_VERSION) required; install tools before running checks"; exit 1; }
@@ -59,7 +59,7 @@ check-workflows:
 engine-smoke:
 	@./scripts/engine-smoke.sh
 
-maintenance: check-security check-release product-contract-preflight northstar-maintenance
+maintenance: check-security check-release product-contract-preflight contact-segment-contract-preflight northstar-maintenance
 
 check-security:
 	@test -x "$(TOOLS_BIN)/zizmor" || { echo "zizmor $(ZIZMOR_VERSION) is required; run make maintenance-tools"; exit 1; }
@@ -77,6 +77,9 @@ check-release:
 
 product-contract-preflight:
 	@HUBSPOT_ACCEPTANCE=1 HUBSPOT_ACCEPTANCE_PREFIX=tf_acc_products_contract_ go test -tags=acceptance ./internal/acceptance -run '^TestAcc_product_definitions_ContractPreflight$$' -count=1 -timeout=5m
+
+contact-segment-contract-preflight:
+	@HUBSPOT_ACCEPTANCE=1 HUBSPOT_ACCEPTANCE_PREFIX=tf_acc_contact_segments_contract_ go test -tags=acceptance ./internal/acceptance -run '^TestAcc_contact_segments_ContractPreflight$$' -count=1 -timeout=15m
 
 northstar-maintenance:
 	@./scripts/northstar-maintenance.sh
