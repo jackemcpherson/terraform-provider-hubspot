@@ -44,12 +44,17 @@ Blocked by: None
   `ENUMERATION` rejected text but accepted select. Every accepted candidate
   was deleted and verified through the same exact-ID tombstone. The run stopped
   before resource implementation and demo execution as required.
+- 2026-08-18: The contract decision adds conditional
+  `property_kind = "text" | "select"` to value predicates. Text writes use
+  `STRING`, select writes use `ENUMERATION`, and presence writes use
+  `ALL_PROPERTY`. Reads also accept one-value `MULTISTRING` as text. HubSpot
+  validates mismatches, so the provider retains only `crm.lists.read` and
+  `crm.lists.write`.
 
 ## Findings
 
-The agreed three-field filter cannot choose the required dated wire operation
-for both text and select properties using only the Lists API. A frozen contract
-now requires one user decision: expose property type in each value filter,
-require contact-property schema read permission and infer it, narrow v0.8.0 to
-one property kind, or defer the release. Until then this ticket remains claimed
-and all implementation tickets remain blocked.
+The original three-field filter could not choose the required dated wire
+operation for both text and select properties. ADR 0004 resolves that blocker
+with an explicit Contact segment property kind and no schema lookup. The
+protected probe must now prove the complete amended contract, including all
+three variants and exact-ID tombstone restoration, before this ticket resolves.

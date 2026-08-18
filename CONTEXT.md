@@ -108,6 +108,11 @@ _Avoid_: CMS content, source code
 A reusable rule or manually maintained container for selecting contact records, identified by a generated list ID. Memberships and derived segment size are operational data rather than part of the definition.
 _Avoid_: Contact list, list membership
 
+**Contact segment property kind**:
+An author-declared classification of a contact property as text or select within
+a segment value predicate. Property-presence predicates have no property kind.
+_Avoid_: Operation type, wire type
+
 **Manual contact segment**:
 A contact segment definition with no declarative filter tree. Its membership is maintained outside configuration management.
 _Avoid_: Static list

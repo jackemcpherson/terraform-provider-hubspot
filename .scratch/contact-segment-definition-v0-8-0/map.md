@@ -4,8 +4,8 @@ This map tracks the append-only work needed to publish v0.8.0.
 
 ## Frontier
 
-No implementation ticket is on the frontier. The protected live contract is
-blocked on a public filter and permission decision.
+Ticket 01 remains claimed while the protected probe verifies the amended
+property-kind contract and the remaining lifecycle stop conditions.
 
 ## Decisions So Far
 
@@ -19,6 +19,11 @@ blocked on a public filter and permission decision.
 - Protected run 32096106495 proved that text filters require `MULTISTRING` or
   `STRING`, while select filters require `ENUMERATION`. No universal Lists API
   wire shape exists for the agreed filter fields.
-- The frozen `spec.md` must not be created until the public contract either
-  exposes property kind, authorizes schema lookup and its additional scope,
-  narrows to one property kind, or defers v0.8.0.
+- ADR 0004 adds author-declared `property_kind = "text" | "select"` to value
+  predicates. It retains Lists-only permissions and makes HubSpot authoritative
+  for mismatches.
+- The amended contract writes `STRING` for text, `ENUMERATION` for select, and
+  `ALL_PROPERTY` for presence predicates. Reads also normalise one-value
+  `MULTISTRING` predicates as text.
+- The frozen contract is recorded in `spec.md`. Implementation remains blocked
+  until the protected probe completes all stop-condition checks.

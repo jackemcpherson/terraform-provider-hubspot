@@ -57,6 +57,10 @@ Blocked by: 01, 02, 03, 04, 05, 06
   accepted candidate was deleted and verified by exact-ID tombstone read. The
   release stopped before implementation because the agreed public filter and
   lists-only scope contract cannot select the required operation type.
+- 2026-08-18: The user selected author-declared property kind after a design
+  review. ADR 0004 retains v0.8.0 and Lists-only permissions, specifies
+  conditional `property_kind`, and freezes deterministic text, select, and
+  presence wire mappings. The full protected contract probe is the next gate.
 
 ## Failure Ledger
 
