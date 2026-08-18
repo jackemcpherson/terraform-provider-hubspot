@@ -247,11 +247,9 @@ func (r *FileFolderResource) Update(ctx context.Context, request resource.Update
 			response.Diagnostics.AddError("File folder update did not complete", "HubSpot did not report a valid terminal COMPLETE task. Prior identity and state were retained for a safe retry.")
 			return
 		}
-		if mismatches := folderPlanMismatches(result, state.ID.ValueString(), plan, state.CreatedAt.ValueString()); len(mismatches) > 0 {
-			response.Diagnostics.AddError("File folder update did not complete", "HubSpot's terminal task result did not match every planned managed value. Prior identity and state were retained for a safe retry. Mismatched fields: "+strings.Join(mismatches, ", ")+".")
-			return
+		if len(folderPlanMismatches(result, state.ID.ValueString(), plan, state.CreatedAt.ValueString())) == 0 {
+			taskResult = &result
 		}
-		taskResult = &result
 	} else {
 		_, updateErr = r.folders.Rename(ctx, state.ID.ValueString(), plan.Name.ValueString())
 	}

@@ -65,6 +65,7 @@ func runHermeticFilesConfigurationRecovery(t *testing.T, engine acceptance.Engin
 
 		fake.FailNextFilesOperation(acceptance.FilesFaultUploadKnown)
 		session.Apply(initial)
+		rootID := session.OpaqueStateString("hubspot_file_folder.root", "id")
 		session.RequireEmptyPlan(initial)
 
 		fake.FailNextFilesOperation(acceptance.FilesFaultPatchApplied)
@@ -103,6 +104,23 @@ func runHermeticFilesConfigurationRecovery(t *testing.T, engine acceptance.Engin
 		session.RequireApplyFailure(malformed)
 		session.Apply(malformed)
 		session.RequireEmptyPlan(malformed)
+
+		unverifiableTaskResult := strings.Replace(malformed, "Hermetic Files root final", "Hermetic Files root unverifiable task", 1)
+		fake.LagNextFileFolderUpdateVisibility(8)
+		fake.FailNextFilesOperation(acceptance.FilesFaultFolderTaskStale)
+		session.RequireApplyFailure(unverifiableTaskResult)
+		session.Apply(unverifiableTaskResult)
+		session.RequireEmptyPlan(unverifiableTaskResult)
+
+		staleTaskResult := strings.Replace(unverifiableTaskResult, "Hermetic Files root unverifiable task", "Hermetic Files root stale task", 1)
+		_, asyncUpdatesBefore := fake.FileFolderWriteCounts(rootID)
+		fake.FailNextFilesOperation(acceptance.FilesFaultFolderTaskStale)
+		session.Apply(staleTaskResult)
+		if _, asyncUpdates := fake.FileFolderWriteCounts(rootID); asyncUpdates != asyncUpdatesBefore+1 {
+			t.Fatalf("stale terminal result replayed File folder update: before=%d after=%d", asyncUpdatesBefore, asyncUpdates)
+		}
+		session.RequireEmptyPlan(staleTaskResult)
+		malformed = staleTaskResult
 
 		fake.FailNextFilesOperation(acceptance.FilesFaultDeleteNotApplied)
 		session.RequireDestroyFailure(malformed)
