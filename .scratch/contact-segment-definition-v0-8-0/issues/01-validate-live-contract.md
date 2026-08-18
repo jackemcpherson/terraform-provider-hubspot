@@ -19,13 +19,17 @@ Blocked by: None
 
 ## Comments
 
+- 2026-08-18: Official primary-source research is in progress. The protected
+  environment exposes the expected token and portal-identity variable names.
+  Token scope proof remains a live-probe obligation because secret values are
+  inaccessible by design.
 - 2026-08-18: Official research confirmed the dated route and processing-type
   surface but found that deleted exact-ID reads and the canonical
   text/select/presence filter wire shape are not documented consistently.
   A probe-only protected maintenance gate must resolve both stop conditions
   before the provider resource contract is frozen.
-
-- 2026-08-18: Official primary-source research is in progress. The protected
-  environment exposes the expected token and portal-identity variable names.
-  Token scope proof remains a live-probe obligation because secret values are
-  inaccessible by design.
+- 2026-08-18: Protected run 32095048270 proved `MANUAL` creation, then the
+  first `DYNAMIC` request failed with `ListError.ENUM_CONVERSION`. Deferred
+  cleanup verified the created manual definition's tombstone. The rejected
+  request used the filter guide's `IS_NOT_KNOWN`; the next probe uses the exact
+  dated schema's `IS_UNKNOWN` while retaining public `is_not_known` semantics.
