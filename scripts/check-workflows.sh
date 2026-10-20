@@ -10,7 +10,7 @@ for workflow in .github/workflows/*.yml; do
     echo "workflow $workflow has no finite timeout" >&2
     exit 1
   }
-  grep -q 'runs-on: ubuntu-24.04' "$workflow" || {
+  grep -Eq '^[[:space:]]*runs-on: ubuntu-(24|26)\.04[[:space:]]*$' "$workflow" || {
     echo "workflow $workflow must pin the hosted runner image" >&2
     exit 1
   }
