@@ -4,7 +4,7 @@ TOOLS_BIN := $(shell go env GOPATH 2>/dev/null)/bin
 export PATH := $(TOOLS_BIN):$(PATH)
 
 # Keep local checks and CI on the exact toolchain Renovate maintains in go.mod.
-GO_VERSION := $(shell awk '$1 == "toolchain" {sub(/^go/, "", $2); print $2}' go.mod)
+GO_VERSION := $(shell awk '$$1 == "toolchain" {sub(/^go/, "", $$2); print $$2}' go.mod)
 TOFU_CURRENT_VERSION := 1.12.3
 TERRAFORM_CURRENT_VERSION := 1.15.8
 TFPLUGINDOCS_VERSION := v0.25.0
@@ -17,7 +17,7 @@ STATICCHECK_BIN := $(TOOLS_BIN)/staticcheck
 
 tools:
 	@command -v go >/dev/null || { echo "go $(GO_VERSION) required; install tools before running checks"; exit 1; }
-	@test -n "$(GO_VERSION)" && test "$(go env GOVERSION)" = "go$(GO_VERSION)" || { echo "exact Go $(GO_VERSION) required"; exit 1; }
+	@test -n "$(GO_VERSION)" && test "$$(go env GOVERSION)" = "go$(GO_VERSION)" || { echo "exact Go $(GO_VERSION) required"; exit 1; }
 	@./scripts/install-engines.sh "$(TOOLS_BIN)" "$(TOFU_CURRENT_VERSION)" "$(TERRAFORM_CURRENT_VERSION)"
 	@go install honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION)
 	@go install github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs@$(TFPLUGINDOCS_VERSION)
@@ -36,7 +36,7 @@ check: check-go check-docs check-workflows engine-smoke
 
 check-go:
 	@command -v go >/dev/null || { echo "go $(GO_VERSION) required"; exit 1; }
-	@test -n "$(GO_VERSION)" && test "$(go env GOVERSION)" = "go$(GO_VERSION)" || { echo "exact Go $(GO_VERSION) required"; exit 1; }
+	@test -n "$(GO_VERSION)" && test "$$(go env GOVERSION)" = "go$(GO_VERSION)" || { echo "exact Go $(GO_VERSION) required"; exit 1; }
 	@test -z "$$(gofmt -l .)" || { echo "Go files require formatting"; gofmt -l .; exit 1; }
 	@go vet ./...
 	@test -x "$(STATICCHECK_BIN)" || { echo "staticcheck $(STATICCHECK_VERSION) required; run make tools"; exit 1; }
