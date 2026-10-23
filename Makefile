@@ -9,6 +9,7 @@ TOFU_CURRENT_VERSION := 1.12.3
 TERRAFORM_CURRENT_VERSION := 1.15.8
 TFPLUGINDOCS_VERSION := v0.25.0
 GORELEASER_VERSION := v2.17.0
+# renovate: datasource=go depName=honnef.co/go/tools
 STATICCHECK_VERSION := v0.6.1
 ZIZMOR_VERSION := 1.27.0
 STATICCHECK_BIN := $(TOOLS_BIN)/staticcheck
@@ -23,7 +24,7 @@ tools:
 	@go install github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs@$(TFPLUGINDOCS_VERSION)
 	@tofu version | grep -F "OpenTofu v$(TOFU_CURRENT_VERSION)" >/dev/null
 	@terraform version | grep -F "Terraform v$(TERRAFORM_CURRENT_VERSION)" >/dev/null
-	@"$(STATICCHECK_BIN)" -version | grep -F '0.6.1' >/dev/null
+	@"$(STATICCHECK_BIN)" -version | grep -F '($(STATICCHECK_VERSION:v%=%))' >/dev/null
 	@test -x "$(TOOLS_BIN)/tfplugindocs"
 
 maintenance-tools: tools
