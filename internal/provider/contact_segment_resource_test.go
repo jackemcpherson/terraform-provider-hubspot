@@ -255,6 +255,57 @@ func TestContactSegmentCreateDistinguishesAmbiguousAndRejectedMissingID(t *testi
 	}
 }
 
+func TestContactSegmentDeleteCompletesWhenDefinitionIsPermanentlyAbsent(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		deleteStatus int
+		wantMethods  string
+	}{
+		{name: "delete reports absence", deleteStatus: http.StatusNotFound, wantMethods: "GET,DELETE"},
+		{name: "ambiguous delete then absence", deleteStatus: http.StatusServiceUnavailable, wantMethods: "GET,DELETE,GET"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			requireContactSegmentDeleteAbsent(t, test.deleteStatus, test.wantMethods)
+		})
+	}
+}
+
+func requireContactSegmentDeleteAbsent(t *testing.T, deleteStatus int, wantMethods string) {
+	t.Helper()
+	var methods []string
+	contactResource := contactSegmentPollingResource(t, func(request *http.Request) (*http.Response, error) {
+		methods = append(methods, request.Method)
+		if request.Method == http.MethodGet && len(methods) == 1 {
+			return contactSegmentPollingResponse("COMPLETE", 1), nil
+		}
+		status, body := http.StatusNotFound, `{"category":"OBJECT_NOT_FOUND","message":"not found"}`
+		if request.Method == http.MethodDelete {
+			status = deleteStatus
+		}
+		return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
+	})
+	var schemaResponse resource.SchemaResponse
+	contactResource.Schema(context.Background(), resource.SchemaRequest{}, &schemaResponse)
+	state := tfsdk.State{Schema: schemaResponse.Schema}
+	if diagnostics := state.Set(context.Background(), &contactSegmentResourceModel{
+		ID: types.StringValue("701"), Name: types.StringValue("Manual"), ProcessingType: types.StringValue("manual"),
+		FilterGroups: types.SetNull(contactSegmentGroupObjectType),
+	}); diagnostics.HasError() {
+		t.Fatalf("state diagnostics = %#v", diagnostics)
+	}
+	response := resource.DeleteResponse{State: state}
+	contactResource.Delete(context.Background(), resource.DeleteRequest{State: state}, &response)
+	if response.Diagnostics.HasError() {
+		t.Fatalf("delete diagnostics = %#v", response.Diagnostics)
+	}
+	if !response.State.Raw.IsNull() {
+		t.Fatal("permanently absent Contact segment remained in state")
+	}
+	if strings.Join(methods, ",") != wantMethods {
+		t.Fatalf("delete requests = %v, want exactly %s", methods, wantMethods)
+	}
+}
+
 type contactSegmentRoundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn contactSegmentRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {

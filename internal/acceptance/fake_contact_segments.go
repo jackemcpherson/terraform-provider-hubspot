@@ -26,6 +26,7 @@ type fakeContactSegment struct {
 	pendingReads  int
 	staleReads    int
 	staleSegment  hubspot.ContactSegment
+	unsupported   bool
 }
 
 // ContactSegmentFault selects one deterministic one-shot Lists API outcome.
@@ -43,6 +44,12 @@ const (
 	ContactSegmentFaultDeleteApplied    ContactSegmentFault = "delete_applied"
 	ContactSegmentFaultDeleteRejected   ContactSegmentFault = "delete_rejected"
 	ContactSegmentFaultRestoreApplied   ContactSegmentFault = "restore_applied"
+	// ContactSegmentFaultRestoreIncomplete applies a restore whose next two
+	// exact reads show the current version without the retained name.
+	ContactSegmentFaultRestoreIncomplete ContactSegmentFault = "restore_incomplete"
+	// ContactSegmentFaultDeleteDisappears purges the definition during delete
+	// and reports it permanently absent.
+	ContactSegmentFaultDeleteDisappears ContactSegmentFault = "delete_disappears"
 )
 
 type fakeContactSegmentBranch struct {
@@ -155,7 +162,11 @@ func (f *FakeHubSpot) handleContactSegmentItem(response http.ResponseWriter, req
 				entry.segment.ProcessingStatus = "COMPLETE"
 			}
 		}
-		writeFakeJSON(response, http.StatusOK, map[string]any{"list": fakeContactSegmentDocument(observed)})
+		document := fakeContactSegmentDocument(observed)
+		if entry.unsupported {
+			fakeContactSegmentAddUnsupportedFilter(document)
+		}
+		writeFakeJSON(response, http.StatusOK, map[string]any{"list": document})
 	case http.MethodDelete:
 		if entry == nil || entry.segment.Deleted {
 			writeFakeError(response, http.StatusNotFound, "OBJECT_NOT_FOUND", "", "No active Contact segment matched this identity.")
@@ -164,6 +175,12 @@ func (f *FakeHubSpot) handleContactSegmentItem(response http.ResponseWriter, req
 		if f.nextContactFault == ContactSegmentFaultDeleteRejected {
 			f.nextContactFault = ""
 			writeFakeError(response, http.StatusForbidden, "MISSING_SCOPES", "", "The Contact segment delete was rejected.")
+			return
+		}
+		if f.nextContactFault == ContactSegmentFaultDeleteDisappears {
+			f.nextContactFault = ""
+			delete(f.contactSegments, id)
+			writeFakeError(response, http.StatusNotFound, "OBJECT_NOT_FOUND", "", "No Contact segment matched this identity.")
 			return
 		}
 		entry.segment.Deleted = true
@@ -269,6 +286,12 @@ func (f *FakeHubSpot) handleContactSegmentAction(response http.ResponseWriter, r
 		entry.segment.Version++
 		entry.segment.ProcessingStatus = "COMPLETE"
 		entry.restoreWrites++
+		if f.nextContactFault == ContactSegmentFaultRestoreIncomplete {
+			f.nextContactFault = ""
+			entry.staleSegment = entry.segment
+			entry.staleSegment.Name = entry.segment.Name + " restoring"
+			entry.staleReads = 2
+		}
 		if f.nextContactFault == ContactSegmentFaultRestoreApplied {
 			f.nextContactFault = ""
 			writeFakeError(response, http.StatusServiceUnavailable, "TEMPORARY_UNAVAILABLE", "", "The Contact segment restore outcome is ambiguous.")
@@ -477,6 +500,48 @@ func (f *FakeHubSpot) DeleteContactSegment(id string) bool {
 	entry.segment.Version++
 	entry.deleteWrites++
 	return true
+}
+
+// RestoreContactSegment returns a tombstone to active use out of band without
+// counting a provider restore write.
+func (f *FakeHubSpot) RestoreContactSegment(id string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	entry := f.contactSegments[id]
+	if entry == nil || !entry.segment.Deleted {
+		return false
+	}
+	entry.segment.Deleted = false
+	entry.segment.Version++
+	entry.segment.ProcessingStatus = "COMPLETE"
+	return true
+}
+
+// SetContactSegmentUnsupported makes exact reads of one dynamic definition
+// include, or stop including, a remote filter outside the supported contract.
+func (f *FakeHubSpot) SetContactSegmentUnsupported(id string, unsupported bool) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	entry := f.contactSegments[id]
+	if entry == nil || entry.segment.ProcessingType != "dynamic" {
+		return false
+	}
+	entry.unsupported = unsupported
+	return true
+}
+
+func fakeContactSegmentAddUnsupportedFilter(document map[string]any) {
+	root, ok := document["filterBranch"].(fakeContactSegmentBranch)
+	if !ok || len(root.FilterBranches) == 0 {
+		return
+	}
+	includeUnset := false
+	threshold := "10"
+	root.FilterBranches[0].Filters = append(root.FilterBranches[0].Filters, fakeContactSegmentFilter{
+		FilterType: "PROPERTY", Property: "num_associated_deals",
+		Operation: fakeContactSegmentOperation{OperationType: "NUMBER", Operator: "IS_GREATER_THAN", Value: &threshold, IncludeObjectsWithNoValueSet: &includeUnset},
+	})
+	document["filterBranch"] = root
 }
 
 func (f *FakeHubSpot) PurgeContactSegment(id string) bool {

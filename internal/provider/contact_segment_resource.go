@@ -283,19 +283,19 @@ func (r *ContactSegmentResource) Update(ctx context.Context, request resource.Up
 		response.Diagnostics.AddError("Contact segment update identity changed", "HubSpot did not return the exact ILS list identity and immutable processing type. Prior state was retained.")
 		return
 	}
-	deleted, privateDiagnostics := request.Private.GetKey(ctx, contactSegmentDeletedPrivateKey)
-	response.Diagnostics.Append(privateDiagnostics...)
-	if response.Diagnostics.HasError() {
-		return
-	}
+	// The private marker only plans restoration. The preflight observation
+	// decides it, because the definition may have been restored since refresh.
 	ambiguous := false
-	if current.Deleted || string(deleted) == "true" {
+	if current.Deleted {
 		restoreErr := r.client.Restore(ctx, id)
 		if restoreErr != nil && !isAmbiguous(restoreErr) {
 			appendHubSpotDiagnostic(&response.Diagnostics, "Contact segment restoration failed", restoreErr)
 			return
 		}
-		restored, verifyErr := r.waitForActive(ctx, id, current.Version+1)
+		// Restoration completes only when the same identity shows the complete
+		// retained definition; configured renames and filter changes follow.
+		retained := hubspot.ContactSegmentWrite{Name: current.Name, ProcessingType: current.ProcessingType, FilterGroups: current.FilterGroups}
+		restored, verifyErr := r.waitForActiveDefinition(ctx, id, current.Version+1, retained)
 		if verifyErr != nil {
 			if restoreErr != nil {
 				appendHubSpotDiagnostic(&response.Diagnostics, "Contact segment restoration failed", restoreErr)
@@ -308,8 +308,8 @@ func (r *ContactSegmentResource) Update(ctx context.Context, request resource.Up
 			ambiguous = true
 		}
 		current = restored
-		response.Diagnostics.Append(response.Private.SetKey(ctx, contactSegmentDeletedPrivateKey, nil)...)
 	}
+	response.Diagnostics.Append(response.Private.SetKey(ctx, contactSegmentDeletedPrivateKey, nil)...)
 	if current.Name != input.Name {
 		_, updateErr := r.client.UpdateName(ctx, id, input.Name)
 		if updateErr != nil && !isAmbiguous(updateErr) {
@@ -390,11 +390,21 @@ func (r *ContactSegmentResource) Delete(ctx context.Context, request resource.De
 		return
 	}
 	deleteErr := r.client.Delete(ctx, id)
-	if deleteErr != nil && !isNotFound(deleteErr) && !isAmbiguous(deleteErr) {
+	if isNotFound(deleteErr) {
+		// The preflight proved this exact identity; HubSpot now reports it
+		// permanently absent, so destroy completes idempotently.
+		response.State.RemoveResource(ctx)
+		return
+	}
+	if deleteErr != nil && !isAmbiguous(deleteErr) {
 		appendHubSpotDiagnostic(&response.Diagnostics, "Contact segment deletion failed", deleteErr)
 		return
 	}
 	tombstone, verifyErr := r.waitForTombstone(ctx, id)
+	if errors.Is(verifyErr, errContactSegmentAbsent) {
+		response.State.RemoveResource(ctx)
+		return
+	}
 	if verifyErr != nil {
 		if deleteErr != nil {
 			appendHubSpotDiagnostic(&response.Diagnostics, "Contact segment deletion failed", deleteErr)
@@ -593,22 +603,24 @@ func (r *ContactSegmentResource) waitForActiveDefinition(ctx context.Context, id
 	})
 }
 
-func (r *ContactSegmentResource) waitForActive(ctx context.Context, id string, minimumVersion int64) (hubspot.ContactSegment, error) {
-	return r.waitForSegment(ctx, id, func(segment hubspot.ContactSegment) (bool, error) {
-		if segment.Deleted || segment.Version < minimumVersion {
-			return false, nil
-		}
-		return contactSegmentProcessingComplete(segment.ProcessingStatus)
-	})
-}
+// errContactSegmentAbsent reports that an exact identity became permanently
+// absent while destroy was waiting for its tombstone.
+var errContactSegmentAbsent = errors.New("contact segment is permanently absent")
 
 func (r *ContactSegmentResource) waitForTombstone(ctx context.Context, id string) (hubspot.ContactSegment, error) {
-	return r.waitForSegment(ctx, id, func(segment hubspot.ContactSegment) (bool, error) {
+	return r.pollSegment(ctx, id, true, func(segment hubspot.ContactSegment) (bool, error) {
 		return segment.Deleted, nil
 	})
 }
 
 func (r *ContactSegmentResource) waitForSegment(ctx context.Context, id string, ready func(hubspot.ContactSegment) (bool, error)) (hubspot.ContactSegment, error) {
+	return r.pollSegment(ctx, id, false, ready)
+}
+
+// pollSegment reads one exact identity until ready. Not-found observations
+// keep polling unless absentIsTerminal, when they end with
+// errContactSegmentAbsent.
+func (r *ContactSegmentResource) pollSegment(ctx context.Context, id string, absentIsTerminal bool, ready func(hubspot.ContactSegment) (bool, error)) (hubspot.ContactSegment, error) {
 	interval := r.pollInterval
 	if interval <= 0 {
 		interval = contactSegmentDefaultPollInterval
@@ -634,6 +646,8 @@ func (r *ContactSegmentResource) waitForSegment(ctx context.Context, id string, 
 			}
 		} else if !isNotFound(err) {
 			return hubspot.ContactSegment{}, err
+		} else if absentIsTerminal {
+			return hubspot.ContactSegment{}, errContactSegmentAbsent
 		}
 		timer := time.NewTimer(interval)
 		select {

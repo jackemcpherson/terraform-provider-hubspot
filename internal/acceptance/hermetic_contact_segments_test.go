@@ -31,6 +31,130 @@ func TestHermeticContactSegmentRecoveryTerraformParity(t *testing.T) {
 	runHermeticContactSegmentRecovery(t, acceptance.Terraform, "registry.terraform.io/jackemcpherson/hubspot")
 }
 
+func TestHermeticContactSegmentFaults(t *testing.T) {
+	runHermeticContactSegmentFaults(t, acceptance.OpenTofu, "registry.opentofu.org/jackemcpherson/hubspot")
+}
+
+func TestHermeticContactSegmentFaultsTerraformParity(t *testing.T) {
+	runHermeticContactSegmentFaults(t, acceptance.Terraform, "registry.terraform.io/jackemcpherson/hubspot")
+}
+
+// runHermeticContactSegmentFaults drives unknown creates, unsupported remote
+// definitions, tombstone restoration outcomes, and disappearing deletes
+// through the engine with exact per-identity request counts.
+func runHermeticContactSegmentFaults(t *testing.T, engine acceptance.Engine, providerSource string) {
+	t.Helper()
+	if _, err := exec.LookPath(string(engine)); err != nil {
+		t.Skipf("pinned %s executable is not installed", engine)
+	}
+	fake := acceptance.NewFakeHubSpot(hermeticToken, 666000671)
+	server := httptest.NewServer(fake)
+	t.Cleanup(server.Close)
+	t.Setenv("HUBSPOT_ACCESS_TOKEN", hermeticToken)
+	t.Setenv("HUBSPOT_CONTACT_SEGMENT_TEST_POLL_INTERVAL", "1ms")
+	t.Setenv("HUBSPOT_CONTACT_SEGMENT_TEST_POLL_TIMEOUT", "2s")
+	const address = "hubspot_contact_segment.dynamic"
+	config := hermeticContactSegmentSingleConfig(server.URL, providerSource, "Faults", "active")
+	acceptance.Run(t, acceptance.Options{
+		Engine: engine, Shard: acceptance.ContactSegments,
+		Prefix: "tf_acc_hermetic_segments_recovery_", LedgerPath: t.TempDir() + "/cleanup.jsonl", ProbeBaseURL: server.URL,
+	}, func(session *acceptance.Session) {
+		requireCounts := func(id, phase string, want [6]int) {
+			t.Helper()
+			creates, reads, names, filters, deletes, restores := fake.ContactSegmentRequestCounts(id)
+			if got := [6]int{creates, reads, names, filters, deletes, restores}; got != want {
+				t.Fatalf("%s requests creates/reads/names/filters/deletes/restores = %v, want %v", phase, got, want)
+			}
+		}
+
+		// An unknown create retains no state and never searches by name; the
+		// orphan is recoverable only by exact-ID import.
+		fake.FailNextContactSegmentOperation(acceptance.ContactSegmentFaultCreateUnknown)
+		session.RequireApplyFailure(config)
+		session.RequireStateAbsent(address)
+		orphans := fake.ActiveContactSegmentIDs()
+		if len(orphans) != 1 {
+			t.Fatalf("unknown create left %d active identities, want 1", len(orphans))
+		}
+		id := orphans[0]
+		requireCounts(id, "unknown create", [6]int{1, 0, 0, 0, 0, 0})
+		session.Import(address, id)
+		session.RequireEmptyPlan(config)
+		session.RequireStateString(address, "id", id)
+
+		// Unsupported remote meaning fails refresh without dropping state and
+		// fails exact-ID import without adoption.
+		if !fake.SetContactSegmentUnsupported(id, true) {
+			t.Fatal("could not inject an unsupported remote filter")
+		}
+		session.RequirePlanFailure(config, "Contact segment refresh failed")
+		session.RequireStateString(address, "id", id)
+		session.RemoveState(address)
+		session.RequireImportFailure(config, address, id, "Contact segment import failed")
+		session.RequireStateAbsent(address)
+		if !fake.SetContactSegmentUnsupported(id, false) {
+			t.Fatal("could not clear the unsupported remote filter")
+		}
+		session.Import(address, id)
+		session.RequireEmptyPlan(config)
+		_, _, names, filters, deletes, restores := fake.ContactSegmentRequestCounts(id)
+		if names != 0 || filters != 0 || deletes != 0 || restores != 0 {
+			t.Fatal("unsupported refresh and import sent a remote write")
+		}
+
+		// A tombstone restored out of band after refresh needs no restore.
+		if !fake.DeleteContactSegment(id) {
+			t.Fatal("could not tombstone the definition out of band")
+		}
+		session.Refresh(config)
+		session.RequireStateString(address, "id", id)
+		if !fake.RestoreContactSegment(id) {
+			t.Fatal("could not restore the definition out of band")
+		}
+		session.ApplyWithoutRefresh(config)
+		session.RequireStateString(address, "id", id)
+		session.RequireEmptyPlan(config)
+		if _, _, names, filters, _, restores := fake.ContactSegmentRequestCounts(id); names != 0 || filters != 0 || restores != 0 {
+			t.Fatalf("already active definition sent names/filters/restores = %d/%d/%d, want 0/0/0", names, filters, restores)
+		}
+
+		// An ambiguous restore succeeds only after exact-ID read-back.
+		if !fake.DeleteContactSegment(id) {
+			t.Fatal("could not tombstone the definition before an ambiguous restore")
+		}
+		session.Refresh(config)
+		fake.FailNextContactSegmentOperation(acceptance.ContactSegmentFaultRestoreApplied)
+		session.ApplyWithWarning(config, acceptance.ContactSegmentAmbiguousWrite)
+		session.RequireStateString(address, "id", id)
+		session.RequireEmptyPlan(config)
+		if _, _, names, filters, _, restores := fake.ContactSegmentRequestCounts(id); names != 0 || filters != 0 || restores != 1 {
+			t.Fatalf("ambiguous restore sent names/filters/restores = %d/%d/%d, want 0/0/1", names, filters, restores)
+		}
+
+		// A restore observation without the retained definition keeps polling
+		// instead of rewriting the name.
+		if !fake.DeleteContactSegment(id) {
+			t.Fatal("could not tombstone the definition before an incomplete restore")
+		}
+		session.Refresh(config)
+		fake.FailNextContactSegmentOperation(acceptance.ContactSegmentFaultRestoreIncomplete)
+		session.Apply(config)
+		session.RequireStateString(address, "id", id)
+		session.RequireEmptyPlan(config)
+		if _, _, names, filters, _, restores := fake.ContactSegmentRequestCounts(id); names != 0 || filters != 0 || restores != 2 {
+			t.Fatalf("incomplete restore sent names/filters/restores = %d/%d/%d, want 0/0/2", names, filters, restores)
+		}
+
+		// A definition that disappears during delete completes destroy.
+		fake.FailNextContactSegmentOperation(acceptance.ContactSegmentFaultDeleteDisappears)
+		session.Destroy(config)
+		session.RequireStateAbsent(address)
+		if _, ok := fake.ContactSegmentSnapshot(id); ok {
+			t.Fatal("disappearing delete retained the fake identity")
+		}
+	})
+}
+
 func runHermeticContactSegmentRecovery(t *testing.T, engine acceptance.Engine, providerSource string) {
 	t.Helper()
 	if _, err := exec.LookPath(string(engine)); err != nil {

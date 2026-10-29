@@ -152,6 +152,69 @@ func TestFakeHubSpotContactSegmentModelsPendingStaleAndTimeoutReads(t *testing.T
 	}
 }
 
+func TestFakeHubSpotContactSegmentRecoveryHooks(t *testing.T) {
+	fake := NewFakeHubSpot("token", 123)
+	clients := fakeContactSegmentClients(t, fake)
+	ctx := context.Background()
+	created, err := clients.ContactSegments.Create(ctx, hubspot.ContactSegmentWrite{
+		Name: "tf_acc_hooks", ProcessingType: "dynamic", FilterGroups: contactSegmentFiltersForFakeTest("active"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !fake.SetContactSegmentUnsupported(created.ID, true) {
+		t.Fatal("could not mark the dynamic Contact segment unsupported")
+	}
+	if _, err := clients.ContactSegments.Get(ctx, created.ID); err == nil {
+		t.Fatal("unsupported remote filter was accepted by exact-ID read")
+	}
+	if !fake.SetContactSegmentUnsupported(created.ID, false) {
+		t.Fatal("could not clear the unsupported Contact segment filter")
+	}
+	if _, err := clients.ContactSegments.Get(ctx, created.ID); err != nil {
+		t.Fatalf("supported read after clearing = %v", err)
+	}
+
+	if !fake.DeleteContactSegment(created.ID) || !fake.RestoreContactSegment(created.ID) {
+		t.Fatal("could not tombstone and restore out of band")
+	}
+	restored, err := clients.ContactSegments.Get(ctx, created.ID)
+	if err != nil || restored.Deleted || restored.Version != 3 {
+		t.Fatalf("out-of-band restore = %#v, %v", restored, err)
+	}
+	if _, _, _, restores := fake.ContactSegmentWriteCounts(created.ID); restores != 0 {
+		t.Fatalf("out-of-band restore counted %d provider restore writes", restores)
+	}
+
+	if !fake.DeleteContactSegment(created.ID) {
+		t.Fatal("could not tombstone before incomplete restore")
+	}
+	fake.FailNextContactSegmentOperation(ContactSegmentFaultRestoreIncomplete)
+	if err := clients.ContactSegments.Restore(ctx, created.ID); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		incomplete, err := clients.ContactSegments.Get(ctx, created.ID)
+		if err != nil || incomplete.Deleted || incomplete.Name == "tf_acc_hooks" || incomplete.Version != 5 {
+			t.Fatalf("incomplete restore observation = %#v, %v", incomplete, err)
+		}
+	}
+	complete, err := clients.ContactSegments.Get(ctx, created.ID)
+	if err != nil || complete.Name != "tf_acc_hooks" || complete.Version != 5 {
+		t.Fatalf("complete restore observation = %#v, %v", complete, err)
+	}
+
+	fake.FailNextContactSegmentOperation(ContactSegmentFaultDeleteDisappears)
+	var apiError *hubspot.Error
+	if err := clients.ContactSegments.Delete(ctx, created.ID); !errors.As(err, &apiError) || apiError.Status != http.StatusNotFound {
+		t.Fatalf("disappearing delete = %v", err)
+	}
+	if _, ok := fake.ContactSegmentSnapshot(created.ID); ok {
+		t.Fatal("disappearing delete retained the fake identity")
+	}
+}
+
 func contactSegmentFiltersForFakeTest(value string) []hubspot.ContactSegmentFilterGroup {
 	return []hubspot.ContactSegmentFilterGroup{{Filters: []hubspot.ContactSegmentFilter{{
 		Property: "ns_onboarding_status", Operator: "is_equal_to", PropertyKind: "text", Value: value,
