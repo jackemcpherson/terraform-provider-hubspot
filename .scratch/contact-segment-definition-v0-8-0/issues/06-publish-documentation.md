@@ -31,7 +31,8 @@ Blocked by: 03, 04, 05
   resolved, so the release notes name deal pipeline configuration as v0.9.0
   and keep association definition deferred under ADR 0005.
 - 2026-10-29: The changelog entry is `## [0.8.0] - 2026-10-29`; ticket 07
-  corrects the date if publication slips. The release notes now carry upgrade
+  corrects it and the `Released 2026-10-29.` line in
+  `docs/releases/v0.8.0.md` if publication slips. The release notes now carry upgrade
   guidance. `make docs` regenerates the reference and example with no diff.
   `make docs-portal-update` refreshed `docs/portal-source.sha256` from a
   fresh demo clone at `7b1531b`, and a following `make docs-portal` passes.
