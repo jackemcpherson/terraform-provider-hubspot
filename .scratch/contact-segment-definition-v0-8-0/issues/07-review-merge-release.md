@@ -83,6 +83,9 @@ Blocked by: 01, 02, 03, 04, 05, 06
   checks, and `make check-release` passed. Listener-based hermetic execution,
   generated-document reproduction, demo writes, and hosted actions remain
   pending on the external execution gate.
+- 2026-10-29: Release train recovery orders this ticket after every
+  `release-train-recovery` ticket (01–07), in addition to the blockers above.
+  See `.scratch/release-train-recovery/map.md`.
 
 ## Failure Ledger
 

@@ -18,3 +18,7 @@ Blocked by: 03
 - Work in an isolated checkout and preserve the dirty local demo worktree.
 
 ## Comments
+
+- 2026-10-29: Release train recovery adds a blocker: `release-train-recovery`
+  ticket 07 (rebase the Contact segment slice and open its pull request). See
+  `.scratch/release-train-recovery/map.md`.
