@@ -134,7 +134,7 @@ func TestContactSegmentModelCanonicalizesSetOrder(t *testing.T) {
 			{Property: "status", Operator: "is_equal_to", PropertyKind: "select", Value: "active"},
 		}},
 	}
-	if !contactSegmentGroupsEqual(left, right) {
+	if !hubspot.ContactSegmentGroupsEqual(left, right) {
 		t.Fatal("group and filter ordering must not be semantic")
 	}
 	remote := hubspot.ContactSegment{ID: "701", Name: "Active customers", ProcessingType: "dynamic", FilterGroups: left}
@@ -144,7 +144,7 @@ func TestContactSegmentModelCanonicalizesSetOrder(t *testing.T) {
 		t.Fatalf("model diagnostics = %#v", diagnostics)
 	}
 	write, writeDiagnostics := contactSegmentWriteFromModel(context.Background(), model, false)
-	if writeDiagnostics.HasError() || !contactSegmentGroupsEqual(write.FilterGroups, right) {
+	if writeDiagnostics.HasError() || !hubspot.ContactSegmentGroupsEqual(write.FilterGroups, right) {
 		t.Fatalf("round trip diagnostics/groups = %#v/%#v", writeDiagnostics, write.FilterGroups)
 	}
 }
@@ -161,19 +161,6 @@ func TestContactSegmentApplyConversionNeverDropsUnknownFilters(t *testing.T) {
 	}
 	if _, diagnostics := contactSegmentWriteFromModel(context.Background(), model, true); diagnostics.HasError() {
 		t.Fatalf("configuration validation rejected an unknown planned filter: %#v", diagnostics)
-	}
-}
-
-func TestContactSegmentImportIDRequiresCanonicalPositiveDecimal(t *testing.T) {
-	for _, id := range []string{"1", "701", "999999999999999999999999999999999999999999"} {
-		if !validContactSegmentImportID(id) {
-			t.Fatalf("valid ID rejected: %q", id)
-		}
-	}
-	for _, id := range []string{"", "0", "-1", "+1", "01", "1.0", " 1"} {
-		if validContactSegmentImportID(id) {
-			t.Fatalf("invalid ID accepted: %q", id)
-		}
 	}
 }
 
@@ -222,15 +209,22 @@ func TestContactSegmentCreateDistinguishesAmbiguousAndRejectedMissingID(t *testi
 	for _, test := range []struct {
 		name       string
 		status     int
+		body       string
 		wantTitle  string
 		wantDetail string
 	}{
-		{name: "ambiguous server failure gives import guidance", status: http.StatusServiceUnavailable, wantTitle: "Contact segment creation outcome is unknown", wantDetail: "import the exact positive-decimal ID"},
+		{name: "ambiguous server failure gives import guidance", status: http.StatusServiceUnavailable, wantTitle: "Contact segment creation outcome is unknown", wantDetail: "Exact-ID import is the only safe recovery path"},
+		{name: "success without listId gives import guidance", status: http.StatusCreated, body: `{"list":{"futureServiceMetadata":true}}`, wantTitle: "Contact segment creation outcome is unknown", wantDetail: "Exact-ID import is the only safe recovery path"},
 		{name: "authoritative rejection fails immediately", status: http.StatusBadRequest, wantTitle: "Contact segment creation failed"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			requests := 0
 			contactResource := contactSegmentPollingResource(t, func(*http.Request) (*http.Response, error) {
-				body := `{"category":"VALIDATION_ERROR","message":"write failed"}`
+				requests++
+				body := test.body
+				if body == "" {
+					body = `{"category":"VALIDATION_ERROR","message":"write failed"}`
+				}
 				return &http.Response{StatusCode: test.status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
 			})
 			var schemaResponse resource.SchemaResponse
@@ -251,7 +245,61 @@ func TestContactSegmentCreateDistinguishesAmbiguousAndRejectedMissingID(t *testi
 			if test.wantDetail != "" && !strings.Contains(response.Diagnostics[0].Detail(), test.wantDetail) {
 				t.Fatalf("create detail = %q", response.Diagnostics[0].Detail())
 			}
+			if requests != 1 || !response.State.Raw.IsNull() {
+				t.Fatalf("create sent %d requests and retained state %v; want one write and no state", requests, !response.State.Raw.IsNull())
+			}
 		})
+	}
+}
+
+func TestContactSegmentDeleteCompletesWhenDefinitionIsPermanentlyAbsent(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		deleteStatus int
+		wantMethods  string
+	}{
+		{name: "delete reports absence", deleteStatus: http.StatusNotFound, wantMethods: "GET,DELETE"},
+		{name: "ambiguous delete then absence", deleteStatus: http.StatusServiceUnavailable, wantMethods: "GET,DELETE,GET"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			requireContactSegmentDeleteAbsent(t, test.deleteStatus, test.wantMethods)
+		})
+	}
+}
+
+func requireContactSegmentDeleteAbsent(t *testing.T, deleteStatus int, wantMethods string) {
+	t.Helper()
+	var methods []string
+	contactResource := contactSegmentPollingResource(t, func(request *http.Request) (*http.Response, error) {
+		methods = append(methods, request.Method)
+		if request.Method == http.MethodGet && len(methods) == 1 {
+			return contactSegmentPollingResponse("COMPLETE", 1), nil
+		}
+		status, body := http.StatusNotFound, `{"category":"OBJECT_NOT_FOUND","message":"not found"}`
+		if request.Method == http.MethodDelete {
+			status = deleteStatus
+		}
+		return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
+	})
+	var schemaResponse resource.SchemaResponse
+	contactResource.Schema(context.Background(), resource.SchemaRequest{}, &schemaResponse)
+	state := tfsdk.State{Schema: schemaResponse.Schema}
+	if diagnostics := state.Set(context.Background(), &contactSegmentResourceModel{
+		ID: types.StringValue("701"), Name: types.StringValue("Manual"), ProcessingType: types.StringValue("manual"),
+		FilterGroups: types.SetNull(contactSegmentGroupObjectType),
+	}); diagnostics.HasError() {
+		t.Fatalf("state diagnostics = %#v", diagnostics)
+	}
+	response := resource.DeleteResponse{State: state}
+	contactResource.Delete(context.Background(), resource.DeleteRequest{State: state}, &response)
+	if response.Diagnostics.HasError() {
+		t.Fatalf("delete diagnostics = %#v", response.Diagnostics)
+	}
+	if !response.State.Raw.IsNull() {
+		t.Fatal("permanently absent Contact segment remained in state")
+	}
+	if strings.Join(methods, ",") != wantMethods {
+		t.Fatalf("delete requests = %v, want exactly %s", methods, wantMethods)
 	}
 }
 

@@ -225,32 +225,50 @@ func execute(ctx context.Context, action string, ids []string, clients *hubspot.
 		if len(ids) != 5 {
 			return "", errors.New("three Northstar Contact segment IDs, the snapshot filter value, and the name label are required for verification")
 		}
-		return "", verifyNorthstarContactSegments(ctx, clients, ids[:3], ids[3], ids[4])
+		segments, snapshotValue, label := newNorthstarContactSegmentSet(ids[:3]), ids[3], ids[4]
+		return "", verifyNorthstarContactSegments(ctx, clients, segments, snapshotValue, label)
 	case "drift-contact-segments":
 		if len(ids) != 4 {
 			return "", errors.New("three Northstar Contact segment IDs and the name label are required for drift")
 		}
-		return "", driftNorthstarContactSegments(ctx, clients, ids[:3], ids[3])
+		segments, label := newNorthstarContactSegmentSet(ids[:3]), ids[3]
+		return "", driftNorthstarContactSegments(ctx, clients, segments, label)
 	case "verify-contact-segment-tombstone":
 		if len(ids) != 1 {
 			return "", errors.New("one Northstar Contact segment ID is required for tombstone verification")
 		}
-		return "", verifyNorthstarContactSegmentTombstone(ctx, clients, ids[0])
+		prefix, err := northstarContactSegmentPrefixFromEnvironment()
+		if err != nil {
+			return "", err
+		}
+		return "", verifyNorthstarContactSegmentTombstone(ctx, clients, ids[0], prefix)
 	case "delete-contact-segment-for-refresh":
 		if len(ids) != 1 {
 			return "", errors.New("one Northstar Contact segment ID is required for refresh deletion")
 		}
-		return "", deleteNorthstarContactSegmentForRefresh(ctx, clients, ids[0])
+		prefix, err := northstarContactSegmentPrefixFromEnvironment()
+		if err != nil {
+			return "", err
+		}
+		return "", deleteNorthstarContactSegmentForRefresh(ctx, clients, ids[0], prefix)
 	case "verify-contact-segments-terminal":
 		if len(ids) != 3 {
 			return "", errors.New("three Northstar Contact segment IDs are required for terminal verification")
 		}
-		return verifyNorthstarContactSegmentsTerminal(ctx, clients, ids)
+		prefix, err := northstarContactSegmentPrefixFromEnvironment()
+		if err != nil {
+			return "", err
+		}
+		return verifyNorthstarContactSegmentsTerminal(ctx, clients, ids, prefix)
 	case "cleanup-contact-segments":
 		if len(ids) == 0 {
 			return "", errors.New("at least one exact Northstar Contact segment ID is required for cleanup")
 		}
-		if err := cleanupNorthstarContactSegments(ctx, clients, ids); err != nil {
+		prefix, err := northstarContactSegmentPrefixFromEnvironment()
+		if err != nil {
+			return "", err
+		}
+		if err := cleanupNorthstarContactSegments(ctx, clients, ids, prefix); err != nil {
 			return "", err
 		}
 		return "Northstar Contact segment cleanup verified zero active exact identities", nil
@@ -335,7 +353,7 @@ func execute(ctx context.Context, action string, ids []string, clients *hubspot.
 			if parseErr != nil {
 				return "", parseErr
 			}
-			if err := cleanupNorthstarContactSegments(ctx, clients, segmentIDs); err != nil {
+			if err := cleanupNorthstarContactSegments(ctx, clients, segmentIDs, names.Prefix); err != nil {
 				return "", err
 			}
 		}
@@ -1364,8 +1382,7 @@ func northstarContactSegmentIDs(value string) ([]string, error) {
 	seen := make(map[string]struct{}, len(parts))
 	for _, part := range parts {
 		id := strings.TrimSpace(part)
-		integer, ok := new(big.Int).SetString(id, 10)
-		if !ok || integer.Sign() <= 0 || integer.String() != id {
+		if !hubspot.ValidContactSegmentID(id) {
 			return nil, errors.New("HUBSPOT_NORTHSTAR_CONTACT_SEGMENT_IDS must contain comma-separated canonical positive-decimal IDs")
 		}
 		if _, duplicate := seen[id]; duplicate {
@@ -1378,6 +1395,37 @@ func northstarContactSegmentIDs(value string) ([]string, error) {
 		return nil, errors.New("HUBSPOT_NORTHSTAR_CONTACT_SEGMENT_IDS must contain at least one ID")
 	}
 	return ids, nil
+}
+
+// northstarContactSegmentSet names the three stable-keyed demo definitions.
+type northstarContactSegmentSet struct {
+	Manual   string
+	Dynamic  string
+	Snapshot string
+}
+
+func newNorthstarContactSegmentSet(values []string) northstarContactSegmentSet {
+	return northstarContactSegmentSet{Manual: values[0], Dynamic: values[1], Snapshot: values[2]}
+}
+
+func (set northstarContactSegmentSet) ids() [3]string {
+	return [3]string{set.Manual, set.Dynamic, set.Snapshot}
+}
+
+// northstarContactSegmentBaseNames lists the demo name stems in the same
+// manual, dynamic, snapshot order as northstarContactSegmentSet.
+var northstarContactSegmentBaseNames = [3]string{northstarManualSegmentName, northstarDynamicSegmentName, northstarSnapshotSegmentName}
+
+const northstarContactSegmentDriftPrefix = "Out-of-band "
+
+// northstarContactSegmentPrefixFromEnvironment returns the configured run
+// ownership prefix that every Northstar Contact segment label starts with.
+func northstarContactSegmentPrefixFromEnvironment() (string, error) {
+	names, err := northstarFilesNamesFromEnvironment()
+	if err != nil {
+		return "", err
+	}
+	return names.Prefix, nil
 }
 
 // northstarContactSegmentLabel validates the run- and engine-scoped name label
@@ -1396,14 +1444,31 @@ func northstarContactSegmentLabel(label string) error {
 	return nil
 }
 
-func verifyNorthstarContactSegments(ctx context.Context, clients *hubspot.ClientSet, ids []string, snapshotValue, label string) error {
-	if len(ids) != 3 || strings.TrimSpace(snapshotValue) == "" {
+// northstarContactSegmentOwned reports whether name is exactly one demo stem,
+// optionally with the drift prefix, followed by a valid label that starts with
+// the configured run ownership prefix.
+func northstarContactSegmentOwned(name, prefix string) bool {
+	if prefix == "" {
+		return false
+	}
+	name = strings.TrimPrefix(name, northstarContactSegmentDriftPrefix)
+	for _, base := range northstarContactSegmentBaseNames {
+		label, found := strings.CutPrefix(name, base+" ")
+		if found && strings.HasPrefix(label, prefix) && northstarContactSegmentLabel(label) == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func verifyNorthstarContactSegments(ctx context.Context, clients *hubspot.ClientSet, segments northstarContactSegmentSet, snapshotValue, label string) error {
+	if strings.TrimSpace(snapshotValue) == "" {
 		return errors.New("northstar contact segment verification inputs are incomplete")
 	}
 	if err := northstarContactSegmentLabel(label); err != nil {
 		return err
 	}
-	wants := []hubspot.ContactSegmentWrite{
+	wants := [3]hubspot.ContactSegmentWrite{
 		{Name: northstarManualSegmentName + " " + label, ProcessingType: "manual"},
 		{
 			Name: northstarDynamicSegmentName + " " + label, ProcessingType: "dynamic",
@@ -1418,36 +1483,38 @@ func verifyNorthstarContactSegments(ctx context.Context, clients *hubspot.Client
 			}}}},
 		},
 	}
-	for index, id := range ids {
+	for index, id := range segments.ids() {
 		segment, err := clients.ContactSegments.Get(ctx, id)
 		if err != nil {
 			return fmt.Errorf("read Northstar Contact segment: %s", acceptance.SanitizedHubSpotError(err))
 		}
-		if segment.ID != id || segment.Deleted || !northstarContactSegmentMatches(segment, wants[index]) || !strings.EqualFold(segment.ProcessingStatus, "COMPLETE") {
+		if segment.ID != id || segment.Deleted || !hubspot.ContactSegmentMatches(segment, wants[index]) || !strings.EqualFold(segment.ProcessingStatus, "COMPLETE") {
 			return errors.New("northstar contact segment did not match its exact identity and complete supported definition")
 		}
 	}
 	return nil
 }
 
-func driftNorthstarContactSegments(ctx context.Context, clients *hubspot.ClientSet, ids []string, label string) error {
-	if err := verifyNorthstarContactSegments(ctx, clients, ids, "suppressed@example.com", label); err != nil {
+func driftNorthstarContactSegments(ctx context.Context, clients *hubspot.ClientSet, segments northstarContactSegmentSet, label string) error {
+	if err := verifyNorthstarContactSegments(ctx, clients, segments, "suppressed@example.com", label); err != nil {
 		return err
 	}
+	ids := segments.ids()
+	var driftNames [3]string
 	for index, id := range ids {
-		name := "Out-of-band " + []string{northstarManualSegmentName, northstarDynamicSegmentName, northstarSnapshotSegmentName}[index] + " " + label
-		if _, err := clients.ContactSegments.UpdateName(ctx, id, name); err != nil {
+		driftNames[index] = northstarContactSegmentDriftPrefix + northstarContactSegmentBaseNames[index] + " " + label
+		if _, err := clients.ContactSegments.UpdateName(ctx, id, driftNames[index]); err != nil {
 			return fmt.Errorf("author Northstar Contact segment name drift: %s", acceptance.SanitizedHubSpotError(err))
 		}
 	}
-	if _, err := clients.ContactSegments.UpdateFilters(ctx, ids[1], []hubspot.ContactSegmentFilterGroup{{Filters: []hubspot.ContactSegmentFilter{{
+	if _, err := clients.ContactSegments.UpdateFilters(ctx, segments.Dynamic, []hubspot.ContactSegmentFilterGroup{{Filters: []hubspot.ContactSegmentFilter{{
 		Property: "ns_onboarding_status", Operator: "is_equal_to", PropertyKind: "select", Value: "in_progress",
 	}}}}); err != nil {
 		return fmt.Errorf("author Northstar dynamic Contact segment drift: %s", acceptance.SanitizedHubSpotError(err))
 	}
-	for _, id := range ids {
+	for index, id := range ids {
 		if _, err := waitNorthstarContactSegment(ctx, clients, id, func(segment hubspot.ContactSegment) bool {
-			return !segment.Deleted && strings.HasPrefix(segment.Name, "Out-of-band Northstar ") && strings.EqualFold(segment.ProcessingStatus, "COMPLETE")
+			return !segment.Deleted && segment.Name == driftNames[index] && strings.EqualFold(segment.ProcessingStatus, "COMPLETE")
 		}); err != nil {
 			return err
 		}
@@ -1455,9 +1522,9 @@ func driftNorthstarContactSegments(ctx context.Context, clients *hubspot.ClientS
 	return nil
 }
 
-func deleteNorthstarContactSegmentForRefresh(ctx context.Context, clients *hubspot.ClientSet, id string) error {
+func deleteNorthstarContactSegmentForRefresh(ctx context.Context, clients *hubspot.ClientSet, id, prefix string) error {
 	segment, err := clients.ContactSegments.Get(ctx, id)
-	if err != nil || segment.ID != id || segment.Deleted || !strings.HasPrefix(segment.Name, "Northstar ") {
+	if err != nil || segment.ID != id || segment.Deleted || !northstarContactSegmentOwned(segment.Name, prefix) {
 		return errors.New("northstar contact segment refresh target did not match the exact owned identity")
 	}
 	deleteErr := clients.ContactSegments.Delete(ctx, id)
@@ -1477,18 +1544,21 @@ func deleteNorthstarContactSegmentForRefresh(ctx context.Context, clients *hubsp
 // replaced or destroyed definition is retained as the same deleted identity.
 // The provider already waited for this tombstone before it finished, so one
 // read suffices. It never deletes, so an identity left active fails the check.
-func verifyNorthstarContactSegmentTombstone(ctx context.Context, clients *hubspot.ClientSet, id string) error {
+func verifyNorthstarContactSegmentTombstone(ctx context.Context, clients *hubspot.ClientSet, id, prefix string) error {
 	if _, err := northstarContactSegmentIDs(id); err != nil {
 		return err
 	}
 	tombstone, err := clients.ContactSegments.Get(ctx, id)
-	if err != nil || tombstone.ID != id || !tombstone.Deleted || !strings.HasPrefix(tombstone.Name, "Northstar ") {
+	if err != nil || tombstone.ID != id || !tombstone.Deleted || !northstarContactSegmentOwned(tombstone.Name, prefix) {
 		return errors.New("northstar contact segment did not reach the exact owned tombstone")
 	}
 	return nil
 }
 
-func cleanupNorthstarContactSegments(ctx context.Context, clients *hubspot.ClientSet, ids []string) error {
+// cleanupNorthstarContactSegments deletes only exact generated IDs whose
+// names prove ownership under the configured run prefix, then verifies each
+// tombstone. Permanently absent IDs are already clean.
+func cleanupNorthstarContactSegments(ctx context.Context, clients *hubspot.ClientSet, ids []string, prefix string) error {
 	for _, id := range ids {
 		if _, err := northstarContactSegmentIDs(id); err != nil {
 			return err
@@ -1500,8 +1570,8 @@ func cleanupNorthstarContactSegments(ctx context.Context, clients *hubspot.Clien
 			}
 			return fmt.Errorf("read exact Northstar Contact segment cleanup identity: %s", acceptance.SanitizedHubSpotError(err))
 		}
-		if segment.ID != id || (!strings.HasPrefix(segment.Name, "Northstar ") && !strings.HasPrefix(segment.Name, "Out-of-band Northstar ")) {
-			return errors.New("refusing Contact segment cleanup whose exact ID and owned name prefix were not both verified")
+		if segment.ID != id || !northstarContactSegmentOwned(segment.Name, prefix) {
+			return errors.New("refusing Contact segment cleanup whose exact ID and configured ownership prefix were not both verified")
 		}
 		if !segment.Deleted {
 			deleteErr := clients.ContactSegments.Delete(ctx, id)
@@ -1519,8 +1589,8 @@ func cleanupNorthstarContactSegments(ctx context.Context, clients *hubspot.Clien
 	return nil
 }
 
-func verifyNorthstarContactSegmentsTerminal(ctx context.Context, clients *hubspot.ClientSet, ids []string) (string, error) {
-	if err := cleanupNorthstarContactSegments(ctx, clients, ids); err != nil {
+func verifyNorthstarContactSegmentsTerminal(ctx context.Context, clients *hubspot.ClientSet, ids []string, prefix string) (string, error) {
+	if err := cleanupNorthstarContactSegments(ctx, clients, ids, prefix); err != nil {
 		return "", err
 	}
 	encoded, err := json.Marshal(struct {
@@ -1555,39 +1625,11 @@ func waitNorthstarContactSegment(ctx context.Context, clients *hubspot.ClientSet
 		if ready(segment) {
 			return segment, nil
 		}
-		switch strings.ToUpper(segment.ProcessingStatus) {
-		case "FAILED", "ERROR", "CANCELED", "CANCELLED", "REJECTED":
+		if hubspot.ContactSegmentProcessingFailed(segment.ProcessingStatus) {
 			return hubspot.ContactSegment{}, fmt.Errorf("northstar contact segment reached terminal processing status %s", segment.ProcessingStatus)
 		}
 	}
 	return hubspot.ContactSegment{}, errors.New("northstar contact segment did not converge before the bounded timeout")
-}
-
-func northstarContactSegmentMatches(segment hubspot.ContactSegment, want hubspot.ContactSegmentWrite) bool {
-	if segment.Name != want.Name || segment.ProcessingType != want.ProcessingType || len(segment.FilterGroups) != len(want.FilterGroups) {
-		return false
-	}
-	counts := make(map[string]int, len(segment.FilterGroups))
-	for _, group := range segment.FilterGroups {
-		counts[northstarContactSegmentGroupKey(group)]++
-	}
-	for _, group := range want.FilterGroups {
-		key := northstarContactSegmentGroupKey(group)
-		if counts[key] == 0 {
-			return false
-		}
-		counts[key]--
-	}
-	return true
-}
-
-func northstarContactSegmentGroupKey(group hubspot.ContactSegmentFilterGroup) string {
-	filters := make([]string, 0, len(group.Filters))
-	for _, filter := range group.Filters {
-		filters = append(filters, strings.Join([]string{filter.Property, filter.Operator, filter.PropertyKind, filter.Value}, "\x00"))
-	}
-	sort.Strings(filters)
-	return strings.Join(filters, "\x01")
 }
 
 func driftNorthstarProperty(ctx context.Context, clients *hubspot.ClientSet) error {

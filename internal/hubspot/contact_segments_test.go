@@ -322,6 +322,61 @@ func TestContactSegmentClientClassifiesUnsafeServerFailuresAsAmbiguous(t *testin
 	}
 }
 
+func TestValidContactSegmentIDRequiresCanonicalPositiveDecimal(t *testing.T) {
+	for _, id := range []string{"1", "701", "999999999999999999999999999999999999999999"} {
+		if !ValidContactSegmentID(id) {
+			t.Fatalf("valid ID rejected: %q", id)
+		}
+	}
+	for _, id := range []string{"", "0", "-1", "+1", "01", "1.0", " 1"} {
+		if ValidContactSegmentID(id) {
+			t.Fatalf("invalid ID accepted: %q", id)
+		}
+	}
+}
+
+func TestContactSegmentMatchesIgnoresGroupAndFilterOrder(t *testing.T) {
+	status := ContactSegmentFilter{Property: "status", Operator: "is_equal_to", PropertyKind: "select", Value: "active"}
+	note := ContactSegmentFilter{Property: "note", Operator: "is_known"}
+	tier := ContactSegmentFilter{Property: "tier", Operator: "is_not_equal_to", PropertyKind: "text", Value: "free"}
+	segment := ContactSegment{ID: "701", Name: "Active", ProcessingType: "dynamic", FilterGroups: []ContactSegmentFilterGroup{
+		{Filters: []ContactSegmentFilter{status, note}}, {Filters: []ContactSegmentFilter{tier}},
+	}}
+	want := ContactSegmentWrite{Name: "Active", ProcessingType: "dynamic", FilterGroups: []ContactSegmentFilterGroup{
+		{Filters: []ContactSegmentFilter{tier}}, {Filters: []ContactSegmentFilter{note, status}},
+	}}
+	if !ContactSegmentMatches(segment, want) {
+		t.Fatal("group and filter order must not be semantic")
+	}
+	inactive := ContactSegmentFilter{Property: "status", Operator: "is_equal_to", PropertyKind: "select", Value: "inactive"}
+	textStatus := ContactSegmentFilter{Property: "status", Operator: "is_equal_to", PropertyKind: "text", Value: "active"}
+	for name, changed := range map[string]ContactSegmentWrite{
+		"name":              {Name: "Other", ProcessingType: "dynamic", FilterGroups: want.FilterGroups},
+		"processing type":   {Name: "Active", ProcessingType: "snapshot", FilterGroups: want.FilterGroups},
+		"filters regrouped": {Name: "Active", ProcessingType: "dynamic", FilterGroups: []ContactSegmentFilterGroup{{Filters: []ContactSegmentFilter{status}}, {Filters: []ContactSegmentFilter{note, tier}}}},
+		"value":             {Name: "Active", ProcessingType: "dynamic", FilterGroups: []ContactSegmentFilterGroup{{Filters: []ContactSegmentFilter{tier}}, {Filters: []ContactSegmentFilter{note, inactive}}}},
+		"kind":              {Name: "Active", ProcessingType: "dynamic", FilterGroups: []ContactSegmentFilterGroup{{Filters: []ContactSegmentFilter{tier}}, {Filters: []ContactSegmentFilter{note, textStatus}}}},
+		"missing group":     {Name: "Active", ProcessingType: "dynamic", FilterGroups: []ContactSegmentFilterGroup{{Filters: []ContactSegmentFilter{tier}}}},
+	} {
+		if ContactSegmentMatches(segment, changed) {
+			t.Fatalf("changed %s matched", name)
+		}
+	}
+}
+
+func TestContactSegmentProcessingFailedRecognisesTerminalStatuses(t *testing.T) {
+	for _, status := range []string{"FAILED", "error", "Canceled", "CANCELLED", "REJECTED"} {
+		if !ContactSegmentProcessingFailed(status) {
+			t.Fatalf("terminal failure %q was not recognised", status)
+		}
+	}
+	for _, status := range []string{"", "COMPLETE", "PROCESSING", "QUEUED"} {
+		if ContactSegmentProcessingFailed(status) {
+			t.Fatalf("non-failure %q was treated as terminal failure", status)
+		}
+	}
+}
+
 func TestClientSetProvidesContactSegmentClient(t *testing.T) {
 	baseURL, err := url.Parse("https://contact-segments.test")
 	if err != nil {

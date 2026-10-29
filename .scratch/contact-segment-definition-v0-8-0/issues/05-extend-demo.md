@@ -71,3 +71,14 @@ Blocked by: 03
     `drift` works only before `revise`.
   - A journey that fails after `revise` leaves its marker under `.demo/`
     until `destroy-apply`. Ephemeral runners are unaffected.
+
+## Answer
+
+Demo PR #35 merged as `7b1531b9ac43883920291bcdcc19dd8c6b6ed1c0`. It adds the
+stable-keyed `contact-segment-definition` module and wires manual, dynamic, and
+snapshot Northstar definitions without memberships or record values. The
+journey adds a `revise` phase plus tombstoned refresh and import restores, and
+reads each exact tombstone before terminal cleanup. Segment names carry a
+`<files prefix><engine>` label so no leg recreates a name that a retained
+tombstone may hold. Provider and demo local gates and demo CI passed. Live
+dual-engine proof belongs to ticket 07.

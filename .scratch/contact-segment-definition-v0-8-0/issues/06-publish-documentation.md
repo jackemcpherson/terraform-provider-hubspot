@@ -39,3 +39,15 @@ Blocked by: 03, 04, 05
   `make check`, `make test-hermetic` (`HUBSPOT_DEMO_REPO` at `7b1531b`), and
   `make check-release` pass locally. Live dual-engine qualification remains
   with ticket 07.
+
+## Answer
+
+Provider maintenance pins demo `main` merge commit
+`7b1531b9ac43883920291bcdcc19dd8c6b6ed1c0`. The generated reference,
+executable example, surface guide, permissions, import, drift, destroy,
+troubleshooting, portal, README, `## [0.8.0] - 2026-10-29` changelog entry, and
+`docs/releases/v0.8.0.md` release notes reproduce from that source. The
+release notes name deal pipeline configuration as v0.9.0 and keep association
+definition deferred under ADR 0005. `make docs`, `make docs-portal`,
+`make check`, `make test-hermetic`, and `make check-release` passed locally.
+Ticket 07 corrects the release date if publication slips.

@@ -124,21 +124,16 @@ func (c *ContactSegmentClient) Create(ctx context.Context, input ContactSegmentW
 		return segment, err
 	}
 	if modelErr != nil {
+		// A missing or malformed listId fails model validation here; the
+		// resource owns the exact-ID import recovery diagnostic.
 		return segment, contactSegmentAmbiguousModelError("contact-segment-create", http.StatusCreated, modelErr)
-	}
-	if segment.ID == "" {
-		return segment, &Error{
-			Operation: "contact-segment-create", Status: http.StatusCreated,
-			Cause:     errors.New("HubSpot contact segment create response omitted listId"),
-			Ambiguous: true,
-		}
 	}
 	return segment, nil
 }
 
 // Get reads one exact definition and includes its complete filter tree.
 func (c *ContactSegmentClient) Get(ctx context.Context, id string) (ContactSegment, error) {
-	if !validContactSegmentID(id) {
+	if !ValidContactSegmentID(id) {
 		return ContactSegment{}, errors.New("contact segment ID must be a canonical positive decimal string")
 	}
 	query := url.Values{"includeFilters": []string{"true"}}
@@ -161,7 +156,7 @@ func (c *ContactSegmentClient) Get(ctx context.Context, id string) (ContactSegme
 
 // UpdateName changes only the presentation name of one exact definition.
 func (c *ContactSegmentClient) UpdateName(ctx context.Context, id, name string) (ContactSegment, error) {
-	if !validContactSegmentID(id) {
+	if !ValidContactSegmentID(id) {
 		return ContactSegment{}, errors.New("contact segment ID must be a canonical positive decimal string")
 	}
 	if strings.TrimSpace(name) == "" {
@@ -190,7 +185,7 @@ func (c *ContactSegmentClient) UpdateName(ctx context.Context, id, name string) 
 
 // UpdateFilters replaces the complete filter tree of one dynamic definition.
 func (c *ContactSegmentClient) UpdateFilters(ctx context.Context, id string, groups []ContactSegmentFilterGroup) (ContactSegment, error) {
-	if !validContactSegmentID(id) {
+	if !ValidContactSegmentID(id) {
 		return ContactSegment{}, errors.New("contact segment ID must be a canonical positive decimal string")
 	}
 	branch, err := contactSegmentBranchFromGroups(groups)
@@ -223,7 +218,7 @@ func (c *ContactSegmentClient) UpdateFilters(ctx context.Context, id string, gro
 
 // Delete moves one exact definition into HubSpot's retained tombstone window.
 func (c *ContactSegmentClient) Delete(ctx context.Context, id string) error {
-	if !validContactSegmentID(id) {
+	if !ValidContactSegmentID(id) {
 		return errors.New("contact segment ID must be a canonical positive decimal string")
 	}
 	err := c.transport.Do(ctx, Operation{
@@ -236,7 +231,7 @@ func (c *ContactSegmentClient) Delete(ctx context.Context, id string) error {
 
 // Restore returns one retained exact definition to active use.
 func (c *ContactSegmentClient) Restore(ctx context.Context, id string) error {
-	if !validContactSegmentID(id) {
+	if !ValidContactSegmentID(id) {
 		return errors.New("contact segment ID must be a canonical positive decimal string")
 	}
 	err := c.transport.Do(ctx, Operation{
@@ -349,7 +344,7 @@ func contactSegmentFromWire(wire contactSegmentWire, requireFilters bool) (Conta
 		ProcessingType:   strings.ToLower(wire.ProcessingType),
 		Deleted:          wire.DeletedAt != nil && strings.TrimSpace(*wire.DeletedAt) != "",
 	}
-	if !validContactSegmentID(segment.ID) || segment.Version <= 0 || strings.TrimSpace(segment.Name) == "" ||
+	if !ValidContactSegmentID(segment.ID) || segment.Version <= 0 || strings.TrimSpace(segment.Name) == "" ||
 		wire.ObjectTypeID != "0-1" || strings.TrimSpace(segment.ProcessingStatus) == "" {
 		return segment, errors.New("HubSpot contact segment response omitted or changed a required definition field")
 	}
@@ -388,22 +383,19 @@ func contactSegmentGroupsFromBranch(root contactSegmentFilterBranch) ([]ContactS
 		}
 		group := ContactSegmentFilterGroup{Filters: make([]ContactSegmentFilter, 0, len(branch.Filters))}
 		seenFilters := make(map[string]struct{}, len(branch.Filters))
-		filterKeys := make([]string, 0, len(branch.Filters))
 		for _, wire := range branch.Filters {
 			filter, err := contactSegmentFilterFromWire(wire)
 			if err != nil {
 				return nil, err
 			}
-			encoded, _ := json.Marshal(filter)
-			if _, exists := seenFilters[string(encoded)]; exists {
+			filterKey := contactSegmentFilterKey(filter)
+			if _, exists := seenFilters[filterKey]; exists {
 				return nil, errors.New("HubSpot contact segment returned duplicate property filters")
 			}
-			seenFilters[string(encoded)] = struct{}{}
-			filterKeys = append(filterKeys, string(encoded))
+			seenFilters[filterKey] = struct{}{}
 			group.Filters = append(group.Filters, filter)
 		}
-		sort.Strings(filterKeys)
-		groupKey := strings.Join(filterKeys, "\x00")
+		groupKey := contactSegmentGroupKey(group)
 		if _, exists := seenGroups[groupKey]; exists {
 			return nil, errors.New("HubSpot contact segment returned duplicate filter groups")
 		}
@@ -452,9 +444,62 @@ func contactSegmentFilterFromWire(wire contactSegmentFilter) (ContactSegmentFilt
 	return filter, nil
 }
 
-func validContactSegmentID(id string) bool {
+// ValidContactSegmentID reports whether id is a canonical positive-decimal
+// ILS list ID, the sole Contact segment identity.
+func ValidContactSegmentID(id string) bool {
 	value, ok := new(big.Int).SetString(id, 10)
 	return ok && value.Sign() > 0 && value.String() == id
+}
+
+// ContactSegmentMatches reports whether an observed definition has the
+// complete desired name, processing type, and unordered filter tree.
+func ContactSegmentMatches(segment ContactSegment, want ContactSegmentWrite) bool {
+	return segment.Name == want.Name && segment.ProcessingType == want.ProcessingType &&
+		ContactSegmentGroupsEqual(segment.FilterGroups, want.FilterGroups)
+}
+
+// ContactSegmentGroupsEqual compares OR groups of AND filters without
+// treating group or filter order as semantic.
+func ContactSegmentGroupsEqual(left, right []ContactSegmentFilterGroup) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	counts := make(map[string]int, len(left))
+	for _, group := range left {
+		counts[contactSegmentGroupKey(group)]++
+	}
+	for _, group := range right {
+		key := contactSegmentGroupKey(group)
+		if counts[key] == 0 {
+			return false
+		}
+		counts[key]--
+	}
+	return true
+}
+
+// ContactSegmentProcessingFailed reports whether HubSpot processing reached a
+// terminal failure that polling must not wait out.
+func ContactSegmentProcessingFailed(status string) bool {
+	switch strings.ToUpper(status) {
+	case "FAILED", "ERROR", "CANCELED", "CANCELLED", "REJECTED":
+		return true
+	default:
+		return false
+	}
+}
+
+func contactSegmentFilterKey(filter ContactSegmentFilter) string {
+	return strings.Join([]string{filter.Property, filter.Operator, filter.PropertyKind, filter.Value}, "\x00")
+}
+
+func contactSegmentGroupKey(group ContactSegmentFilterGroup) string {
+	keys := make([]string, 0, len(group.Filters))
+	for _, filter := range group.Filters {
+		keys = append(keys, contactSegmentFilterKey(filter))
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, "\x01")
 }
 
 func markContactSegmentAmbiguousWrite(err error) {

@@ -86,6 +86,31 @@ Blocked by: 01, 02, 03, 04, 05, 06
 - 2026-10-29: Release train recovery orders this ticket after every
   `release-train-recovery` ticket (01–07), in addition to the blockers above.
   See `.scratch/release-train-recovery/map.md`.
+- 2026-10-29: A fixed-point code review of draft PR #119 produced these
+  fixes on `fix/contact-segment-review`:
+  - Destroy completes when the exact definition is permanently absent during
+    or after delete instead of polling until timeout.
+  - Update restores only when the preflight read shows a tombstone, so a
+    definition restored after refresh needs no restore write.
+  - Restoration completes only when the same identity shows the complete
+    retained definition.
+  - The unreachable client branch for a missing `listId` is removed. The
+    resource diagnostic states that exact-ID import is the only safe recovery
+    path.
+  - Hermetic dual-engine tests cover unknown creates, unsupported refresh and
+    import, ambiguous and incomplete restores, already-restored tombstones,
+    and disappearing deletes with exact request counts.
+  - Northstar cleanup, refresh deletion, and tombstone verification prove
+    ownership from the exact demo name stem plus a label under the configured
+    run prefix.
+  - One canonical ID validator, one unordered segment equality, and one
+    terminal processing predicate are shared from `internal/hubspot`.
+  - The changelog lists new-resource behaviour under Added, the frozen spec
+    text is restored with its clarification on ticket 02, and tickets 04 to
+    06 gain answers.
+  - Prefix-search discovery of crashed-run segments was not added. The frozen
+    spec limits the typed client to exact routes and automated cleanup to
+    exact generated IDs.
 
 ## Failure Ledger
 

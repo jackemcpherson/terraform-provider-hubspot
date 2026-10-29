@@ -49,9 +49,10 @@ const (
 type Warning string
 
 const (
-	PropertyTypeTransition      Warning = "Property type transition"
-	PropertyOptionValuesChanged Warning = "Property option values changed"
-	AccountMembershipGlobalName Warning = "Account membership names affect global identity"
+	PropertyTypeTransition       Warning = "Property type transition"
+	PropertyOptionValuesChanged  Warning = "Property option values changed"
+	AccountMembershipGlobalName  Warning = "Account membership names affect global identity"
+	ContactSegmentAmbiguousWrite Warning = "Contact segment write response was ambiguous"
 )
 
 type Failure string
@@ -191,6 +192,17 @@ func (s *Session) Apply(config string) {
 	s.registerCleanup()
 	if err := s.command("apply", "-auto-approve", "-input=false", "-no-color"); err != nil {
 		s.t.Fatalf("%s apply failed: %v", s.engine, err)
+	}
+}
+
+// ApplyWithoutRefresh applies from the stored state, including private
+// provider data, as a saved plan would after a remote change.
+func (s *Session) ApplyWithoutRefresh(config string) {
+	s.t.Helper()
+	s.writeConfig(config)
+	s.registerCleanup()
+	if err := s.command("apply", "-refresh=false", "-auto-approve", "-input=false", "-no-color"); err != nil {
+		s.t.Fatalf("%s apply without refresh failed: %v", s.engine, err)
 	}
 }
 
