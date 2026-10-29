@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Build and test with Go 1.26.10 and `golang.org/x/net` v0.62.0 to resolve
+  reachable standard-library and HTTP/2 vulnerabilities in the Go 1.26.6
+  toolchain and `golang.org/x/net` v0.58.0.
+
 ## [0.7.0] - 2026-08-16
 
 ### Added
