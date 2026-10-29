@@ -37,6 +37,9 @@ func TestNorthstarActionTimeoutPreservesFolderDriftMargin(t *testing.T) {
 	if timeout := northstarActionTimeout("cleanup"); timeout != 5*time.Minute {
 		t.Fatalf("default timeout = %s", timeout)
 	}
+	if timeout := northstarActionTimeout("verify-contact-segment-tombstone"); timeout != 5*time.Minute {
+		t.Fatalf("Contact segment tombstone timeout = %s", timeout)
+	}
 	var taskDelay time.Duration
 	for _, delay := range northstarFolderTaskConvergenceDelays {
 		taskDelay += delay
@@ -297,21 +300,8 @@ func TestExecuteManagesNorthstarContactSegmentLifecycle(t *testing.T) {
 	fake := acceptance.NewFakeHubSpot("token", 123)
 	clients := northstarFakeClientsWithoutListener(t, fake)
 	ctx := context.Background()
-	writes := []hubspot.ContactSegmentWrite{
-		{Name: northstarManualSegmentName, ProcessingType: "manual"},
-		{
-			Name: northstarDynamicSegmentName, ProcessingType: "dynamic",
-			FilterGroups: []hubspot.ContactSegmentFilterGroup{{Filters: []hubspot.ContactSegmentFilter{{
-				Property: "ns_onboarding_status", Operator: "is_equal_to", PropertyKind: "select", Value: "complete",
-			}}}},
-		},
-		{
-			Name: northstarSnapshotSegmentName, ProcessingType: "snapshot",
-			FilterGroups: []hubspot.ContactSegmentFilterGroup{{Filters: []hubspot.ContactSegmentFilter{{
-				Property: "email", Operator: "is_not_equal_to", PropertyKind: "text", Value: "suppressed@example.com",
-			}}}},
-		},
-	}
+	const label = "ns_tofu"
+	writes := northstarContactSegmentFixture("Northstar all contacts ns_tofu", "Northstar completed onboarding ns_tofu", "Northstar contactable snapshot ns_tofu", "suppressed@example.com")
 	ids := make([]string, 0, len(writes))
 	for _, write := range writes {
 		created, err := clients.ContactSegments.Create(ctx, write)
@@ -320,14 +310,22 @@ func TestExecuteManagesNorthstarContactSegmentLifecycle(t *testing.T) {
 		}
 		ids = append(ids, created.ID)
 	}
-	if _, err := execute(ctx, "verify-contact-segments", append(append([]string(nil), ids...), "suppressed@example.com"), clients); err != nil {
+	verifyArgs := append(append([]string(nil), ids...), "suppressed@example.com", label)
+	if _, err := execute(ctx, "verify-contact-segments", verifyArgs, clients); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := execute(ctx, "drift-contact-segments", ids, clients); err != nil {
+	if _, err := execute(ctx, "verify-contact-segments", append(append([]string(nil), ids...), "suppressed@example.com", "ns_terraform"), clients); err == nil {
+		t.Fatal("Contact segment verification accepted another engine's names")
+	}
+	if _, err := execute(ctx, "drift-contact-segments", append(append([]string(nil), ids...), label), clients); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := execute(ctx, "verify-contact-segments", append(append([]string(nil), ids...), "suppressed@example.com"), clients); err == nil {
+	if _, err := execute(ctx, "verify-contact-segments", verifyArgs, clients); err == nil {
 		t.Fatal("Contact segment verification accepted drift")
+	}
+	drifted, err := clients.ContactSegments.Get(ctx, ids[0])
+	if err != nil || drifted.Name != "Out-of-band Northstar all contacts ns_tofu" {
+		t.Fatalf("drifted Contact segment = %#v, %v", drifted, err)
 	}
 	for index, id := range ids {
 		if _, err := clients.ContactSegments.UpdateName(ctx, id, writes[index].Name); err != nil {
@@ -337,7 +335,13 @@ func TestExecuteManagesNorthstarContactSegmentLifecycle(t *testing.T) {
 	if _, err := clients.ContactSegments.UpdateFilters(ctx, ids[1], writes[1].FilterGroups); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := execute(ctx, "verify-contact-segment-tombstone", []string{ids[1]}, clients); err == nil {
+		t.Fatal("tombstone verification accepted an active Contact segment")
+	}
 	if _, err := execute(ctx, "delete-contact-segment-for-refresh", []string{ids[1]}, clients); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(ctx, "verify-contact-segment-tombstone", []string{ids[1]}, clients); err != nil {
 		t.Fatal(err)
 	}
 	deleted, err := clients.ContactSegments.Get(ctx, ids[1])
@@ -359,6 +363,69 @@ func TestExecuteManagesNorthstarContactSegmentLifecycle(t *testing.T) {
 		if !ok || !segment.Deleted || segment.ID != id {
 			t.Fatalf("terminal Contact segment = %#v, %v", segment, ok)
 		}
+	}
+}
+
+func TestExecuteVerifiesRevisedNorthstarContactSegments(t *testing.T) {
+	fake := acceptance.NewFakeHubSpot("token", 123)
+	clients := northstarFakeClientsWithoutListener(t, fake)
+	ctx := context.Background()
+	writes := northstarContactSegmentFixture(
+		"Northstar all contacts ns_tofu_revised", "Northstar completed onboarding ns_tofu_revised",
+		"Northstar contactable snapshot ns_tofu_revised", "suppressed-revised@example.com",
+	)
+	ids := make([]string, 0, len(writes))
+	for _, write := range writes {
+		created, err := clients.ContactSegments.Create(ctx, write)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, created.ID)
+	}
+	if _, err := execute(ctx, "verify-contact-segments", append(append([]string(nil), ids...), "suppressed-revised@example.com", "ns_tofu_revised"), clients); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(ctx, "verify-contact-segments", append(append([]string(nil), ids...), "suppressed@example.com", "ns_tofu_revised"), clients); err == nil {
+		t.Fatal("Contact segment verification accepted the replaced snapshot filter")
+	}
+}
+
+func TestExecuteRejectsInvalidNorthstarContactSegmentInputs(t *testing.T) {
+	clients := northstarFakeClientsWithoutListener(t, acceptance.NewFakeHubSpot("token", 123))
+	ctx := context.Background()
+	for _, test := range []struct {
+		action string
+		args   []string
+	}{
+		{"verify-contact-segments", []string{"1", "2", "3", "suppressed@example.com"}},
+		{"verify-contact-segments", []string{"1", "2", "3", "suppressed@example.com", "tofu"}},
+		{"verify-contact-segments", []string{"1", "2", "3", "suppressed@example.com", "ns_tofu revised"}},
+		{"drift-contact-segments", []string{"1", "2", "3"}},
+		{"drift-contact-segments", []string{"1", "2", "3", "Northstar"}},
+		{"verify-contact-segment-tombstone", nil},
+		{"verify-contact-segment-tombstone", []string{"01"}},
+	} {
+		if _, err := execute(ctx, test.action, test.args, clients); err == nil {
+			t.Fatalf("%s accepted invalid inputs %q", test.action, test.args)
+		}
+	}
+}
+
+func northstarContactSegmentFixture(manualName, dynamicName, snapshotName, snapshotValue string) []hubspot.ContactSegmentWrite {
+	return []hubspot.ContactSegmentWrite{
+		{Name: manualName, ProcessingType: "manual"},
+		{
+			Name: dynamicName, ProcessingType: "dynamic",
+			FilterGroups: []hubspot.ContactSegmentFilterGroup{{Filters: []hubspot.ContactSegmentFilter{{
+				Property: "ns_onboarding_status", Operator: "is_equal_to", PropertyKind: "select", Value: "complete",
+			}}}},
+		},
+		{
+			Name: snapshotName, ProcessingType: "snapshot",
+			FilterGroups: []hubspot.ContactSegmentFilterGroup{{Filters: []hubspot.ContactSegmentFilter{{
+				Property: "email", Operator: "is_not_equal_to", PropertyKind: "text", Value: snapshotValue,
+			}}}},
+		},
 	}
 }
 
