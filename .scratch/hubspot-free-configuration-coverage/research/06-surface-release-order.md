@@ -51,3 +51,19 @@ Each new surface is additive and therefore selects the stated minor version.
 Compatible corrections use a new patch version; a breaking change to an existing
 surface requires a separate migration decision and cannot be hidden in the next
 surface release.
+
+## Amendment 2026-10-29
+
+[ADR 0005](../../../docs/adr/0005-defer-association-definition-from-the-release-order.md)
+amends this decision through the rescheduling path in the release rules. The
+table above stays as the original record. The release order from v0.9.0 is now:
+
+| Release | Configuration surface |
+|---|---|
+| `v0.9.0` | Deal pipeline configuration |
+| `v0.10.0` | Ticket pipeline configuration |
+
+Association definition is deferred indefinitely because only a paid-tier
+portal can qualify it, and the delivery contract is Free-only. Both pipeline
+surfaces keep the scope and ordering rationale recorded above. ADR 0005 states
+the conditions for restoring association definition.

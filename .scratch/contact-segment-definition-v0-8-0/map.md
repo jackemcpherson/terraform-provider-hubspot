@@ -27,3 +27,9 @@ property-kind contract and the remaining lifecycle stop conditions.
   `MULTISTRING` predicates as text.
 - The frozen contract is recorded in `spec.md`. Implementation remains blocked
   until the protected probe completes all stop-condition checks.
+- Correction to the first decision above, 2026-10-29: association
+  definitions are no longer deferred to v0.9.0. ADR 0005
+  (`docs/adr/0005-defer-association-definition-from-the-release-order.md`)
+  defers them indefinitely because the delivery contract is Free-only. Deal
+  pipeline configuration becomes v0.9.0 and ticket pipeline configuration
+  becomes v0.10.0.
