@@ -4,11 +4,25 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-29
+
+### Changed
+
+- Require Go 1.26 to build from source. The module language version is now
+  1.26.0 because every patched `golang.org/x/net` release declares it.
+
 ### Fixed
 
-- Build and test with Go 1.26.10 and `golang.org/x/net` v0.62.0 to resolve
-  reachable standard-library and HTTP/2 vulnerabilities in the Go 1.26.6
-  toolchain and `golang.org/x/net` v0.58.0.
+- Build provider binaries with Go 1.26.10 and `golang.org/x/net` v0.62.0.
+  This resolves GO-2026-6603, GO-2026-6605, GO-2026-6607, GO-2026-6608,
+  GO-2026-6610, GO-2026-6611, GO-2026-6612, GO-2026-6613, GO-2026-6617, and
+  GO-2026-6809, which reached the v0.7.0 provider binary through the Go 1.26.6
+  standard library and the `golang.org/x/net` HTTP/2 transport.
+- Update gRPC to v1.83.2, which includes the fixes for GO-2026-6348,
+  GO-2026-6441, and GO-2026-6443.
+- Accept an asynchronous File folder update whose terminal task result is
+  stale only after exact-ID read-back proves the planned state. A stale task
+  payload previously failed the update.
 
 ## [0.7.0] - 2026-08-16
 
