@@ -786,10 +786,24 @@ func removeLedger(path, id string) error {
 	return os.WriteFile(path, []byte(output), 0o600)
 }
 
+// repositoryRoot walks up from the working directory to the main module root.
+// It starts from the on-disk spelling of the working directory because a
+// case-insensitive filesystem accepts any spelling, while the Go command
+// resolves the main module from the on-disk one and rejects a build path that
+// differs only in case as outside the module.
 func repositoryRoot() (string, error) {
-	directory, err := os.Getwd()
+	working, err := os.Getwd()
 	if err != nil {
 		return "", err
+	}
+	// The Go command also resolves symbolic links in its working directory.
+	working, err = filepath.EvalSymlinks(working)
+	if err != nil {
+		return "", fmt.Errorf("resolve working directory: %w", err)
+	}
+	directory, err := onDiskPath(working)
+	if err != nil {
+		return "", fmt.Errorf("resolve working directory: %w", err)
 	}
 	for {
 		if _, err := os.Stat(filepath.Join(directory, "go.mod")); err == nil {
@@ -801,6 +815,49 @@ func repositoryRoot() (string, error) {
 		}
 		directory = parent
 	}
+}
+
+// onDiskPath rebuilds an absolute path from the directory entry names stored
+// on disk, so a case variant becomes the spelling the filesystem records.
+func onDiskPath(path string) (string, error) {
+	resolved := string(filepath.Separator)
+	for _, name := range strings.Split(filepath.Clean(path), string(filepath.Separator)) {
+		if name == "" {
+			continue
+		}
+		next, err := onDiskEntry(resolved, name)
+		if err != nil {
+			return "", err
+		}
+		resolved = filepath.Join(resolved, next)
+	}
+	return resolved, nil
+}
+
+func onDiskEntry(parent, name string) (string, error) {
+	target, err := os.Stat(filepath.Join(parent, name))
+	if err != nil {
+		return "", err
+	}
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		return "", err
+	}
+	for _, entry := range entries {
+		if entry.Name() == name {
+			return name, nil
+		}
+	}
+	for _, entry := range entries {
+		if !strings.EqualFold(entry.Name(), name) {
+			continue
+		}
+		candidate, err := os.Stat(filepath.Join(parent, entry.Name()))
+		if err == nil && os.SameFile(target, candidate) {
+			return entry.Name(), nil
+		}
+	}
+	return name, nil
 }
 
 func randomID() (string, error) {
