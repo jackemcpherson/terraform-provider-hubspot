@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -267,6 +268,18 @@ func TestContactSegmentClientRejectsUnsupportedRemoteDefinitions(t *testing.T) {
 				t.Fatal("unsupported remote definition was accepted")
 			}
 		})
+	}
+}
+
+// Exact-ID reads are the only identity check behind refresh, import, and
+// post-write polling, so a valid definition under another listId must fail.
+func TestContactSegmentClientRejectsReadOfDifferentIdentity(t *testing.T) {
+	client := newContactSegmentTestClient(t, http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		io.WriteString(writer, `{"list":{"listId":"702","listVersion":1,"name":"Owned","objectTypeId":"0-1","processingStatus":"COMPLETE","processingType":"MANUAL"}}`)
+	}))
+	if _, err := client.Get(context.Background(), "701"); err == nil || !strings.Contains(err.Error(), "different listId") {
+		t.Fatalf("read of a different identity error = %v, want a different listId rejection", err)
 	}
 }
 
