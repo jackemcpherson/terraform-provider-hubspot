@@ -15,6 +15,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -249,6 +250,46 @@ func TestContactSegmentCreateDistinguishesAmbiguousAndRejectedMissingID(t *testi
 				t.Fatalf("create sent %d requests and retained state %v; want one write and no state", requests, !response.State.Raw.IsNull())
 			}
 		})
+	}
+}
+
+// A verification failure after HubSpot returns a valid identity must leave
+// that exact ID in state. Otherwise the next apply recreates the definition
+// and HubSpot rejects the duplicate name, leaving import as the only recovery.
+func TestContactSegmentCreateRetainsReturnedIDWhenVerificationFails(t *testing.T) {
+	var methods []string
+	body := `{"list":{"listId":"701","listVersion":1,"name":"Owned","objectTypeId":"0-1","processingStatus":"FAILED","processingType":"MANUAL"}}`
+	contactResource := contactSegmentPollingResource(t, func(request *http.Request) (*http.Response, error) {
+		methods = append(methods, request.Method)
+		status := http.StatusOK
+		if request.Method == http.MethodPost {
+			status = http.StatusCreated
+		}
+		return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
+	})
+	var schemaResponse resource.SchemaResponse
+	contactResource.Schema(context.Background(), resource.SchemaRequest{}, &schemaResponse)
+	plan := tfsdk.Plan{Schema: schemaResponse.Schema}
+	if diagnostics := plan.Set(context.Background(), &contactSegmentResourceModel{
+		Name: types.StringValue("Owned"), ProcessingType: types.StringValue("manual"),
+		FilterGroups: types.SetNull(contactSegmentGroupObjectType), ID: types.StringUnknown(),
+	}); diagnostics.HasError() {
+		t.Fatalf("plan diagnostics = %#v", diagnostics)
+	}
+	response := resource.CreateResponse{State: tfsdk.State{Schema: schemaResponse.Schema}}
+	contactResource.Create(context.Background(), resource.CreateRequest{Plan: plan}, &response)
+	if !response.Diagnostics.HasError() || response.Diagnostics[0].Summary() != "Contact segment creation verification failed" {
+		t.Fatalf("create diagnostics = %#v", response.Diagnostics)
+	}
+	if response.State.Raw.IsNull() {
+		t.Fatal("create discarded the valid returned identity after verification failed")
+	}
+	var id types.String
+	if diagnostics := response.State.GetAttribute(context.Background(), path.Root("id"), &id); diagnostics.HasError() || id.ValueString() != "701" {
+		t.Fatalf("retained id = %q, diagnostics = %#v; want 701", id.ValueString(), diagnostics)
+	}
+	if strings.Join(methods, ",") != "POST,GET" {
+		t.Fatalf("create requests = %v, want exactly one write and one verification read", methods)
 	}
 }
 
