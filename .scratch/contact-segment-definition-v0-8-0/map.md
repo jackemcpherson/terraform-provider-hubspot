@@ -11,6 +11,10 @@ frontier.
 Ticket 07 is next: fixed-point reviews, the protected candidate path or exact
 `main` qualification, and publication.
 
+2026-10-29: [Ticket 07](issues/07-review-merge-release.md) is resolved. The
+remaining fixed-point reviews, exact `main` qualification, and publication
+evidence are recorded in a comment on PR #119.
+
 ## Decisions So Far
 
 - Association definitions remain deferred to v0.9.0 and require paid-tier
