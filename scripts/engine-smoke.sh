@@ -51,8 +51,8 @@ check_examples() {
 }
 
 engine=${ENGINE:-both}
-tofu_expected=${TOFU_EXPECTED_VERSION:-1.12.3}
-terraform_expected=${TERRAFORM_EXPECTED_VERSION:-1.15.8}
+tofu_expected=${TOFU_EXPECTED_VERSION:?TOFU_EXPECTED_VERSION is required; run make engine-smoke}
+terraform_expected=${TERRAFORM_EXPECTED_VERSION:?TERRAFORM_EXPECTED_VERSION is required; run make engine-smoke}
 case "$engine" in both|tofu|terraform) ;; *) echo "ENGINE must be both, tofu, or terraform" >&2; exit 1 ;; esac
 
 if [ "$engine" = both ] || [ "$engine" = tofu ]; then
