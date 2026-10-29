@@ -5,8 +5,7 @@ v0.8.0, and amend the release order.
 
 ## Frontier
 
-Tickets 01, 02, 03, 05, and 06 are resolved. Tickets 04 and 07 are the
-frontier.
+Tickets 01, 02, 03, 04, 05, and 06 are resolved. Ticket 07 is the frontier.
 
 ## Graph
 
@@ -49,3 +48,6 @@ hosted or human gate.
 - 03: Protected runs 40811520501 and 40812498133 passed on provider `18224aa`
   and demo `2ef32f7`, re-establishing the baseline. See
   [ticket 03](issues/03-re-establish-protected-baseline.md).
+- 04: Ten findings reached the provider binary, so v0.7.1 ships the patch
+  from the qualified `main` commit. See
+  [ticket 04](issues/04-decide-v0-7-x-patch.md).
