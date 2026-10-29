@@ -38,3 +38,15 @@ Blocked by: 03
 - Local dual-engine execution passed on 2026-10-29 with `make check` and
   `make test-hermetic` under Go 1.26.6, OpenTofu 1.13.2, and Terraform 1.17.0.
   Contact segment lifecycle, recovery, and Terraform parity shards all passed.
+
+## Answer
+
+The behavioral fake models pending, complete, failed, stale-version, timeout,
+rejected, and ambiguous Lists outcomes. Dual-engine hermetic suites prove
+create, drift, dynamic update, snapshot replacement, active import, tombstoned
+import and restore, purge, destroy, and exact request counts. Readable
+tombstones stay in state with a private marker, and apply restores the same
+ID. Protected maintenance, ownership-safe janitor reporting, repeated exact
+cleanup, and manual archival selection are in place. Local `make check` and
+`make test-hermetic` passed on 2026-10-29 under OpenTofu 1.13.2 and Terraform
+1.17.0.

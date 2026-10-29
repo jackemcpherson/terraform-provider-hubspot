@@ -19,6 +19,12 @@ Blocked by: 01
 
 ## Comments
 
+- 2026-10-29: Clarification recorded after review instead of editing the
+  frozen spec. The name update sends the new name in the URL-encoded
+  `listName` query parameter and requests the returned definition with
+  `includeFilters=true`. The research note's Update Name section documents
+  both parameters. The frozen spec text is unchanged.
+
 ## Answer
 
 The typed `ContactSegmentClient` owns exact `/crm/lists/2026-03` routes and

@@ -74,7 +74,9 @@ membership and the exact
 CRM profile. `crm.lists.read` and `crm.lists.write` are the complete Contact
 segment scope pair. Set `HUBSPOT_NORTHSTAR_CONTACT_SEGMENT_IDS` to the
 comma-separated exact generated IDs from the previous protected run so
-interrupted-run cleanup never searches by name. Set
+interrupted-run cleanup never searches by name. Cleanup deletes an ID only
+when its name is an exact Northstar segment name whose label starts with the
+configured `HUBSPOT_NORTHSTAR_FILES_PREFIX` run prefix, `ns_` by default. Set
 `HUBSPOT_ACCEPTANCE_PORTAL_ID` to the expected disposable portal. Set the
 `HUBSPOT_NORTHSTAR_MEMBERSHIP_EMAIL` environment variable to a dedicated,
 disposable member in that portal. Do not use an ordinary account member or a

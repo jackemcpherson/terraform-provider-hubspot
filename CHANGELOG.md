@@ -15,6 +15,10 @@ All notable changes to this project are documented here.
   unordered OR groups containing unordered AND filters.
 - Publish a stable-keyed `contact-segment-definition` module, cumulative
   Northstar lifecycle, guarded live contract probe, and exact-ID cleanup.
+- Retain readable out-of-band tombstones in state and restore the same ID on
+  apply; remove state only after permanent absence.
+- Reject unsupported remote filters instead of silently dropping meaning, and
+  never search, adopt, or recover by Contact segment name.
 
 ### Changed
 
@@ -22,13 +26,6 @@ All notable changes to this project are documented here.
   keep name updates in place for every processing type.
 - Poll exact ID and current `listVersion` after create, dynamic update, and
   restoration, accepting ambiguous writes only after complete read-back.
-
-### Fixed
-
-- Retain readable out-of-band tombstones in state and restore the same ID on
-  apply; remove state only after permanent absence.
-- Reject unsupported remote filters instead of silently dropping meaning, and
-  never search, adopt, or recover by Contact segment name.
 
 ## [0.7.1] - 2026-10-29
 
