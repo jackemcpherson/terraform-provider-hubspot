@@ -44,8 +44,8 @@ jobs:
       - name: Set up provider toolchain
         uses: ./.github/actions/setup-provider-toolchain
         with:
-          tofu-version: '1.12.3'
-          terraform-version: '1.15.8'
+          tofu-version: '1.13.2'
+          terraform-version: '1.17.1'
       - name: Install maintenance tools
         run: make maintenance-tools
       - name: Run maintenance

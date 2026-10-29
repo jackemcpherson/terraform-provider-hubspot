@@ -5,8 +5,8 @@ export PATH := $(TOOLS_BIN):$(PATH)
 
 # Keep local checks and CI on the exact toolchain Renovate maintains in go.mod.
 GO_VERSION := $(shell awk '$$1 == "toolchain" {sub(/^go/, "", $$2); print $$2}' go.mod)
-TOFU_CURRENT_VERSION := 1.12.3
-TERRAFORM_CURRENT_VERSION := 1.15.8
+TOFU_CURRENT_VERSION := 1.13.2
+TERRAFORM_CURRENT_VERSION := 1.17.1
 TFPLUGINDOCS_VERSION := v0.25.0
 GORELEASER_VERSION := v2.17.0
 STATICCHECK_VERSION := v0.6.1
@@ -53,12 +53,13 @@ check-docs:
 check-workflows:
 	@go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
 	@./scripts/check-workflows.sh
+	@./scripts/check-workflows_test.sh
 	@./scripts/release-preflight_test.sh
 	@./scripts/northstar-maintenance_test.sh
 	@./scripts/acceptance-cleanup_test.sh
 
 engine-smoke:
-	@./scripts/engine-smoke.sh
+	@TOFU_EXPECTED_VERSION=$(TOFU_CURRENT_VERSION) TERRAFORM_EXPECTED_VERSION=$(TERRAFORM_CURRENT_VERSION) ./scripts/engine-smoke.sh
 
 maintenance: check-security check-release product-contract-preflight contact-segment-contract-preflight northstar-maintenance
 
