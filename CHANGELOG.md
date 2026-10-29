@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-29
+
 ### Added
 
 - Manage Free-compatible manual, dynamic, and snapshot Contact segment
