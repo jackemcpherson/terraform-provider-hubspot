@@ -320,3 +320,184 @@ resource "hubspot_contact_segment" "snapshot" {
 }
 `, providerSource, baseURL, suffix, suffix, dynamicKind, dynamicValue, suffix, snapshotValue)
 }
+
+func TestHermeticContactSegmentModuleLifecycle(t *testing.T) {
+	runHermeticContactSegmentModuleLifecycle(t, acceptance.OpenTofu, "registry.opentofu.org/jackemcpherson/hubspot")
+}
+
+func TestHermeticContactSegmentModuleLifecycleTerraformParity(t *testing.T) {
+	runHermeticContactSegmentModuleLifecycle(t, acceptance.Terraform, "registry.terraform.io/jackemcpherson/hubspot")
+}
+
+// runHermeticContactSegmentModuleLifecycle drives the cumulative demo's
+// stable-keyed module through the journey that the Northstar demo runs live.
+func runHermeticContactSegmentModuleLifecycle(t *testing.T, engine acceptance.Engine, providerSource string) {
+	t.Helper()
+	if _, err := exec.LookPath(string(engine)); err != nil {
+		t.Skipf("pinned %s executable is not installed", engine)
+	}
+	moduleSource := consumerModuleSource(t, "contact-segment-definition")
+	fake := acceptance.NewFakeHubSpot(hermeticToken, 666000670)
+	server := httptest.NewServer(fake)
+	t.Cleanup(server.Close)
+	t.Setenv("HUBSPOT_ACCESS_TOKEN", hermeticToken)
+	config := func(label, snapshotEmail string, extra bool) string {
+		return hermeticContactSegmentModuleConfig(server.URL, providerSource, moduleSource, label, snapshotEmail, extra)
+	}
+	baseline := config("baseline", "suppressed@example.com", false)
+	revised := config("revised", "suppressed-revised@example.com", false)
+	const manualAddress = `module.segments.hubspot_contact_segment.this["all_contacts"]`
+	acceptance.Run(t, acceptance.Options{
+		Engine: engine, Shard: acceptance.ContactSegments,
+		Prefix: "tf_acc_hermetic_segments_module_", LedgerPath: t.TempDir() + "/cleanup.jsonl", ProbeBaseURL: server.URL,
+	}, func(session *acceptance.Session) {
+		session.GetModules(baseline)
+		session.Apply(baseline)
+		ids := session.OpaqueOutputStringMap("segment_ids")
+		manualID, dynamicID, snapshotID := ids["all_contacts"], ids["completed_onboarding"], ids["contactable_snapshot"]
+		if len(ids) != 3 || manualID == "" || dynamicID == "" || snapshotID == "" {
+			t.Fatalf("module exposed %d stable-keyed IDs, want 3", len(ids))
+		}
+		session.RequireEmptyPlan(baseline)
+
+		drift := []hubspot.ContactSegmentFilterGroup{{Filters: []hubspot.ContactSegmentFilter{{
+			Property: "ns_onboarding_status", Operator: "is_equal_to", PropertyKind: "select", Value: "in_progress",
+		}}}}
+		if !fake.DriftContactSegmentFilters(dynamicID, drift) {
+			t.Fatal("could not inject dynamic Contact segment drift")
+		}
+		session.RequirePlanDiffAttributes(baseline, `module.segments.hubspot_contact_segment.this["completed_onboarding"]`, "filter_groups")
+		session.Apply(baseline)
+		if _, filters, _, _ := fake.ContactSegmentWriteCounts(dynamicID); filters != 1 {
+			t.Fatalf("module dynamic drift repair sent %d filter writes, want 1", filters)
+		}
+		session.RequireEmptyPlan(baseline)
+
+		session.Apply(revised)
+		revisedIDs := session.OpaqueOutputStringMap("segment_ids")
+		if revisedIDs["all_contacts"] != manualID || revisedIDs["completed_onboarding"] != dynamicID {
+			t.Fatal("module renames did not preserve the manual and dynamic identities")
+		}
+		replacementID := revisedIDs["contactable_snapshot"]
+		if replacementID == snapshotID {
+			t.Fatal("module snapshot filter change retained the old generated identity")
+		}
+		if old, ok := fake.ContactSegmentSnapshot(snapshotID); !ok || !old.Deleted {
+			t.Fatal("module snapshot replacement did not leave the old exact tombstone")
+		}
+		for _, id := range []string{manualID, dynamicID} {
+			if _, _, names, _, _, _ := fake.ContactSegmentRequestCounts(id); names != 1 {
+				t.Fatalf("module rename sent %d name writes, want 1", names)
+			}
+		}
+
+		session.Apply(config("revised", "suppressed-revised@example.com", true))
+		extendedIDs := session.OpaqueOutputStringMap("segment_ids")
+		if len(extendedIDs) != 4 || extendedIDs["all_contacts"] != manualID || extendedIDs["completed_onboarding"] != dynamicID || extendedIDs["contactable_snapshot"] != replacementID {
+			t.Fatal("adding a stable key re-addressed existing Contact segments")
+		}
+		session.Apply(revised)
+		if remaining := session.OpaqueOutputStringMap("segment_ids"); len(remaining) != 3 || remaining["all_contacts"] != manualID {
+			t.Fatal("removing a stable key re-addressed existing Contact segments")
+		}
+
+		if !fake.DeleteContactSegment(manualID) {
+			t.Fatal("could not tombstone the manual Contact segment")
+		}
+		session.RemoveState(manualAddress)
+		session.Import(manualAddress, manualID)
+		session.RequirePlanDiff(revised)
+		session.Apply(revised)
+		if restored := session.OpaqueOutputStringMap("segment_ids"); restored["all_contacts"] != manualID {
+			t.Fatal("tombstoned module import did not restore the same exact identity")
+		}
+		if _, _, _, _, _, restores := fake.ContactSegmentRequestCounts(manualID); restores != 1 {
+			t.Fatalf("tombstoned module import sent %d restore writes, want 1", restores)
+		}
+		session.RequireEmptyPlan(revised)
+
+		session.Destroy(revised)
+		if active := fake.ActiveContactSegmentIDs(); len(active) != 0 {
+			t.Fatalf("module destroy left %d active Contact segments", len(active))
+		}
+		for _, id := range []string{manualID, dynamicID, replacementID} {
+			if terminal, ok := fake.ContactSegmentSnapshot(id); !ok || !terminal.Deleted || terminal.ID != id {
+				t.Fatal("module destroy did not leave the exact tombstone")
+			}
+		}
+	})
+}
+
+func hermeticContactSegmentModuleConfig(baseURL, providerSource, moduleSource, label, snapshotEmail string, extra bool) string {
+	extraDefinition := ""
+	if extra {
+		extraDefinition = `
+    champions = {
+      name            = "tf_acc_hermetic_segments_module_champions"
+      processing_type = "dynamic"
+      filter_groups = [{
+        filters = [{
+          property      = "ns_buyer_role"
+          operator      = "is_equal_to"
+          property_kind = "select"
+          value         = "champion"
+        }, {
+          property = "email"
+          operator = "is_known"
+        }]
+      }]
+    }`
+	}
+	return fmt.Sprintf(`
+terraform {
+  required_providers {
+    hubspot = {
+      source = %[1]q
+    }
+  }
+}
+
+provider "hubspot" {
+  api_base_url = %[2]q
+}
+
+module "segments" {
+  source = %[3]q
+
+  definitions = {
+    all_contacts = {
+      name            = "tf_acc_hermetic_segments_module_all_%[4]s"
+      processing_type = "manual"
+    }
+    completed_onboarding = {
+      name            = "tf_acc_hermetic_segments_module_onboarded_%[4]s"
+      processing_type = "dynamic"
+      filter_groups = [{
+        filters = [{
+          property      = "ns_onboarding_status"
+          operator      = "is_equal_to"
+          property_kind = "select"
+          value         = "complete"
+        }]
+      }]
+    }
+    contactable_snapshot = {
+      name            = "tf_acc_hermetic_segments_module_snapshot_%[4]s"
+      processing_type = "snapshot"
+      filter_groups = [{
+        filters = [{
+          property      = "email"
+          operator      = "is_not_equal_to"
+          property_kind = "text"
+          value         = %[5]q
+        }]
+      }]
+    }%[6]s
+  }
+}
+
+output "segment_ids" {
+  value = module.segments.ids
+}
+`, providerSource, baseURL, moduleSource, label, snapshotEmail, extraDefinition)
+}
