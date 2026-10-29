@@ -2,7 +2,7 @@
 
 Type: task
 
-Status: open
+Status: resolved
 
 Blocked by: 01, 02, 03, 04, 05, 06
 
@@ -111,6 +111,36 @@ Blocked by: 01, 02, 03, 04, 05, 06
   - Prefix-search discovery of crashed-run segments was not added. The frozen
     spec limits the typed client to exact routes and automated cleanup to
     exact generated IDs.
+
+- 2026-10-29: Pre-freeze check confirmed that the Northstar journey prints
+  the generated Contact segment IDs. Demo `7b1531b` applies saved plans with
+  unredirected output, the resource `id` and the three root segment-ID outputs
+  are not sensitive, and maintenance does not quiet `make maintenance`. Both
+  engines therefore log each exact generated ID on create, including the
+  replacement snapshot, so a mid-journey failure can be cleaned through
+  `HUBSPOT_NORTHSTAR_CONTACT_SEGMENT_IDS`. No change was needed.
+
+## Answer
+
+The slice is ready for its fixed point.
+
+- The standards and specification reviews of draft PR #119 are cleared.
+  Their fixes merged into the slice branch as PR #123.
+- The test-quality, Actions, and release-readiness reviews and the complete
+  local release suite run on the frozen slice tip that merges to `main`.
+- Qualification uses the exact merged `main` commit, as ADR 0003 requires.
+  It needs a green `Required` check and two consecutive green
+  `Provider maintenance` runs. The second run recreates the Contact segment
+  names that the first run deleted. This proves that HubSpot does not reserve
+  the names of deleted lists, which is the evidence that ticket 05 left
+  pending. That reason accounts for the extra run in the release-slices
+  section 7 budget.
+- Publication uses the existing `main`-only `Release` workflow to create one
+  signed, immutable v0.8.0 release, as v0.7.1 did.
+
+Post-freeze run URLs, the release URL, asset verification, and Terraform
+Registry and OpenTofu Registry states are recorded outside Git, in a comment on
+PR #119, as release-slices section 7 requires.
 
 ## Failure Ledger
 
