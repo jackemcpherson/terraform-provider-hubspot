@@ -124,14 +124,9 @@ func (c *ContactSegmentClient) Create(ctx context.Context, input ContactSegmentW
 		return segment, err
 	}
 	if modelErr != nil {
+		// A missing or malformed listId fails model validation here; the
+		// resource owns the exact-ID import recovery diagnostic.
 		return segment, contactSegmentAmbiguousModelError("contact-segment-create", http.StatusCreated, modelErr)
-	}
-	if segment.ID == "" {
-		return segment, &Error{
-			Operation: "contact-segment-create", Status: http.StatusCreated,
-			Cause:     errors.New("HubSpot contact segment create response omitted listId"),
-			Ambiguous: true,
-		}
 	}
 	return segment, nil
 }

@@ -222,15 +222,22 @@ func TestContactSegmentCreateDistinguishesAmbiguousAndRejectedMissingID(t *testi
 	for _, test := range []struct {
 		name       string
 		status     int
+		body       string
 		wantTitle  string
 		wantDetail string
 	}{
-		{name: "ambiguous server failure gives import guidance", status: http.StatusServiceUnavailable, wantTitle: "Contact segment creation outcome is unknown", wantDetail: "import the exact positive-decimal ID"},
+		{name: "ambiguous server failure gives import guidance", status: http.StatusServiceUnavailable, wantTitle: "Contact segment creation outcome is unknown", wantDetail: "Exact-ID import is the only safe recovery path"},
+		{name: "success without listId gives import guidance", status: http.StatusCreated, body: `{"list":{"futureServiceMetadata":true}}`, wantTitle: "Contact segment creation outcome is unknown", wantDetail: "Exact-ID import is the only safe recovery path"},
 		{name: "authoritative rejection fails immediately", status: http.StatusBadRequest, wantTitle: "Contact segment creation failed"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			requests := 0
 			contactResource := contactSegmentPollingResource(t, func(*http.Request) (*http.Response, error) {
-				body := `{"category":"VALIDATION_ERROR","message":"write failed"}`
+				requests++
+				body := test.body
+				if body == "" {
+					body = `{"category":"VALIDATION_ERROR","message":"write failed"}`
+				}
 				return &http.Response{StatusCode: test.status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
 			})
 			var schemaResponse resource.SchemaResponse
@@ -250,6 +257,9 @@ func TestContactSegmentCreateDistinguishesAmbiguousAndRejectedMissingID(t *testi
 			}
 			if test.wantDetail != "" && !strings.Contains(response.Diagnostics[0].Detail(), test.wantDetail) {
 				t.Fatalf("create detail = %q", response.Diagnostics[0].Detail())
+			}
+			if requests != 1 || !response.State.Raw.IsNull() {
+				t.Fatalf("create sent %d requests and retained state %v; want one write and no state", requests, !response.State.Raw.IsNull())
 			}
 		})
 	}

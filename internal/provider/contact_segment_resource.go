@@ -193,11 +193,11 @@ func (r *ContactSegmentResource) Create(ctx context.Context, request resource.Cr
 	created, createErr := r.client.Create(ctx, input)
 	if !validContactSegmentImportID(created.ID) {
 		if created.ID != "" {
-			response.Diagnostics.AddError("Contact segment creation identity is invalid", "HubSpot returned a non-canonical ILS list ID. The provider did not search by name. Inspect Lists in HubSpot and import the exact positive-decimal ID if creation succeeded.")
+			response.Diagnostics.AddError("Contact segment creation identity is invalid", "HubSpot returned a non-canonical ILS list ID, so the provider retained no state and did not search by name. Exact-ID import is the only safe recovery path: inspect Lists in HubSpot and import the exact positive-decimal ID if creation succeeded.")
 		} else if createErr != nil && !isAmbiguous(createErr) {
 			appendHubSpotDiagnostic(&response.Diagnostics, "Contact segment creation failed", createErr)
 		} else {
-			response.Diagnostics.AddError("Contact segment creation outcome is unknown", "HubSpot did not return an ILS list ID. Inspect Lists in HubSpot and import the exact positive-decimal ID if creation succeeded. The provider did not search by name.")
+			response.Diagnostics.AddError("Contact segment creation outcome is unknown", "HubSpot did not return an ILS list ID, so the provider retained no state and did not retry or search by name. Exact-ID import is the only safe recovery path: inspect Lists in HubSpot and import the exact positive-decimal ID if creation succeeded.")
 		}
 		return
 	}
