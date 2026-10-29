@@ -29,11 +29,20 @@ CALL_LOG="$log" HUBSPOT_DEMO_SCRIPT="$tmp/demo" \
 
 test "$(sed -n '1p' "$log")" = 'helper:cleanup'
 for engine in tofu terraform; do
-  for phase in plan apply verify drift repair refresh adopt verify destroy-plan destroy-apply; do
+  for phase in plan apply verify drift repair revise refresh adopt verify destroy-plan destroy-apply; do
     grep -Fqx "$engine:local:$phase" "$log"
   done
 done
-test "$(wc -l <"$log" | tr -d ' ')" -eq 21
+test "$(wc -l <"$log" | tr -d ' ')" -eq 23
+expected_sequence=$(for engine in tofu terraform; do
+  for phase in plan apply verify drift repair revise refresh adopt verify destroy-plan destroy-apply; do
+    printf '%s:local:%s\n' "$engine" "$phase"
+  done
+done)
+test "$(sed -n '2,$p' "$log")" = "$expected_sequence" || {
+  echo 'maintenance ran Northstar phases out of order' >&2
+  exit 1
+}
 
 mkdir "$tmp/busy-lock"
 call_count=$(wc -l <"$log" | tr -d ' ')

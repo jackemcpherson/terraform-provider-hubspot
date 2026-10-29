@@ -59,6 +59,12 @@ func TestAcc_JanitorReport(t *testing.T) {
 			t.Fatalf("report stale owned Product definitions: %s", acceptance.SanitizedHubSpotError(err))
 		}
 		t.Logf("stale owned HubSpot configuration: active_product_definitions=%d retained_archived_product_definitions=%d", active, archived)
+	case "contact_segments":
+		active, tombstoned, absent, err := countOwnedContactSegments(ctx, clients, prefix, requiredContactSegmentJanitorIDs(t))
+		if err != nil {
+			t.Fatalf("report exact owned Contact segments: %s", acceptance.SanitizedHubSpotError(err))
+		}
+		t.Logf("owned HubSpot configuration: active_contact_segments=%d retained_contact_segment_tombstones=%d permanently_absent_contact_segments=%d", active, tombstoned, absent)
 	}
 }
 
@@ -95,6 +101,15 @@ func TestAcc_ManualPrefixCleanup(t *testing.T) {
 			t.Fatalf("archive owned Product definitions: %s", acceptance.SanitizedHubSpotError(err))
 		}
 		t.Logf("terminal cleanup retained archived Product definitions: %d", archived)
+		return
+	}
+	if shard == "contact_segments" {
+		ids := requiredContactSegmentJanitorIDs(t)
+		deleted, err := deleteOwnedContactSegments(ctx, clients, prefix, ids)
+		if err != nil {
+			t.Fatalf("delete exact owned Contact segments: %s", acceptance.SanitizedHubSpotError(err))
+		}
+		t.Logf("terminal cleanup verified exact retained Contact segment tombstones: %d", deleted)
 		return
 	}
 
@@ -191,6 +206,47 @@ func TestProductJanitorArchivesOnlyPrefixOwnedExactIdentities(t *testing.T) {
 	}
 	if _, err := clients.Products.Get(ctx, unowned.ID); err != nil {
 		t.Fatal("Product cleanup mutated an unowned identity")
+	}
+}
+
+func TestContactSegmentJanitorDeletesOnlyPrefixOwnedExactIdentities(t *testing.T) {
+	fake := acceptance.NewFakeHubSpot("token", 123)
+	server := httptest.NewServer(fake)
+	defer server.Close()
+	origin, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clients, err := hubspot.NewClientSet(hubspot.TransportConfig{BaseURL: origin, AccessToken: "token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	owned, err := clients.ContactSegments.Create(ctx, hubspot.ContactSegmentWrite{Name: "tf_acc_owned_segment", ProcessingType: "manual"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unowned, err := clients.ContactSegments.Create(ctx, hubspot.ContactSegmentWrite{Name: "keep_segment", ProcessingType: "manual"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := deleteOwnedContactSegments(ctx, clients, "tf_acc_owned_", []string{unowned.ID}); err == nil {
+		t.Fatal("Contact segment cleanup accepted an exact ID without the owned prefix")
+	}
+	if segment, err := clients.ContactSegments.Get(ctx, unowned.ID); err != nil || segment.Deleted {
+		t.Fatal("failed Contact segment ownership preflight mutated an unowned identity")
+	}
+	deleted, err := deleteOwnedContactSegments(ctx, clients, "tf_acc_owned_", []string{owned.ID})
+	if err != nil || deleted != 1 {
+		t.Fatalf("Contact segment cleanup = %d, %v", deleted, err)
+	}
+	deleted, err = deleteOwnedContactSegments(ctx, clients, "tf_acc_owned_", []string{owned.ID})
+	if err != nil || deleted != 0 {
+		t.Fatalf("repeated Contact segment cleanup = %d, %v", deleted, err)
+	}
+	active, tombstoned, absent, err := countOwnedContactSegments(ctx, clients, "tf_acc_owned_", []string{owned.ID})
+	if err != nil || active != 0 || tombstoned != 1 || absent != 0 {
+		t.Fatalf("Contact segment report = %d/%d/%d, %v", active, tombstoned, absent, err)
 	}
 }
 
@@ -480,7 +536,7 @@ func TestAccountMembershipJanitorRefusesIdentityMismatchBeforeMutation(t *testin
 func janitorClients(t *testing.T) (*hubspot.ClientSet, string) {
 	t.Helper()
 	shard := requiredEnvironment(t, "CAPABILITY_SHARD")
-	if shard != "free_properties" && shard != "form_definitions" && shard != "files_configuration" && shard != "account_memberships" && shard != "product_definitions" && shard != "deal_pipelines" && shard != "ticket_pipelines" {
+	if shard != "free_properties" && shard != "form_definitions" && shard != "files_configuration" && shard != "account_memberships" && shard != "product_definitions" && shard != "contact_segments" && shard != "deal_pipelines" && shard != "ticket_pipelines" {
 		t.Fatal("janitor implementation is unavailable for the selected capability shard")
 	}
 	token := requiredEnvironment(t, "HUBSPOT_ACCESS_TOKEN")
@@ -494,6 +550,86 @@ func janitorClients(t *testing.T) (*hubspot.ClientSet, string) {
 }
 
 var generatedDecimalJanitorID = regexp.MustCompile(`^[1-9][0-9]*$`)
+
+func requiredContactSegmentJanitorIDs(t *testing.T) []string {
+	t.Helper()
+	value := requiredEnvironment(t, "HUBSPOT_CONTACT_SEGMENT_IDS")
+	parts := strings.Split(value, ",")
+	ids := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		id := strings.TrimSpace(part)
+		if !generatedDecimalJanitorID.MatchString(id) {
+			t.Fatal("HUBSPOT_CONTACT_SEGMENT_IDS must contain only comma-separated canonical positive-decimal IDs")
+		}
+		if _, duplicate := seen[id]; duplicate {
+			t.Fatal("HUBSPOT_CONTACT_SEGMENT_IDS must not contain duplicate IDs")
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func countOwnedContactSegments(ctx context.Context, clients *hubspot.ClientSet, prefix string, ids []string) (active, tombstoned, absent int, err error) {
+	for _, id := range ids {
+		segment, readErr := clients.ContactSegments.Get(ctx, id)
+		if readErr != nil {
+			if formJanitorNotFound(readErr) {
+				absent++
+				continue
+			}
+			return 0, 0, 0, readErr
+		}
+		if segment.ID != id || !strings.HasPrefix(segment.Name, prefix) {
+			return 0, 0, 0, errors.New("Contact segment janitor exact ID and owned name prefix did not both match")
+		}
+		if segment.Deleted {
+			tombstoned++
+		} else {
+			active++
+		}
+	}
+	return active, tombstoned, absent, nil
+}
+
+func deleteOwnedContactSegments(ctx context.Context, clients *hubspot.ClientSet, prefix string, ids []string) (int, error) {
+	if !strings.HasPrefix(prefix, "tf_acc_") || !strings.HasSuffix(prefix, "_") {
+		return 0, errors.New("Contact segment cleanup prefix was not exact owned tf_acc_ form")
+	}
+	deleted := 0
+	for _, id := range ids {
+		segment, err := clients.ContactSegments.Get(ctx, id)
+		if err != nil {
+			if formJanitorNotFound(err) {
+				continue
+			}
+			return 0, err
+		}
+		if segment.ID != id || !strings.HasPrefix(segment.Name, prefix) {
+			return 0, errors.New("refusing Contact segment cleanup without exact ID and owned name prefix")
+		}
+		if !segment.Deleted {
+			deleteErr := clients.ContactSegments.Delete(ctx, id)
+			tombstone, readErr := clients.ContactSegments.Get(ctx, id)
+			if readErr != nil || tombstone.ID != id || !tombstone.Deleted {
+				if deleteErr != nil {
+					return 0, deleteErr
+				}
+				return 0, errors.New("Contact segment cleanup did not verify the exact tombstone")
+			}
+			deleted++
+		}
+	}
+	active, _, _, err := countOwnedContactSegments(ctx, clients, prefix, ids)
+	if err != nil {
+		return 0, err
+	}
+	if active != 0 {
+		return 0, errors.New("Contact segment cleanup retained an active exact owned identity")
+	}
+	return deleted, nil
+}
 
 func countOwnedAccountMemberships(ctx context.Context, clients *hubspot.ClientSet, prefix string) (int, error) {
 	memberships, err := clients.AccountMemberships.List(ctx)

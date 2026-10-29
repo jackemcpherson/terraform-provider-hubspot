@@ -34,8 +34,11 @@ func TestNorthstarActionTimeoutPreservesFolderDriftMargin(t *testing.T) {
 	if timeout := northstarActionTimeout("repair-folder-path"); timeout != 10*time.Minute {
 		t.Fatalf("folder repair timeout = %s", timeout)
 	}
-	if timeout := northstarActionTimeout("cleanup"); timeout != 2*time.Minute {
+	if timeout := northstarActionTimeout("cleanup"); timeout != 5*time.Minute {
 		t.Fatalf("default timeout = %s", timeout)
+	}
+	if timeout := northstarActionTimeout("verify-contact-segment-tombstone"); timeout != 5*time.Minute {
+		t.Fatalf("Contact segment tombstone timeout = %s", timeout)
 	}
 	var taskDelay time.Duration
 	for _, delay := range northstarFolderTaskConvergenceDelays {
@@ -291,6 +294,223 @@ func TestExecuteManagesNorthstarProductLifecycle(t *testing.T) {
 		!strings.Contains(record, `"terminal":"archived"`) || !strings.Contains(record, `"active_owned_products":0`) {
 		t.Fatalf("Product terminal record = %q, %v", record, err)
 	}
+}
+
+func TestExecuteManagesNorthstarContactSegmentLifecycle(t *testing.T) {
+	fake := acceptance.NewFakeHubSpot("token", 123)
+	clients := northstarFakeClientsWithoutListener(t, fake)
+	ctx := context.Background()
+	const label = "ns_tofu"
+	writes := northstarContactSegmentFixture("Northstar all contacts ns_tofu", "Northstar completed onboarding ns_tofu", "Northstar contactable snapshot ns_tofu", "suppressed@example.com")
+	ids := make([]string, 0, len(writes))
+	for _, write := range writes {
+		created, err := clients.ContactSegments.Create(ctx, write)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, created.ID)
+	}
+	verifyArgs := append(append([]string(nil), ids...), "suppressed@example.com", label)
+	if _, err := execute(ctx, "verify-contact-segments", verifyArgs, clients); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(ctx, "verify-contact-segments", append(append([]string(nil), ids...), "suppressed@example.com", "ns_terraform"), clients); err == nil {
+		t.Fatal("Contact segment verification accepted another engine's names")
+	}
+	if _, err := execute(ctx, "drift-contact-segments", append(append([]string(nil), ids...), label), clients); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(ctx, "verify-contact-segments", verifyArgs, clients); err == nil {
+		t.Fatal("Contact segment verification accepted drift")
+	}
+	drifted, err := clients.ContactSegments.Get(ctx, ids[0])
+	if err != nil || drifted.Name != "Out-of-band Northstar all contacts ns_tofu" {
+		t.Fatalf("drifted Contact segment = %#v, %v", drifted, err)
+	}
+	for index, id := range ids {
+		if _, err := clients.ContactSegments.UpdateName(ctx, id, writes[index].Name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := clients.ContactSegments.UpdateFilters(ctx, ids[1], writes[1].FilterGroups); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(ctx, "verify-contact-segment-tombstone", []string{ids[1]}, clients); err == nil {
+		t.Fatal("tombstone verification accepted an active Contact segment")
+	}
+	if _, err := execute(ctx, "delete-contact-segment-for-refresh", []string{ids[1]}, clients); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(ctx, "verify-contact-segment-tombstone", []string{ids[1]}, clients); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := clients.ContactSegments.Get(ctx, ids[1])
+	if err != nil || !deleted.Deleted || deleted.ID != ids[1] {
+		t.Fatalf("refresh tombstone = %#v, %v", deleted, err)
+	}
+	if err := clients.ContactSegments.Restore(ctx, ids[1]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(ctx, "cleanup-contact-segments", ids, clients); err != nil {
+		t.Fatal(err)
+	}
+	record, err := execute(ctx, "verify-contact-segments-terminal", ids, clients)
+	if err != nil || strings.Contains(record, ids[0]) || !strings.Contains(record, `"terminal":"tombstoned"`) || !strings.Contains(record, `"active_owned_contact_segments":0`) {
+		t.Fatalf("Contact segment terminal record = %q, %v", record, err)
+	}
+	for _, id := range ids {
+		segment, ok := fake.ContactSegmentSnapshot(id)
+		if !ok || !segment.Deleted || segment.ID != id {
+			t.Fatalf("terminal Contact segment = %#v, %v", segment, ok)
+		}
+	}
+}
+
+func TestExecuteVerifiesRevisedNorthstarContactSegments(t *testing.T) {
+	fake := acceptance.NewFakeHubSpot("token", 123)
+	clients := northstarFakeClientsWithoutListener(t, fake)
+	ctx := context.Background()
+	writes := northstarContactSegmentFixture(
+		"Northstar all contacts ns_tofu_revised", "Northstar completed onboarding ns_tofu_revised",
+		"Northstar contactable snapshot ns_tofu_revised", "suppressed-revised@example.com",
+	)
+	ids := make([]string, 0, len(writes))
+	for _, write := range writes {
+		created, err := clients.ContactSegments.Create(ctx, write)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, created.ID)
+	}
+	if _, err := execute(ctx, "verify-contact-segments", append(append([]string(nil), ids...), "suppressed-revised@example.com", "ns_tofu_revised"), clients); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(ctx, "verify-contact-segments", append(append([]string(nil), ids...), "suppressed@example.com", "ns_tofu_revised"), clients); err == nil {
+		t.Fatal("Contact segment verification accepted the replaced snapshot filter")
+	}
+}
+
+func TestExecuteRejectsInvalidNorthstarContactSegmentInputs(t *testing.T) {
+	clients := northstarFakeClientsWithoutListener(t, acceptance.NewFakeHubSpot("token", 123))
+	ctx := context.Background()
+	for _, test := range []struct {
+		action string
+		args   []string
+	}{
+		{"verify-contact-segments", []string{"1", "2", "3", "suppressed@example.com"}},
+		{"verify-contact-segments", []string{"1", "2", "3", "suppressed@example.com", "tofu"}},
+		{"verify-contact-segments", []string{"1", "2", "3", "suppressed@example.com", "ns_tofu revised"}},
+		{"drift-contact-segments", []string{"1", "2", "3"}},
+		{"drift-contact-segments", []string{"1", "2", "3", "Northstar"}},
+		{"verify-contact-segment-tombstone", nil},
+		{"verify-contact-segment-tombstone", []string{"01"}},
+	} {
+		if _, err := execute(ctx, test.action, test.args, clients); err == nil {
+			t.Fatalf("%s accepted invalid inputs %q", test.action, test.args)
+		}
+	}
+}
+
+func TestNorthstarContactSegmentOwnershipUsesConfiguredPrefix(t *testing.T) {
+	t.Setenv("HUBSPOT_NORTHSTAR_FILES_PREFIX", "ns_run7_")
+	fake := acceptance.NewFakeHubSpot("token", 123)
+	clients := northstarFakeClientsWithoutListener(t, fake)
+	ctx := context.Background()
+	create := func(name string) string {
+		t.Helper()
+		created, err := clients.ContactSegments.Create(ctx, hubspot.ContactSegmentWrite{Name: name, ProcessingType: "manual"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return created.ID
+	}
+	owned := []string{
+		create("Northstar all contacts ns_run7_tofu"),
+		create("Out-of-band Northstar completed onboarding ns_run7_terraform"),
+		create("Northstar contactable snapshot ns_run7_tofu_revised"),
+	}
+	foreign := map[string]string{
+		"another run prefix":  create("Northstar all contacts ns_other_tofu"),
+		"default run prefix":  create("Northstar completed onboarding ns_tofu"),
+		"unlabelled name":     create("Northstar contactable snapshot"),
+		"unknown base name":   create("Northstar archive ns_run7_tofu"),
+		"invalid label":       create("Northstar all contacts ns_run7_tofu extra"),
+		"prefix in mid-name":  create("Customer Northstar all contacts ns_run7_tofu"),
+		"different separator": create("Northstar all contacts-ns_run7_tofu"),
+	}
+	for name, id := range foreign {
+		if _, err := execute(ctx, "cleanup-contact-segments", []string{id}, clients); err == nil {
+			t.Fatalf("cleanup accepted %s", name)
+		}
+		if _, err := execute(ctx, "delete-contact-segment-for-refresh", []string{id}, clients); err == nil {
+			t.Fatalf("refresh deletion accepted %s", name)
+		}
+		if segment, ok := fake.ContactSegmentSnapshot(id); !ok || segment.Deleted {
+			t.Fatalf("ownership refusal mutated %s", name)
+		}
+		if !fake.DeleteContactSegment(id) {
+			t.Fatalf("could not tombstone %s out of band", name)
+		}
+		if _, err := execute(ctx, "verify-contact-segment-tombstone", []string{id}, clients); err == nil {
+			t.Fatalf("tombstone verification accepted %s", name)
+		}
+	}
+	if _, err := execute(ctx, "cleanup-contact-segments", owned, clients); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range owned {
+		if segment, ok := fake.ContactSegmentSnapshot(id); !ok || !segment.Deleted {
+			t.Fatal("cleanup did not tombstone an exact owned identity")
+		}
+		if _, err := execute(ctx, "verify-contact-segment-tombstone", []string{id}, clients); err != nil {
+			t.Fatalf("owned tombstone verification = %v", err)
+		}
+	}
+	if active := fake.ActiveContactSegmentIDs(); len(active) != 0 {
+		t.Fatalf("cleanup left %d active Contact segments", len(active))
+	}
+}
+
+func northstarContactSegmentFixture(manualName, dynamicName, snapshotName, snapshotValue string) []hubspot.ContactSegmentWrite {
+	return []hubspot.ContactSegmentWrite{
+		{Name: manualName, ProcessingType: "manual"},
+		{
+			Name: dynamicName, ProcessingType: "dynamic",
+			FilterGroups: []hubspot.ContactSegmentFilterGroup{{Filters: []hubspot.ContactSegmentFilter{{
+				Property: "ns_onboarding_status", Operator: "is_equal_to", PropertyKind: "select", Value: "complete",
+			}}}},
+		},
+		{
+			Name: snapshotName, ProcessingType: "snapshot",
+			FilterGroups: []hubspot.ContactSegmentFilterGroup{{Filters: []hubspot.ContactSegmentFilter{{
+				Property: "email", Operator: "is_not_equal_to", PropertyKind: "text", Value: snapshotValue,
+			}}}},
+		},
+	}
+}
+
+type northstarRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn northstarRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return fn(request)
+}
+
+func northstarFakeClientsWithoutListener(t *testing.T, fake *acceptance.FakeHubSpot) *hubspot.ClientSet {
+	t.Helper()
+	origin, err := url.Parse("https://fake-hubspot.invalid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Transport: northstarRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		recorder := httptest.NewRecorder()
+		fake.ServeHTTP(recorder, request)
+		return recorder.Result(), nil
+	})}
+	clients, err := hubspot.NewClientSet(hubspot.TransportConfig{BaseURL: origin, AccessToken: "token", HTTPClient: client})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return clients
 }
 
 func TestExecuteCleansInterruptedNorthstarLifecycle(t *testing.T) {

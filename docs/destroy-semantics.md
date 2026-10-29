@@ -1,10 +1,10 @@
 # Destroy semantics
 
-`terraform destroy` (or removing a resource block and applying) archives the
+`terraform destroy` (or removing a resource block and applying) archives most
 managed configuration surfaces in this provider rather than purging them.
 Archived configuration is removed from active use while the underlying HubSpot
-record is retained. No managed resource in this provider has a restore
-operation; reversal, where HubSpot supports it at all, is outside the provider.
+record is retained. Contact segment tombstones are the exception: refresh keeps
+their state and apply restores the same ID during HubSpot's retention window.
 
 ## hubspot_property_group
 
@@ -118,3 +118,20 @@ a new generated ID and does not adopt or restore by SKU or name.
 
 **Non-destructive alternative:** `tofu state rm hubspot_product.<name>` (or the
 equivalent `terraform` command) leaves the active Product unmanaged.
+
+## hubspot_contact_segment
+
+Destroy deletes the exact generated ILS list ID and requires exact-ID read-back
+of the same retained tombstone before removing state. An already tombstoned or
+permanently absent ID completes idempotently. Permission, transient, timeout,
+or identity-conflict responses retain state for a safe retry.
+
+HubSpot retains deleted lists for up to 90 days. Out-of-band deletion differs
+from destroy: refresh keeps the resource in state with a private tombstone
+marker, and the next apply restores the same ID. A tombstoned import behaves
+the same way. The provider never permanently purges the tombstone.
+
+**Non-destructive alternative:** `tofu state rm
+hubspot_contact_segment.<name>` (or the equivalent `terraform` command) leaves
+an active definition unmanaged. If the exact ID is already tombstoned, state
+removal leaves it deleted and retained by HubSpot.

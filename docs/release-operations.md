@@ -71,7 +71,12 @@ Product scopes. Products require `crm.objects.products.read` and
 `crm.objects.products.write`. Use Settings users read/write access for
 membership and the exact
 `crm.objects.users.read` and `crm.objects.users.write` pair for the separate
-CRM profile. Set
+CRM profile. `crm.lists.read` and `crm.lists.write` are the complete Contact
+segment scope pair. Set `HUBSPOT_NORTHSTAR_CONTACT_SEGMENT_IDS` to the
+comma-separated exact generated IDs from the previous protected run so
+interrupted-run cleanup never searches by name. Cleanup deletes an ID only
+when its name is an exact Northstar segment name whose label starts with the
+configured `HUBSPOT_NORTHSTAR_FILES_PREFIX` run prefix, `ns_` by default. Set
 `HUBSPOT_ACCEPTANCE_PORTAL_ID` to the expected disposable portal. Set the
 `HUBSPOT_NORTHSTAR_MEMBERSHIP_EMAIL` environment variable to a dedicated,
 disposable member in that portal. Do not use an ordinary account member or a
@@ -108,6 +113,8 @@ live tests. Select one configuration surface and enter its required confirmation
 - `files_configuration`: `delete-prefixed-files-configuration`
 - `account_memberships`: `delete-prefixed-account-memberships`
 - `product_definitions`: `archive-prefixed-product-definitions`
+- `contact_segments`: `delete-exact-contact-segments`, plus the exact
+  comma-separated generated IDs
 
 The single archival job selects the corresponding GitHub environment from the
 validated choice. The cleanup script rejects an unknown surface, an unsafe
@@ -121,3 +128,6 @@ archived identity. Account membership cleanup accepts only exact
 `tf_acc_...@example.com` ownership, rereads both identities, refuses Super
 Admins, and verifies absence. It does not delete global identity. Do not
 describe any of these outcomes as permanent global deletion.
+Contact segment cleanup requires both the selected `tf_acc_` ownership prefix
+and explicit generated IDs, verifies every exact definition before deletion,
+and then verifies the same retained tombstones. It never searches or purges.

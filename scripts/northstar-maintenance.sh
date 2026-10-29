@@ -42,6 +42,9 @@ for engine in tofu terraform; do
   run_demo_phase "$engine" verify
   run_demo_phase "$engine" drift
   run_demo_phase "$engine" repair
+  # Revise renames every segment in place and replaces the snapshot. The
+  # revision persists for the rest of this engine's journey.
+  run_demo_phase "$engine" revise
   run_demo_phase "$engine" refresh
   run_demo_phase "$engine" adopt
   run_demo_phase "$engine" verify

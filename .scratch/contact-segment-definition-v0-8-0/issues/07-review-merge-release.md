@@ -2,7 +2,7 @@
 
 Type: task
 
-Status: open
+Status: resolved
 
 Blocked by: 01, 02, 03, 04, 05, 06
 
@@ -68,6 +68,79 @@ Blocked by: 01, 02, 03, 04, 05, 06
   tombstone, and same-ID restore from list version 2 to 3. It then failed
   because the synthetic maximum-integer unknown ID returned a different 4xx
   classification than the probe required. Exact-ID cleanup completed.
+- 2026-08-18: Provider PR 105 classified the synthetic unknown ID without
+  treating it as a purged known identity and merged as `27347f4`. Protected
+  run 32101799846 then passed the complete amended contract probe, cumulative
+  OpenTofu and Terraform journey, and terminal cleanup on provider `27347f4`
+  and demo `2ef32f7` in 9m0s.
+- 2026-08-18: The first implementation review corrected immediate rejection,
+  unsafe 5xx ambiguity, dual-engine recovery, bounded timeout, exact request
+  counts, processing-type replacement evidence, and issue-map links. Actions
+  review found no workflow defect. Release review remains Not ready until the
+  demo merge/pin, source freeze, exact-main qualification, and publication.
+- 2026-08-18: Sandbox-safe staticcheck, focused race tests, all-package compile,
+  acceptance compile, frozen fuzz seeds, workflow and cleanup scripts, license
+  checks, and `make check-release` passed. Listener-based hermetic execution,
+  generated-document reproduction, demo writes, and hosted actions remain
+  pending on the external execution gate.
+- 2026-10-29: Release train recovery orders this ticket after every
+  `release-train-recovery` ticket (01–07), in addition to the blockers above.
+  See `.scratch/release-train-recovery/map.md`.
+- 2026-10-29: A fixed-point code review of draft PR #119 produced these
+  fixes on `fix/contact-segment-review`:
+  - Destroy completes when the exact definition is permanently absent during
+    or after delete instead of polling until timeout.
+  - Update restores only when the preflight read shows a tombstone, so a
+    definition restored after refresh needs no restore write.
+  - Restoration completes only when the same identity shows the complete
+    retained definition.
+  - The unreachable client branch for a missing `listId` is removed. The
+    resource diagnostic states that exact-ID import is the only safe recovery
+    path.
+  - Hermetic dual-engine tests cover unknown creates, unsupported refresh and
+    import, ambiguous and incomplete restores, already-restored tombstones,
+    and disappearing deletes with exact request counts.
+  - Northstar cleanup, refresh deletion, and tombstone verification prove
+    ownership from the exact demo name stem plus a label under the configured
+    run prefix.
+  - One canonical ID validator, one unordered segment equality, and one
+    terminal processing predicate are shared from `internal/hubspot`.
+  - The changelog lists new-resource behaviour under Added, the frozen spec
+    text is restored with its clarification on ticket 02, and tickets 04 to
+    06 gain answers.
+  - Prefix-search discovery of crashed-run segments was not added. The frozen
+    spec limits the typed client to exact routes and automated cleanup to
+    exact generated IDs.
+
+- 2026-10-29: Pre-freeze check confirmed that the Northstar journey prints
+  the generated Contact segment IDs. Demo `7b1531b` applies saved plans with
+  unredirected output, the resource `id` and the three root segment-ID outputs
+  are not sensitive, and maintenance does not quiet `make maintenance`. Both
+  engines therefore log each exact generated ID on create, including the
+  replacement snapshot, so a mid-journey failure can be cleaned through
+  `HUBSPOT_NORTHSTAR_CONTACT_SEGMENT_IDS`. No change was needed.
+
+## Answer
+
+The slice is ready for its fixed point.
+
+- The standards and specification reviews of draft PR #119 are cleared.
+  Their fixes merged into the slice branch as PR #123.
+- The test-quality, Actions, and release-readiness reviews and the complete
+  local release suite run on the frozen slice tip that merges to `main`.
+- Qualification uses the exact merged `main` commit, as ADR 0003 requires.
+  It needs a green `Required` check and two consecutive green
+  `Provider maintenance` runs. The second run recreates the Contact segment
+  names that the first run deleted. This proves that HubSpot does not reserve
+  the names of deleted lists, which is the evidence that ticket 05 left
+  pending. That reason accounts for the extra run in the release-slices
+  section 7 budget.
+- Publication uses the existing `main`-only `Release` workflow to create one
+  signed, immutable v0.8.0 release, as v0.7.1 did.
+
+Post-freeze run URLs, the release URL, asset verification, and Terraform
+Registry and OpenTofu Registry states are recorded outside Git, in a comment on
+PR #119, as release-slices section 7 requires.
 
 ## Failure Ledger
 

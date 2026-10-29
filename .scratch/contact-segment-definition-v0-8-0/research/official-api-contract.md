@@ -264,6 +264,25 @@ The documented definition routes do not require contact-record read scopes.
 Official sources do not prove that the provider can infer a property's remote
 operation type without reading contact property schema.
 
+## Protected Live Results
+
+Protected Free-portal runs resolved the documentation gaps without exposing
+portal identities or generated list IDs.
+
+- Run 32096106495 proved `MULTISTRING` and `STRING` for text properties and
+  `ENUMERATION` for select properties. No one operation type supports both.
+- Run 32101261970 proved all three processing types, the amended text, select,
+  and presence mappings, dynamic filter replacement, a readable exact-ID
+  tombstone, and same-ID restoration from list version 2 to version 3. Its
+  final synthetic unknown-ID assertion was too narrow.
+- Run 32101799846 passed the corrected contract probe and the cumulative
+  dual-engine journey on provider `27347f4` and demo `2ef32f7`. Terminal
+  cleanup verified zero active owned configuration.
+
+The live results support explicit author-declared property kind with only
+`crm.lists.read` and `crm.lists.write`. They also support exact-ID tombstone
+read-back and same-ID restore on the protected Free portal.
+
 ## Supported Plan Decisions
 
 Official sources support these v0.8.0 decisions:

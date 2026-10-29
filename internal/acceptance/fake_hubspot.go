@@ -99,6 +99,10 @@ type FakeHubSpot struct {
 	nextProductID          int
 	rejectNextProductPatch bool
 	nextProductFault       ProductFault
+
+	contactSegments      map[string]*fakeContactSegment
+	nextContactSegmentID int
+	nextContactFault     ContactSegmentFault
 }
 
 type fakeFormDefinition struct {
@@ -145,6 +149,7 @@ func NewFakeHubSpot(token string, portalID int64) *FakeHubSpot {
 		crmUserProfiles:              make(map[string]*fakeCRMUserProfile),
 		crmProfileReadiness:          make(map[string]int),
 		products:                     make(map[string]*fakeProduct),
+		contactSegments:              make(map[string]*fakeContactSegment),
 	}
 }
 
@@ -173,6 +178,8 @@ func (f *FakeHubSpot) ServeHTTP(response http.ResponseWriter, request *http.Requ
 		f.handleCRMUserProfiles(response, request, segments[4:])
 	case len(segments) >= 4 && segments[0] == "crm" && segments[1] == "objects" && segments[2] == "2026-03" && segments[3] == "products":
 		f.handleProducts(response, request, segments[4:])
+	case len(segments) >= 3 && segments[0] == "crm" && segments[1] == "lists" && segments[2] == "2026-03":
+		f.handleContactSegments(response, request, segments[3:])
 	default:
 		writeFakeError(response, http.StatusNotFound, "OBJECT_NOT_FOUND", "", "No route matched this request.")
 	}

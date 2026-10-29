@@ -38,6 +38,7 @@ const (
 	FilesConfiguration  Shard = "files_configuration"
 	AccountMemberships  Shard = "account_memberships"
 	ProductDefinitions  Shard = "product_definitions"
+	ContactSegments     Shard = "contact_segments"
 	DealPipelines       Shard = "deal_pipelines"
 	TicketPipelines     Shard = "ticket_pipelines"
 	CustomSchemas       Shard = "custom_schemas"
@@ -48,9 +49,10 @@ const (
 type Warning string
 
 const (
-	PropertyTypeTransition      Warning = "Property type transition"
-	PropertyOptionValuesChanged Warning = "Property option values changed"
-	AccountMembershipGlobalName Warning = "Account membership names affect global identity"
+	PropertyTypeTransition       Warning = "Property type transition"
+	PropertyOptionValuesChanged  Warning = "Property option values changed"
+	AccountMembershipGlobalName  Warning = "Account membership names affect global identity"
+	ContactSegmentAmbiguousWrite Warning = "Contact segment write response was ambiguous"
 )
 
 type Failure string
@@ -130,7 +132,7 @@ func Run(t testing.TB, options Options, scenario func(*Session)) {
 			t.Fatalf("install exact acceptance provider binary: %v", err)
 		}
 	} else {
-		build := exec.Command("go", "build", "-trimpath", "-o", providerBinary, root)
+		build := exec.Command("go", "build", "-tags=acceptance", "-trimpath", "-o", providerBinary, root)
 		build.Dir = root
 		build.Env = append(os.Environ(), "CGO_ENABLED=0", "GOTOOLCHAIN=local")
 		if output, err := build.CombinedOutput(); err != nil {
@@ -177,7 +179,7 @@ func Run(t testing.TB, options Options, scenario func(*Session)) {
 
 func validShard(shard Shard) bool {
 	switch shard {
-	case FreeProperties, FormDefinitions, FilesConfiguration, AccountMemberships, ProductDefinitions, DealPipelines, TicketPipelines, CustomSchemas, SensitiveProperties, CustomPipelines:
+	case FreeProperties, FormDefinitions, FilesConfiguration, AccountMemberships, ProductDefinitions, ContactSegments, DealPipelines, TicketPipelines, CustomSchemas, SensitiveProperties, CustomPipelines:
 		return true
 	default:
 		return false
@@ -190,6 +192,17 @@ func (s *Session) Apply(config string) {
 	s.registerCleanup()
 	if err := s.command("apply", "-auto-approve", "-input=false", "-no-color"); err != nil {
 		s.t.Fatalf("%s apply failed: %v", s.engine, err)
+	}
+}
+
+// ApplyWithoutRefresh applies from the stored state, including private
+// provider data, as a saved plan would after a remote change.
+func (s *Session) ApplyWithoutRefresh(config string) {
+	s.t.Helper()
+	s.writeConfig(config)
+	s.registerCleanup()
+	if err := s.command("apply", "-refresh=false", "-auto-approve", "-input=false", "-no-color"); err != nil {
+		s.t.Fatalf("%s apply without refresh failed: %v", s.engine, err)
 	}
 }
 

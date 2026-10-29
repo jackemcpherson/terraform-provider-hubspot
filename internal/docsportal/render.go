@@ -26,7 +26,7 @@ func resetOutput(output string) error {
 
 func renderPortal(config Config, metadata manifest, resources, dataSources []providerType, modules []moduleDoc) error {
 	header := provenanceHeader(metadata)
-	if err := writeFile(filepath.Join(config.OutputDir, "index.html"), page("HubSpot configuration portal", "", header, `<h1>HubSpot configuration surfaces</h1><ul><li><a href="crm-property-schema.html">CRM property schema</a></li><li><a href="form-definition.html">Form definition</a></li><li><a href="files-configuration.html">Files configuration</a></li><li><a href="account-membership.html">Account membership</a></li><li><a href="crm-user-profile.html">CRM user profile</a></li><li><a href="product-definition.html">Product definition</a></li></ul><nav><a href="resources/index.html">Resources</a> · <a href="data-sources/index.html">Data sources</a> · <a href="modules/index.html">Consumer modules</a> · <a href="provenance.json">Provenance</a></nav>`)); err != nil {
+	if err := writeFile(filepath.Join(config.OutputDir, "index.html"), page("HubSpot configuration portal", "", header, `<h1>HubSpot configuration surfaces</h1><ul><li><a href="crm-property-schema.html">CRM property schema</a></li><li><a href="form-definition.html">Form definition</a></li><li><a href="files-configuration.html">Files configuration</a></li><li><a href="account-membership.html">Account membership</a></li><li><a href="crm-user-profile.html">CRM user profile</a></li><li><a href="product-definition.html">Product definition</a></li><li><a href="contact-segment-definition.html">Contact segment definition</a></li></ul><nav><a href="resources/index.html">Resources</a> · <a href="data-sources/index.html">Data sources</a> · <a href="modules/index.html">Consumer modules</a> · <a href="provenance.json">Provenance</a></nav>`)); err != nil {
 		return err
 	}
 	if err := writeSurfaceOverview(config, "crm-property-schema", "CRM property schema", `<a href="resources/index.html">Provider resources</a> · <a href="data-sources/index.html">Property discovery</a> · <a href="modules/crm-schema.html">crm-schema module</a>`, header); err != nil {
@@ -45,6 +45,9 @@ func renderPortal(config Config, metadata manifest, resources, dataSources []pro
 		return err
 	}
 	if err := writeSurfaceOverview(config, "product-definition", "Product definition", `<a href="resources/hubspot_product.html">hubspot_product resource</a> · <a href="modules/product-definition.html">product-definition module</a>`, header); err != nil {
+		return err
+	}
+	if err := writeSurfaceOverview(config, "contact-segment-definition", "Contact segment definition", `<a href="resources/hubspot_contact_segment.html">hubspot_contact_segment resource</a> · <a href="modules/contact-segment-definition.html">contact-segment-definition module</a>`, header); err != nil {
 		return err
 	}
 	if err := writeProviderIndex(config.OutputDir, "resources", "Resources", resources, header); err != nil {
@@ -161,6 +164,9 @@ func writeStringList(body *strings.Builder, title string, values []string) {
 }
 
 func resourceLifecycle(name string) string {
+	if name == "hubspot_contact_segment" {
+		return "<h2>Lifecycle</h2><p>Refresh and recovery use only the exact generated ILS list ID. Dynamic filters update in place; snapshot filter changes replace. Readable tombstones remain in state and apply restores the same ID. Destroy verifies the same tombstoned identity.</p>"
+	}
 	if name == "hubspot_product" {
 		return "<h2>Lifecycle</h2><p>Refresh, recovery, PATCH, import, and archival use only the exact generated Product ID. PATCH contains changed managed properties only; semantic decimal normalization sends no write. Destroy verifies active absence and the same archived identity.</p>"
 	}
@@ -186,6 +192,9 @@ func resourceLifecycle(name string) string {
 }
 
 func resourceImport(name string) string {
+	if name == "hubspot_contact_segment" {
+		return `<h2>Import</h2><p>Import one supported active or readable tombstoned Contact segment by its exact positive-decimal ILS list ID. Name is never identity. A tombstoned import plans same-ID restoration.</p>`
+	}
 	if name == "hubspot_product" {
 		return `<h2>Import</h2><p>Import one active Product by its exact numeric generated Product ID. SKU and name are never identity. Supported nonempty optional values are adopted.</p>`
 	}
@@ -208,6 +217,9 @@ func resourceImport(name string) string {
 }
 
 func providerSurface(name string) string {
+	if name == "hubspot_contact_segment" {
+		return "contact-segment-definition"
+	}
 	if name == "hubspot_product" {
 		return "product-definition"
 	}
@@ -227,6 +239,9 @@ func providerSurface(name string) string {
 }
 
 func moduleSurface(name string) string {
+	if name == "contact-segment-definition" {
+		return "contact-segment-definition"
+	}
 	if name == "product-definition" {
 		return "product-definition"
 	}
@@ -246,6 +261,9 @@ func moduleSurface(name string) string {
 }
 
 func moduleContract(name string) string {
+	if name == "contact-segment-definition" {
+		return "<h2>Validation and dependency contract</h2><p>Stable map keys own generated ILS identities. Manual definitions forbid filters. Dynamic and snapshot definitions require nonempty OR groups with supported AND predicates. Snapshot filter changes replace while dynamic changes update in place.</p>"
+	}
 	if name == "product-definition" {
 		return "<h2>Validation and dependency contract</h2><p>Stable map keys own generated Product identities. Null optionals remain unmanaged, empty strings clear them, and decimal strings preserve configured intent across remote normalization.</p>"
 	}

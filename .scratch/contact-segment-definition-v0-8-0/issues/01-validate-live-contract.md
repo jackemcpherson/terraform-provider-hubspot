@@ -2,7 +2,7 @@
 
 Type: research
 
-Status: claimed
+Status: resolved
 
 Blocked by: None
 
@@ -58,3 +58,18 @@ operation for both text and select properties. ADR 0004 resolves that blocker
 with an explicit Contact segment property kind and no schema lookup. The
 protected probe must now prove the complete amended contract, including all
 three variants and exact-ID tombstone restoration, before this ticket resolves.
+
+## Answer
+
+Protected run 32101799846 passed on provider `27347f4` and demo `2ef32f7`.
+It proved manual, dynamic, and snapshot definitions on the Free portal;
+text, select, and presence predicates; dynamic filter replacement; name
+updates; snapshot and manual filter-update rejection; exact-ID tombstone
+read-back; same-ID restore; repeated-operation classification; and exact
+cleanup. The cumulative dual-engine journey then passed and verified zero
+active owned configuration.
+
+The frozen contract uses explicit Contact segment property kind and requires
+only `crm.lists.read` and `crm.lists.write`. A purged known-ID transition cannot
+be produced safely inside the 90-day retention period, so hermetic lifecycle
+coverage owns that case.

@@ -13,6 +13,7 @@ on:
           - files_configuration
           - account_memberships
           - product_definitions
+          - contact_segments
       prefix:
         description: Exact tf_acc_ prefix ending in underscore
         required: true
@@ -20,6 +21,10 @@ on:
       confirmation:
         description: Enter the confirmation required for the selected surface
         required: true
+        type: string
+      generated_ids:
+        description: Comma-separated generated IDs, required only for contact_segments
+        required: false
         type: string
 
 permissions: {}
@@ -42,6 +47,7 @@ jobs:
       SHARD: ${{ inputs.shard }}
       PREFIX: ${{ inputs.prefix }}
       CONFIRMATION: ${{ inputs.confirmation }}
+      GENERATED_IDS: ${{ inputs.generated_ids }}
     steps:
       - name: Check out provider source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -56,4 +62,4 @@ jobs:
       - name: Archive exact owned configuration
         env:
           HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
-        run: ./scripts/acceptance-cleanup.sh archive "$SHARD" "$PREFIX" "$CONFIRMATION"
+        run: ./scripts/acceptance-cleanup.sh archive "$SHARD" "$PREFIX" "$CONFIRMATION" "$GENERATED_IDS"

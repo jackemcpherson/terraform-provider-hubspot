@@ -4,6 +4,29 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-29
+
+### Added
+
+- Manage Free-compatible manual, dynamic, and snapshot Contact segment
+  definitions through `hubspot_contact_segment`, using generated ILS list ID as
+  the sole state and import identity.
+- Support one-value text/select equality and property-presence predicates in
+  unordered OR groups containing unordered AND filters.
+- Publish a stable-keyed `contact-segment-definition` module, cumulative
+  Northstar lifecycle, guarded live contract probe, and exact-ID cleanup.
+- Retain readable out-of-band tombstones in state and restore the same ID on
+  apply; remove state only after permanent absence.
+- Reject unsupported remote filters instead of silently dropping meaning, and
+  never search, adopt, or recover by Contact segment name.
+
+### Changed
+
+- Update dynamic filters in place, replace snapshots when filters change, and
+  keep name updates in place for every processing type.
+- Poll exact ID and current `listVersion` after create, dynamic update, and
+  restoration, accepting ambiguous writes only after complete read-back.
+
 ## [0.7.1] - 2026-10-29
 
 ### Changed

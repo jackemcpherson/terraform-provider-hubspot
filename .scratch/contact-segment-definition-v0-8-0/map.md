@@ -4,8 +4,16 @@ This map tracks the append-only work needed to publish v0.8.0.
 
 ## Frontier
 
-Ticket 01 remains claimed while the protected probe verifies the amended
-property-kind contract and the remaining lifecycle stop conditions.
+Ticket 06 is next. Documentation and the exact demo-pin update are the current
+frontier.
+
+2026-10-29: [Ticket 06](issues/06-publish-documentation.md) is resolved.
+Ticket 07 is next: fixed-point reviews, the protected candidate path or exact
+`main` qualification, and publication.
+
+2026-10-29: [Ticket 07](issues/07-review-merge-release.md) is resolved. The
+remaining fixed-point reviews, exact `main` qualification, and publication
+evidence are recorded in a comment on PR #119.
 
 ## Decisions So Far
 
@@ -33,3 +41,30 @@ property-kind contract and the remaining lifecycle stop conditions.
   defers them indefinitely because the delivery contract is Free-only. Deal
   pipeline configuration becomes v0.9.0 and ticket pipeline configuration
   becomes v0.10.0.
+- Protected run 32101799846 passed on provider `27347f4` and demo `2ef32f7`.
+  It proved the amended live contract and terminal cleanup.
+  [Ticket 01](issues/01-validate-live-contract.md) is resolved and
+  implementation may proceed.
+- The typed client is complete at the HTTP boundary with semantic filter
+  mapping, exact-ID validation, duplicate rejection, tombstones, and ambiguous
+  outcome preservation. [Ticket 02](issues/02-add-typed-client.md) is resolved.
+- The resource schema, conditional validation, unordered state model, exact-ID
+  refresh/import, dynamic update, snapshot replacement, tombstone restoration,
+  and destroy semantics are implemented.
+  [Ticket 03](issues/03-add-resource.md) is resolved.
+- The behavioral fake, dual-engine lifecycle and recovery proofs, protected
+  maintenance, janitor reporting, and manual archival selection are complete.
+  [Ticket 04](issues/04-lifecycle-and-cleanup.md) is resolved.
+- The cumulative demo merged as demo PR #35 at `7b1531b`. It adds a
+  stable-keyed module, a `revise` phase, tombstoned refresh and import
+  restores, and exact-ID tombstone reads. Segment names carry a
+  `<files prefix><engine>` label because live evidence on tombstone name
+  reservation is pending. Demo CI validates against candidate `3d3812f` until
+  repinned. [Ticket 05](issues/05-extend-demo.md) is resolved locally. Live
+  dual-engine proof belongs to ticket 07.
+- 2026-10-29: Provider maintenance pins demo `main` merge commit
+  `7b1531b9ac43883920291bcdcc19dd8c6b6ed1c0` (demo PR #35), replacing
+  `2ef32f7`. Generated reference, executable example, guides, README,
+  changelog `## [0.8.0] - 2026-10-29`, release notes, and the portal source
+  digest reproduce from that source.
+  [Ticket 06](issues/06-publish-documentation.md) is resolved.
