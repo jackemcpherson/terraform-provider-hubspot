@@ -8,9 +8,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"testing"
+	"unicode"
 
 	"github.com/jackemcpherson/terraform-provider-hubspot/internal/acceptance"
 )
@@ -21,6 +24,40 @@ func TestRunExecutesPropertyGroupLifecycleThroughOpenTofu(t *testing.T) {
 
 func TestRunExecutesPropertyGroupLifecycleThroughTerraform(t *testing.T) {
 	runPropertyGroupLifecycle(t, acceptance.Terraform, "registry.terraform.io/jackemcpherson/hubspot")
+}
+
+// A case-insensitive filesystem (macOS APFS by default) reaches one checkout
+// through several spellings. The Go command resolves its main module from the
+// on-disk spelling, so the harness must build from that spelling too.
+func TestRunBuildsProviderFromCaseVariantWorkingDirectory(t *testing.T) {
+	directory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(caseVariantDirectory(t, directory))
+	runPropertyGroupLifecycle(t, acceptance.OpenTofu, "registry.opentofu.org/jackemcpherson/hubspot")
+}
+
+// caseVariantDirectory returns directory with the case of every letter
+// swapped, or skips the test when the filesystem does not resolve that
+// spelling to the same directory.
+func caseVariantDirectory(t *testing.T, directory string) string {
+	t.Helper()
+	variant := strings.Map(func(r rune) rune {
+		if unicode.IsUpper(r) {
+			return unicode.ToLower(r)
+		}
+		return unicode.ToUpper(r)
+	}, directory)
+	original, err := os.Stat(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	alias, err := os.Stat(variant)
+	if err != nil || !os.SameFile(original, alias) {
+		t.Skip("filesystem is case-sensitive")
+	}
+	return variant
 }
 
 func TestRunRetainsStateWhenPropertyGroupDestroyIsBlocked(t *testing.T) {
