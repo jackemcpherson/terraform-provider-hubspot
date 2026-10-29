@@ -68,11 +68,9 @@ All gates ran locally with Go 1.26.10 on 2026-10-29.
 
 - `make check-security`: govulncheck v1.1.4 reports "No vulnerabilities
   found", and zizmor reports no findings.
-- `make check`: `check-go`, `check-docs`, and `check-workflows` pass.
-  `engine-smoke` passes when run directly with OpenTofu 1.12.3 and Terraform
-  1.15.8 first on `PATH`. Under `make`, it fails on this workstation because the
-  Makefile puts `$(go env GOPATH)/bin` first, and that directory holds OpenTofu
-  1.13.2 and Terraform 1.17.0. Ticket 02 owns that pin drift.
+- `make check` passes in full on the branch after merging `main` at
+  `cbf18a1`, which includes the engine-pin move from ticket 02.
+  `make check-security` was rerun on that merge and is still clean.
 - `make test-hermetic`, `make test-race`, `make fuzz-seeds`, and
   `make check-release` pass. `test-hermetic` used `HUBSPOT_DEMO_REPO`
   pointing at a clean demo clone at `2ef32f7`.
