@@ -134,7 +134,7 @@ func TestContactSegmentModelCanonicalizesSetOrder(t *testing.T) {
 			{Property: "status", Operator: "is_equal_to", PropertyKind: "select", Value: "active"},
 		}},
 	}
-	if !contactSegmentGroupsEqual(left, right) {
+	if !hubspot.ContactSegmentGroupsEqual(left, right) {
 		t.Fatal("group and filter ordering must not be semantic")
 	}
 	remote := hubspot.ContactSegment{ID: "701", Name: "Active customers", ProcessingType: "dynamic", FilterGroups: left}
@@ -144,7 +144,7 @@ func TestContactSegmentModelCanonicalizesSetOrder(t *testing.T) {
 		t.Fatalf("model diagnostics = %#v", diagnostics)
 	}
 	write, writeDiagnostics := contactSegmentWriteFromModel(context.Background(), model, false)
-	if writeDiagnostics.HasError() || !contactSegmentGroupsEqual(write.FilterGroups, right) {
+	if writeDiagnostics.HasError() || !hubspot.ContactSegmentGroupsEqual(write.FilterGroups, right) {
 		t.Fatalf("round trip diagnostics/groups = %#v/%#v", writeDiagnostics, write.FilterGroups)
 	}
 }
@@ -161,19 +161,6 @@ func TestContactSegmentApplyConversionNeverDropsUnknownFilters(t *testing.T) {
 	}
 	if _, diagnostics := contactSegmentWriteFromModel(context.Background(), model, true); diagnostics.HasError() {
 		t.Fatalf("configuration validation rejected an unknown planned filter: %#v", diagnostics)
-	}
-}
-
-func TestContactSegmentImportIDRequiresCanonicalPositiveDecimal(t *testing.T) {
-	for _, id := range []string{"1", "701", "999999999999999999999999999999999999999999"} {
-		if !validContactSegmentImportID(id) {
-			t.Fatalf("valid ID rejected: %q", id)
-		}
-	}
-	for _, id := range []string{"", "0", "-1", "+1", "01", "1.0", " 1"} {
-		if validContactSegmentImportID(id) {
-			t.Fatalf("invalid ID accepted: %q", id)
-		}
 	}
 }
 

@@ -411,6 +411,66 @@ func TestExecuteRejectsInvalidNorthstarContactSegmentInputs(t *testing.T) {
 	}
 }
 
+func TestNorthstarContactSegmentOwnershipUsesConfiguredPrefix(t *testing.T) {
+	t.Setenv("HUBSPOT_NORTHSTAR_FILES_PREFIX", "ns_run7_")
+	fake := acceptance.NewFakeHubSpot("token", 123)
+	clients := northstarFakeClientsWithoutListener(t, fake)
+	ctx := context.Background()
+	create := func(name string) string {
+		t.Helper()
+		created, err := clients.ContactSegments.Create(ctx, hubspot.ContactSegmentWrite{Name: name, ProcessingType: "manual"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return created.ID
+	}
+	owned := []string{
+		create("Northstar all contacts ns_run7_tofu"),
+		create("Out-of-band Northstar completed onboarding ns_run7_terraform"),
+		create("Northstar contactable snapshot ns_run7_tofu_revised"),
+	}
+	foreign := map[string]string{
+		"another run prefix":  create("Northstar all contacts ns_other_tofu"),
+		"default run prefix":  create("Northstar completed onboarding ns_tofu"),
+		"unlabelled name":     create("Northstar contactable snapshot"),
+		"unknown base name":   create("Northstar archive ns_run7_tofu"),
+		"invalid label":       create("Northstar all contacts ns_run7_tofu extra"),
+		"prefix in mid-name":  create("Customer Northstar all contacts ns_run7_tofu"),
+		"different separator": create("Northstar all contacts-ns_run7_tofu"),
+	}
+	for name, id := range foreign {
+		if _, err := execute(ctx, "cleanup-contact-segments", []string{id}, clients); err == nil {
+			t.Fatalf("cleanup accepted %s", name)
+		}
+		if _, err := execute(ctx, "delete-contact-segment-for-refresh", []string{id}, clients); err == nil {
+			t.Fatalf("refresh deletion accepted %s", name)
+		}
+		if segment, ok := fake.ContactSegmentSnapshot(id); !ok || segment.Deleted {
+			t.Fatalf("ownership refusal mutated %s", name)
+		}
+		if !fake.DeleteContactSegment(id) {
+			t.Fatalf("could not tombstone %s out of band", name)
+		}
+		if _, err := execute(ctx, "verify-contact-segment-tombstone", []string{id}, clients); err == nil {
+			t.Fatalf("tombstone verification accepted %s", name)
+		}
+	}
+	if _, err := execute(ctx, "cleanup-contact-segments", owned, clients); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range owned {
+		if segment, ok := fake.ContactSegmentSnapshot(id); !ok || !segment.Deleted {
+			t.Fatal("cleanup did not tombstone an exact owned identity")
+		}
+		if _, err := execute(ctx, "verify-contact-segment-tombstone", []string{id}, clients); err != nil {
+			t.Fatalf("owned tombstone verification = %v", err)
+		}
+	}
+	if active := fake.ActiveContactSegmentIDs(); len(active) != 0 {
+		t.Fatalf("cleanup left %d active Contact segments", len(active))
+	}
+}
+
 func northstarContactSegmentFixture(manualName, dynamicName, snapshotName, snapshotValue string) []hubspot.ContactSegmentWrite {
 	return []hubspot.ContactSegmentWrite{
 		{Name: manualName, ProcessingType: "manual"},
