@@ -5,7 +5,8 @@ v0.8.0, and amend the release order.
 
 ## Frontier
 
-Tickets 01, 02, 03, 04, 05, and 06 are resolved. Ticket 07 is the frontier.
+Every ticket in this effort is resolved. The Contact segment slice continues
+with its own tickets 05, 06, and 07 on draft PR 119.
 
 ## Graph
 
@@ -51,3 +52,6 @@ hosted or human gate.
 - 04: Ten findings reached the provider binary, so v0.7.1 ships the patch
   from the qualified `main` commit. See
   [ticket 04](issues/04-decide-v0-7-x-patch.md).
+- 07: The Contact segment slice is rebased onto repaired `main`, passes the
+  full local suite, and is open as draft PR 119. See
+  [ticket 07](issues/07-rebase-contact-segment-slice.md).
