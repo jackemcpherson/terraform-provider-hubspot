@@ -7,6 +7,10 @@ This map tracks the append-only work needed to publish v0.8.0.
 Ticket 06 is next. Documentation and the exact demo-pin update are the current
 frontier.
 
+2026-10-29: [Ticket 06](issues/06-publish-documentation.md) is resolved.
+Ticket 07 is next: fixed-point reviews, the protected candidate path or exact
+`main` qualification, and publication.
+
 ## Decisions So Far
 
 - Association definitions remain deferred to v0.9.0 and require paid-tier
@@ -54,3 +58,9 @@ frontier.
   reservation is pending. Demo CI validates against candidate `3d3812f` until
   repinned. [Ticket 05](issues/05-extend-demo.md) is resolved locally. Live
   dual-engine proof belongs to ticket 07.
+- 2026-10-29: Provider maintenance pins demo `main` merge commit
+  `7b1531b9ac43883920291bcdcc19dd8c6b6ed1c0` (demo PR #35), replacing
+  `2ef32f7`. Generated reference, executable example, guides, README,
+  changelog `## [0.8.0] - 2026-10-29`, release notes, and the portal source
+  digest reproduce from that source.
+  [Ticket 06](issues/06-publish-documentation.md) is resolved.

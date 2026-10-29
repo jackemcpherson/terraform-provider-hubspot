@@ -1,8 +1,7 @@
 # HubSpot provider
 
 This provider manages HubSpot configuration with OpenTofu or Terraform. The
-The planned v0.8.0 release is a public beta and does not promise compatibility
-with v1.
+v0.8.0 release is a public beta and does not promise compatibility with v1.
 
 Managed resources:
 
