@@ -4,8 +4,8 @@ This map tracks the append-only work needed to publish v0.8.0.
 
 ## Frontier
 
-Ticket 01 remains claimed while the protected probe verifies the amended
-property-kind contract and the remaining lifecycle stop conditions.
+Ticket 05 is next. The cumulative demo module is the current implementation
+frontier.
 
 ## Decisions So Far
 
@@ -33,3 +33,17 @@ property-kind contract and the remaining lifecycle stop conditions.
   defers them indefinitely because the delivery contract is Free-only. Deal
   pipeline configuration becomes v0.9.0 and ticket pipeline configuration
   becomes v0.10.0.
+- Protected run 32101799846 passed on provider `27347f4` and demo `2ef32f7`.
+  It proved the amended live contract and terminal cleanup.
+  [Ticket 01](issues/01-validate-live-contract.md) is resolved and
+  implementation may proceed.
+- The typed client is complete at the HTTP boundary with semantic filter
+  mapping, exact-ID validation, duplicate rejection, tombstones, and ambiguous
+  outcome preservation. [Ticket 02](issues/02-add-typed-client.md) is resolved.
+- The resource schema, conditional validation, unordered state model, exact-ID
+  refresh/import, dynamic update, snapshot replacement, tombstone restoration,
+  and destroy semantics are implemented.
+  [Ticket 03](issues/03-add-resource.md) is resolved.
+- The behavioral fake, dual-engine lifecycle and recovery proofs, protected
+  maintenance, janitor reporting, and manual archival selection are complete.
+  [Ticket 04](issues/04-lifecycle-and-cleanup.md) is resolved.

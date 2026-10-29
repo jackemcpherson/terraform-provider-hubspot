@@ -31,6 +31,7 @@ type ClientSet struct {
 	AccountMemberships *AccountMembershipClient
 	CRMUserProfiles    *CRMUserProfileClient
 	Products           *ProductClient
+	ContactSegments    *ContactSegmentClient
 }
 
 func NewClientSet(config TransportConfig) (*ClientSet, error) {
@@ -50,6 +51,7 @@ func NewClientSet(config TransportConfig) (*ClientSet, error) {
 		AccountMemberships: &AccountMembershipClient{transport: transport},
 		CRMUserProfiles:    &CRMUserProfileClient{transport: transport},
 		Products:           &ProductClient{transport: transport},
+		ContactSegments:    &ContactSegmentClient{transport: transport},
 	}, nil
 }
 

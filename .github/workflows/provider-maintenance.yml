@@ -23,6 +23,7 @@ jobs:
       HUBSPOT_DEMO_SCRIPT: ${{ github.workspace }}/.demo-source/scripts/demo
       HUBSPOT_PROVIDER_REPO: ${{ github.workspace }}
       HUBSPOT_NORTHSTAR_MEMBERSHIP_EMAIL: ${{ vars.HUBSPOT_NORTHSTAR_MEMBERSHIP_EMAIL }}
+      HUBSPOT_NORTHSTAR_CONTACT_SEGMENT_IDS: ${{ vars.HUBSPOT_NORTHSTAR_CONTACT_SEGMENT_IDS }}
       HUBSPOT_ACCEPTANCE_PORTAL_ID: ${{ vars.HUBSPOT_ACCEPTANCE_PORTAL_ID }}
       HUBSPOT_PORTAL_LOCK_ID: free-configuration
     steps:

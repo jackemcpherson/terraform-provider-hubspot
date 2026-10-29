@@ -24,6 +24,11 @@ For a Product create without a returned generated ID, inspect the disposable
 portal and import only the intended exact numeric ID. Never retry by guessing
 from SKU or name. The provider deliberately does not search by either field.
 
+For a Contact segment create without a returned ILS list ID, inspect Lists in
+the disposable portal and import only the intended exact positive-decimal ID.
+Never retry by guessing from the name; the provider deliberately does not
+search by it.
+
 ## Destroy is blocked
 
 Read the diagnostic before changing state manually. Property groups may be
@@ -38,7 +43,7 @@ HubSpot rejects name updates until the user activates and can return
 `USER_NOT_ON_ANY_HUBS`. The provider does not retry that response indefinitely.
 It also refuses PUT while role or team assignments are present because omission
 semantics are undocumented. Activate the user or manage the global name outside
-this resource. Roles and teams remain outside the v0.7 contract.
+this resource. Roles and teams remain outside the v0.8 contract.
 
 ## A Product Requires `hs_folder`
 
@@ -53,6 +58,24 @@ Prices and costs are string attributes so configuration preserves exact decimal
 intent. HubSpot may return an equivalent spelling such as `1200`. The provider
 compares the numeric value and sends no PATCH. A different numeric value is
 ordinary drift and the next apply repairs only that managed property.
+
+## A Contact Segment Filter Is Rejected
+
+Equality operators require one nonblank value and an explicit
+`property_kind = "text"` or `"select"`. Presence operators forbid both fields.
+HubSpot validates that declaration against the named Contact property. Correct
+the property name or kind; do not add Contact-record or property-schema scopes.
+
+If refresh reports unsupported remote meaning, restore the supported one-value
+text/select or presence predicate in HubSpot, then refresh again. The provider
+retains prior state rather than dropping an unknown filter.
+
+## A Deleted Contact Segment Plans an Update
+
+HubSpot keeps deleted list definitions for up to 90 days. A readable tombstone
+remains in state and the next apply restores that same ID. Use destroy or state
+removal if restoration is not desired. Permanent absence removes state and a
+later apply creates a new generated ID.
 
 ## CRM User Profile Has Not Materialized
 

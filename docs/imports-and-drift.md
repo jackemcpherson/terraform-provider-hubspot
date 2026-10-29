@@ -14,6 +14,7 @@ after a create conflict.
 | `hubspot_account_membership` | canonical Settings user ID or explicit `email:<address>` |
 | `hubspot_crm_user_profile` | canonical CRM user ID or explicit `membership:<Settings-ID>` |
 | `hubspot_product` | exact non-zero decimal generated Product ID |
+| `hubspot_contact_segment` | exact positive-decimal generated ILS list ID |
 
 Examples:
 
@@ -29,6 +30,7 @@ tofu import hubspot_account_membership.operator \
 tofu import hubspot_crm_user_profile.operator \
   'membership:123456789'
 tofu import hubspot_product.support '246813579'
+tofu import hubspot_contact_segment.active_customers '135792468'
 ```
 
 Replace `tofu` with `terraform` when using Terraform.
@@ -66,3 +68,11 @@ adopts required values and supported nonempty cost or recurrence. SKU and name
 never identify a Product. Null optional configuration remains unmanaged, empty
 string clears the remote value, and semantic decimal normalization does not
 produce a write.
+
+Contact segment import accepts only the exact generated ILS list ID. A
+supported active definition imports directly. A supported readable tombstone
+also imports and plans restoration of the same ID on the next apply. Names
+never identify a definition. Supported name and dynamic-filter drift enters
+state; unsupported remote filter meaning stops refresh without overwriting
+prior state. Permanent exact-ID absence removes state and declared
+configuration creates a new ID.

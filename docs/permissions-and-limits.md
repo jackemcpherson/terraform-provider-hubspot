@@ -20,6 +20,8 @@ CRM user profile configuration needs the exact pair
 linked Settings identity reads.
 Product definition management needs exactly `crm.objects.products.read` and
 `crm.objects.products.write`. It never needs the legacy `e-commerce` scope.
+Contact segment definition management needs exactly `crm.lists.read` and
+`crm.lists.write`. It does not need Contact record or property-schema scopes.
 The provider needs no CRM record, form-submission, or
 CMS content scope and never reads CRM record values or submissions.
 
@@ -34,14 +36,18 @@ Some resources also depend on account features:
 | Account membership | HubSpot account plus Settings users read/write or CRM users read/write scopes | Names affect global user identity. Removal is locally guarded and refuses Super Admin membership. |
 | CRM user profile | HubSpot account plus CRM users read/write scopes | Profile materialization can require human activation. Destroy retains profile values without a remote write. |
 | Standard Product definition | HubSpot Free plus Products read/write scopes | SKU conflicts are authoritative. Archive is terminal to this provider and HubSpot may retain the tombstone for 90 days. |
+| Contact segment definition | HubSpot Free plus Lists read/write scopes | Name and declared property-kind conflicts are authoritative. Readable tombstones restore the same ID on apply. |
 
-v0.7 accepts only `data_sensitivity = "non_sensitive"`. Sensitive and
+v0.8 accepts only `data_sensitivity = "non_sensitive"`. Sensitive and
 highly-sensitive definitions, pipelines, custom schemas, form consent,
 notifications, automation, non-email form structures, roles, teams, seats,
 granular permissions, activation, deactivation, additional CRM user profile
 properties, and global identity deletion are deferred from this release.
 Product tiered pricing, folders, status, tax, terms, URLs, custom properties,
 line items, associations, and search-based adoption are also deferred.
+Contact memberships, derived size, folders, permissions, conversions, custom
+properties, raw JSON, event, association, and historical filters, multi-value
+predicates, and numeric, Boolean, or datetime comparisons are deferred.
 
 HubSpot editions, feature flags, quotas, and scope names can change separately
 from this provider. A 403 usually means the token lacks a scope or the account

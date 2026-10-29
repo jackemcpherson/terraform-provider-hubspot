@@ -66,7 +66,9 @@ The typed client uses these exact routes:
 
 - `POST /crm/lists/2026-03` creates a definition.
 - `GET /crm/lists/2026-03/{listId}?includeFilters=true` reads one exact ID.
-- `PUT /crm/lists/2026-03/{listId}/update-list-name` updates the name.
+- `PUT /crm/lists/2026-03/{listId}/update-list-name` updates the name with the
+  encoded `listName` query parameter and requests the returned definition with
+  `includeFilters=true`.
 - `PUT /crm/lists/2026-03/{listId}/update-list-filters` replaces a dynamic
   filter tree.
 - `DELETE /crm/lists/2026-03/{listId}` deletes one exact ID.

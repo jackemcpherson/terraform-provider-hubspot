@@ -24,6 +24,8 @@ PATH="$tmp:$PATH" CALL_LOG="$log" HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ONE_PORTAL_L
 PATH="$tmp:$PATH" CALL_LOG="$log" HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
 	"$root/scripts/acceptance-cleanup.sh" report product_definitions
 PATH="$tmp:$PATH" CALL_LOG="$log" HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
+	"$root/scripts/acceptance-cleanup.sh" report contact_segments '' '' 80001,80002,80003
+PATH="$tmp:$PATH" CALL_LOG="$log" HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
 	"$root/scripts/acceptance-cleanup.sh" archive free_properties tf_acc_owned_ archive-prefixed-crm-configuration
 PATH="$tmp:$PATH" CALL_LOG="$log" HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
 	"$root/scripts/acceptance-cleanup.sh" archive form_definitions tf_acc_forms_ archive-prefixed-form-definitions
@@ -33,17 +35,21 @@ PATH="$tmp:$PATH" CALL_LOG="$log" HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ONE_PORTAL_L
 	"$root/scripts/acceptance-cleanup.sh" archive account_memberships tf_acc_members_ delete-prefixed-account-memberships
 PATH="$tmp:$PATH" CALL_LOG="$log" HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
 	"$root/scripts/acceptance-cleanup.sh" archive product_definitions tf_acc_products_ archive-prefixed-product-definitions
+PATH="$tmp:$PATH" CALL_LOG="$log" HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
+	"$root/scripts/acceptance-cleanup.sh" archive contact_segments tf_acc_segments_ delete-exact-contact-segments 80001,80002,80003
 
 grep -Fq 'free_properties|tf_acc_|test -tags=acceptance ./internal/acceptance -run ^TestAcc_JanitorReport$ -count=1 -timeout=10m' "$log"
 grep -Fq 'form_definitions|tf_acc_|test -tags=acceptance ./internal/acceptance -run ^TestAcc_JanitorReport$ -count=1 -timeout=10m' "$log"
 grep -Fq 'files_configuration|tf_acc_|test -tags=acceptance ./internal/acceptance -run ^TestAcc_JanitorReport$ -count=1 -timeout=10m' "$log"
 grep -Fq 'account_memberships|tf_acc_|test -tags=acceptance ./internal/acceptance -run ^TestAcc_JanitorReport$ -count=1 -timeout=10m' "$log"
 grep -Fq 'product_definitions|tf_acc_|test -tags=acceptance ./internal/acceptance -run ^TestAcc_JanitorReport$ -count=1 -timeout=10m' "$log"
+grep -Fq 'contact_segments|tf_acc_|test -tags=acceptance ./internal/acceptance -run ^TestAcc_JanitorReport$ -count=1 -timeout=10m' "$log"
 grep -Fq 'free_properties|tf_acc_owned_|test -tags=acceptance ./internal/acceptance -run ^TestAcc_ManualPrefixCleanup$ -count=1 -timeout=20m' "$log"
 grep -Fq 'form_definitions|tf_acc_forms_|test -tags=acceptance ./internal/acceptance -run ^TestAcc_ManualPrefixCleanup$ -count=1 -timeout=20m' "$log"
 grep -Fq 'files_configuration|tf_acc_files_|test -tags=acceptance ./internal/acceptance -run ^TestAcc_ManualPrefixCleanup$ -count=1 -timeout=20m' "$log"
 grep -Fq 'account_memberships|tf_acc_members_|test -tags=acceptance ./internal/acceptance -run ^TestAcc_ManualPrefixCleanup$ -count=1 -timeout=20m' "$log"
 grep -Fq 'product_definitions|tf_acc_products_|test -tags=acceptance ./internal/acceptance -run ^TestAcc_ManualPrefixCleanup$ -count=1 -timeout=20m' "$log"
+grep -Fq 'contact_segments|tf_acc_segments_|test -tags=acceptance ./internal/acceptance -run ^TestAcc_ManualPrefixCleanup$ -count=1 -timeout=20m' "$log"
 
 if PATH="$tmp:$PATH" CALL_LOG="$log" HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
 	"$root/scripts/acceptance-cleanup.sh" archive free_properties tf_acc_owned_ delete-prefixed-configuration; then
@@ -73,6 +79,21 @@ fi
 if PATH="$tmp:$PATH" CALL_LOG="$log" HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
 	"$root/scripts/acceptance-cleanup.sh" archive product_definitions tf_acc_products_ archive-prefixed-form-definitions; then
 	echo 'Forms confirmation must not authorize Product cleanup' >&2
+	exit 1
+fi
+if PATH="$tmp:$PATH" CALL_LOG="$log" HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
+	"$root/scripts/acceptance-cleanup.sh" archive contact_segments tf_acc_segments_ delete-exact-contact-segments; then
+	echo 'Contact segment cleanup without generated IDs must be rejected' >&2
+	exit 1
+fi
+if PATH="$tmp:$PATH" CALL_LOG="$log" HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
+	"$root/scripts/acceptance-cleanup.sh" archive contact_segments tf_acc_segments_ delete-exact-contact-segments 080001; then
+	echo 'noncanonical Contact segment IDs must be rejected' >&2
+	exit 1
+fi
+if PATH="$tmp:$PATH" CALL_LOG="$log" HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \
+	"$root/scripts/acceptance-cleanup.sh" archive product_definitions tf_acc_products_ archive-prefixed-product-definitions 80001; then
+	echo 'generated IDs must not broaden Product cleanup' >&2
 	exit 1
 fi
 if PATH="$tmp:$PATH" CALL_LOG="$log" HUBSPOT_ACCESS_TOKEN=test HUBSPOT_ONE_PORTAL_LOCK_DIR="$tmp/lock" \

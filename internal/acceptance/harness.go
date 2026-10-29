@@ -38,6 +38,7 @@ const (
 	FilesConfiguration  Shard = "files_configuration"
 	AccountMemberships  Shard = "account_memberships"
 	ProductDefinitions  Shard = "product_definitions"
+	ContactSegments     Shard = "contact_segments"
 	DealPipelines       Shard = "deal_pipelines"
 	TicketPipelines     Shard = "ticket_pipelines"
 	CustomSchemas       Shard = "custom_schemas"
@@ -130,7 +131,7 @@ func Run(t testing.TB, options Options, scenario func(*Session)) {
 			t.Fatalf("install exact acceptance provider binary: %v", err)
 		}
 	} else {
-		build := exec.Command("go", "build", "-trimpath", "-o", providerBinary, root)
+		build := exec.Command("go", "build", "-tags=acceptance", "-trimpath", "-o", providerBinary, root)
 		build.Dir = root
 		build.Env = append(os.Environ(), "CGO_ENABLED=0", "GOTOOLCHAIN=local")
 		if output, err := build.CombinedOutput(); err != nil {
@@ -177,7 +178,7 @@ func Run(t testing.TB, options Options, scenario func(*Session)) {
 
 func validShard(shard Shard) bool {
 	switch shard {
-	case FreeProperties, FormDefinitions, FilesConfiguration, AccountMemberships, ProductDefinitions, DealPipelines, TicketPipelines, CustomSchemas, SensitiveProperties, CustomPipelines:
+	case FreeProperties, FormDefinitions, FilesConfiguration, AccountMemberships, ProductDefinitions, ContactSegments, DealPipelines, TicketPipelines, CustomSchemas, SensitiveProperties, CustomPipelines:
 		return true
 	default:
 		return false

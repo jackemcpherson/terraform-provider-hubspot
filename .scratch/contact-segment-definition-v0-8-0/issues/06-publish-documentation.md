@@ -16,3 +16,8 @@ Blocked by: 03, 04, 05
   in provider maintenance before provider source freeze.
 
 ## Comments
+
+- Provider-owned reference, example, surface guide, permissions, import,
+  drift, destroy, troubleshooting, portal, README, changelog, and v0.8.0
+  release-note changes are drafted. Final generation and source digest remain
+  blocked on the exact merged demo commit required by this ticket.

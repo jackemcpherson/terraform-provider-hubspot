@@ -34,7 +34,7 @@ func TestNorthstarActionTimeoutPreservesFolderDriftMargin(t *testing.T) {
 	if timeout := northstarActionTimeout("repair-folder-path"); timeout != 10*time.Minute {
 		t.Fatalf("folder repair timeout = %s", timeout)
 	}
-	if timeout := northstarActionTimeout("cleanup"); timeout != 2*time.Minute {
+	if timeout := northstarActionTimeout("cleanup"); timeout != 5*time.Minute {
 		t.Fatalf("default timeout = %s", timeout)
 	}
 	var taskDelay time.Duration
@@ -291,6 +291,99 @@ func TestExecuteManagesNorthstarProductLifecycle(t *testing.T) {
 		!strings.Contains(record, `"terminal":"archived"`) || !strings.Contains(record, `"active_owned_products":0`) {
 		t.Fatalf("Product terminal record = %q, %v", record, err)
 	}
+}
+
+func TestExecuteManagesNorthstarContactSegmentLifecycle(t *testing.T) {
+	fake := acceptance.NewFakeHubSpot("token", 123)
+	clients := northstarFakeClientsWithoutListener(t, fake)
+	ctx := context.Background()
+	writes := []hubspot.ContactSegmentWrite{
+		{Name: northstarManualSegmentName, ProcessingType: "manual"},
+		{
+			Name: northstarDynamicSegmentName, ProcessingType: "dynamic",
+			FilterGroups: []hubspot.ContactSegmentFilterGroup{{Filters: []hubspot.ContactSegmentFilter{{
+				Property: "ns_onboarding_status", Operator: "is_equal_to", PropertyKind: "select", Value: "complete",
+			}}}},
+		},
+		{
+			Name: northstarSnapshotSegmentName, ProcessingType: "snapshot",
+			FilterGroups: []hubspot.ContactSegmentFilterGroup{{Filters: []hubspot.ContactSegmentFilter{{
+				Property: "email", Operator: "is_not_equal_to", PropertyKind: "text", Value: "suppressed@example.com",
+			}}}},
+		},
+	}
+	ids := make([]string, 0, len(writes))
+	for _, write := range writes {
+		created, err := clients.ContactSegments.Create(ctx, write)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, created.ID)
+	}
+	if _, err := execute(ctx, "verify-contact-segments", append(append([]string(nil), ids...), "suppressed@example.com"), clients); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(ctx, "drift-contact-segments", ids, clients); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(ctx, "verify-contact-segments", append(append([]string(nil), ids...), "suppressed@example.com"), clients); err == nil {
+		t.Fatal("Contact segment verification accepted drift")
+	}
+	for index, id := range ids {
+		if _, err := clients.ContactSegments.UpdateName(ctx, id, writes[index].Name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := clients.ContactSegments.UpdateFilters(ctx, ids[1], writes[1].FilterGroups); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(ctx, "delete-contact-segment-for-refresh", []string{ids[1]}, clients); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := clients.ContactSegments.Get(ctx, ids[1])
+	if err != nil || !deleted.Deleted || deleted.ID != ids[1] {
+		t.Fatalf("refresh tombstone = %#v, %v", deleted, err)
+	}
+	if err := clients.ContactSegments.Restore(ctx, ids[1]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(ctx, "cleanup-contact-segments", ids, clients); err != nil {
+		t.Fatal(err)
+	}
+	record, err := execute(ctx, "verify-contact-segments-terminal", ids, clients)
+	if err != nil || strings.Contains(record, ids[0]) || !strings.Contains(record, `"terminal":"tombstoned"`) || !strings.Contains(record, `"active_owned_contact_segments":0`) {
+		t.Fatalf("Contact segment terminal record = %q, %v", record, err)
+	}
+	for _, id := range ids {
+		segment, ok := fake.ContactSegmentSnapshot(id)
+		if !ok || !segment.Deleted || segment.ID != id {
+			t.Fatalf("terminal Contact segment = %#v, %v", segment, ok)
+		}
+	}
+}
+
+type northstarRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn northstarRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return fn(request)
+}
+
+func northstarFakeClientsWithoutListener(t *testing.T, fake *acceptance.FakeHubSpot) *hubspot.ClientSet {
+	t.Helper()
+	origin, err := url.Parse("https://fake-hubspot.invalid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Transport: northstarRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		recorder := httptest.NewRecorder()
+		fake.ServeHTTP(recorder, request)
+		return recorder.Result(), nil
+	})}
+	clients, err := hubspot.NewClientSet(hubspot.TransportConfig{BaseURL: origin, AccessToken: "token", HTTPClient: client})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return clients
 }
 
 func TestExecuteCleansInterruptedNorthstarLifecycle(t *testing.T) {

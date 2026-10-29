@@ -68,6 +68,21 @@ Blocked by: 01, 02, 03, 04, 05, 06
   tombstone, and same-ID restore from list version 2 to 3. It then failed
   because the synthetic maximum-integer unknown ID returned a different 4xx
   classification than the probe required. Exact-ID cleanup completed.
+- 2026-08-18: Provider PR 105 classified the synthetic unknown ID without
+  treating it as a purged known identity and merged as `27347f4`. Protected
+  run 32101799846 then passed the complete amended contract probe, cumulative
+  OpenTofu and Terraform journey, and terminal cleanup on provider `27347f4`
+  and demo `2ef32f7` in 9m0s.
+- 2026-08-18: The first implementation review corrected immediate rejection,
+  unsafe 5xx ambiguity, dual-engine recovery, bounded timeout, exact request
+  counts, processing-type replacement evidence, and issue-map links. Actions
+  review found no workflow defect. Release review remains Not ready until the
+  demo merge/pin, source freeze, exact-main qualification, and publication.
+- 2026-08-18: Sandbox-safe staticcheck, focused race tests, all-package compile,
+  acceptance compile, frozen fuzz seeds, workflow and cleanup scripts, license
+  checks, and `make check-release` passed. Listener-based hermetic execution,
+  generated-document reproduction, demo writes, and hosted actions remain
+  pending on the external execution gate.
 
 ## Failure Ledger
 
